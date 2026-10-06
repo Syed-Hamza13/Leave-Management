@@ -3,6 +3,17 @@ import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 
+import { env } from "./config/env.js";
+import { sessionMiddleware } from "./config/session.js";
+
+import { globalRateLimiter } from "./middleware/rateLimiter.js";
+import { doubleCsrfProtection } from "./middleware/csrf.js";
+import { notFound } from "./middleware/notFound.js";
+import { errorHandler } from "./middleware/errorHandler.js";
+
+import healthRoutes from "./modules/health/health.routes.js";
+import securityRoutes from "./modules/security/security.routes.js";
+
 const app = express();
 
 app.disable("x-powered-by");
@@ -11,21 +22,26 @@ app.use(helmet());
 
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL,
+    origin: env.FRONTEND_URL,
     credentials: true,
   })
 );
 
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false }));
+
+app.use(sessionMiddleware);
 app.use(cookieParser());
 
-app.get("/api/v1/health", (req, res) => {
-  res.json({
-    success: true,
-    message: "Leave Management API is running",
-    timestamp: new Date().toISOString(),
-  });
-});
+app.use(globalRateLimiter);
+
+app.use("/api/v1/health", healthRoutes);
+app.use("/api/v1/security", securityRoutes);
+
+// Protect non-GET, non-HEAD, non-OPTIONS requests
+app.use(doubleCsrfProtection);
+
+app.use(notFound);
+app.use(errorHandler);
 
 export default app;
