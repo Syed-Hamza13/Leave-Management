@@ -14,6 +14,8 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import healthRoutes from "./modules/health/health.routes.js";
 import securityRoutes from "./modules/security/security.routes.js";
 
+import authRoutes from "./modules/auth/auth.routes.js";
+
 const app = express();
 
 app.disable("x-powered-by");
@@ -37,6 +39,8 @@ app.use(globalRateLimiter);
 
 app.use("/api/v1/health", healthRoutes);
 app.use("/api/v1/security", securityRoutes);
+
+app.use("/api/v1/auth", authRoutes);
 
 // Protect non-GET, non-HEAD, non-OPTIONS requests
 app.use(doubleCsrfProtection);
