@@ -2,39 +2,52 @@ import rateLimit from "express-rate-limit";
 import { RedisStore } from "rate-limit-redis";
 import { redisClient } from "../config/redis.js";
 
-const redisStore = new RedisStore({
-  sendCommand: (...args) => redisClient.sendCommand(args),
-});
+let redisStore;
 
-export const globalRateLimiter = rateLimit({
-  store: redisStore,
+function getRedisStore() {
+  if (!redisClient.isReady) {
+    throw new Error("Redis must be connected before creating rate limiters.");
+  }
 
-  windowMs: 15 * 60 * 1000,
+  if (!redisStore) {
+    redisStore = new RedisStore({
+      sendCommand: (...args) => redisClient.sendCommand(args),
+    });
+  }
 
-  limit: 300,
+  return redisStore;
+}
 
-  standardHeaders: "draft-8",
-  legacyHeaders: false,
+export function createGlobalRateLimiter() {
+  return rateLimit({
+    store: getRedisStore(),
 
-  message: {
-    success: false,
-    message: "Too many requests. Please try again later.",
-  },
-});
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
 
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
 
-export const loginRateLimiter = rateLimit({
-  store: redisStore,
+    message: {
+      success: false,
+      message: "Too many requests. Please try again later.",
+    },
+  });
+}
 
-  windowMs: 15 * 60 * 1000,
+export function createLoginRateLimiter() {
+  return rateLimit({
+    store: getRedisStore(),
 
-  limit: 10,
+    windowMs: 15 * 60 * 1000,
+    limit: 100,
 
-  standardHeaders: "draft-8",
-  legacyHeaders: false,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
 
-  message: {
-    success: false,
-    message: "Too many login attempts. Please try again later.",
-  },
-});
+    message: {
+      success: false,
+      message: "Too many login attempts. Please try again later.",
+    },
+  });
+} 

@@ -1,35 +1,31 @@
 import { Router } from "express";
-
-import {
-  login,
-  logout,
-  me,
-} from "./auth.controller.js";
-
-import { loginRateLimiter } from "../../middleware/rateLimiter.js";
+import { login, logout, me } from "./auth.controller.js";
+import { createLoginRateLimiter } from "../../middleware/rateLimiter.js";
 import { requireAuth } from "../../middleware/requireAuth.js";
 import { doubleCsrfProtection } from "../../middleware/csrf.js";
 
-const router = Router();
+export function createAuthRoutes() {
+  const router = Router();
 
-router.post(
-  "/login",
-  loginRateLimiter,
-  doubleCsrfProtection,
-  login
-);
+  router.post(
+    "/login",
+    createLoginRateLimiter(),
+    doubleCsrfProtection,
+    login
+  );
 
-router.post(
-  "/logout",
-  doubleCsrfProtection,
-  requireAuth,
-  logout
-);
+  router.post(
+    "/logout",
+    doubleCsrfProtection,
+    requireAuth,
+    logout
+  );
 
-router.get(
-  "/me",
-  requireAuth,
-  me
-);
+  router.get(
+    "/me",
+    requireAuth,
+    me
+  );
 
-export default router;
+  return router;
+}

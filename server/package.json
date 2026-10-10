@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "create-user": "node scripts/create-user.js"
+    "create-user": "node scripts/create-user.js",
+    "test-api": "node scripts/test-api.js"
   },
   "dependencies": {
     "argon2": "^0.45.1",

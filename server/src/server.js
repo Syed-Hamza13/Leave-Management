@@ -1,13 +1,14 @@
-import 'dotenv/config';
-
-import app from "./app.js";
+import "dotenv/config";
 
 import { env } from "./config/env.js";
 import { connectRedis } from "./config/redis.js";
+import { createApp } from "./app.js";
 
 async function startServer() {
   try {
     await connectRedis();
+
+    const app = createApp();
 
     app.listen(env.PORT, env.HOST, () => {
       console.log("");
