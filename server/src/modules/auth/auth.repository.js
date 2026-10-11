@@ -57,3 +57,20 @@ export async function updateLastLogin(userId) {
     [userId]
   );
 }
+
+export async function getUserSecurityState(userId) {
+  const [rows] = await db.execute(
+    `
+      SELECT
+        id,
+        status,
+        password_changed_at
+      FROM users
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [userId]
+  );
+
+  return rows[0] || null;
+}

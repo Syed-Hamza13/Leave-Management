@@ -5,6 +5,8 @@ import argon2 from "argon2";
 
 import { db } from "../src/config/database.js";
 
+import { validatePassword } from "../src/modules/auth/password.policy.js";
+
 const rl = readline.createInterface({
   input,
   output,
@@ -50,6 +52,18 @@ async function main() {
       throw new Error("Passwords do not match.");
     }
 
+    const passwordErrors = validatePassword(password);
+
+    if (passwordErrors.length > 0) {
+      console.error("❌ Invalid password:");
+
+      for (const error of passwordErrors) {
+        console.error(`   - ${error}`);
+      }
+
+      process.exit(1);
+    }
+
     const [existingUsers] = await db.execute(
       `
         SELECT id
@@ -57,7 +71,7 @@ async function main() {
         WHERE email = ?
         LIMIT 1
       `,
-      [email]
+      [email],
     );
 
     if (existingUsers.length > 0) {
@@ -83,12 +97,7 @@ async function main() {
         )
         VALUES (?, ?, ?, ?, 'active', CURRENT_TIMESTAMP)
       `,
-      [
-        email,
-        passwordHash,
-        firstName,
-        lastName || null,
-      ]
+      [email, passwordHash, firstName, lastName || null],
     );
 
     console.log("");
@@ -97,7 +106,6 @@ async function main() {
     console.log(`   Email : ${email}`);
     console.log(`   Name  : ${firstName} ${lastName}`.trim());
     console.log("");
-
   } catch (error) {
     console.error("");
     console.error("❌ Failed to create user:");

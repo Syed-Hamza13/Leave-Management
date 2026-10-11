@@ -13,6 +13,9 @@ export const db = mysql.createPool({
   queueLimit: 0,
 
   charset: "utf8mb4",
+
+  // Keep MySQL DATETIME values as strings.
+  dateStrings: true,
 });
 
 export async function checkDatabaseConnection() {

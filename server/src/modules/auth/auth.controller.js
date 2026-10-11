@@ -1,20 +1,13 @@
-import {
-  loginUser,
-  getCurrentUser,
-} from "./auth.service.js";
-
+import { loginUser, getCurrentUser } from "./auth.service.js";
 import { loginSchema } from "./auth.validation.js";
+import { registerSession } from "./session.service.js";
 
 export async function login(req, res, next) {
   try {
     const data = loginSchema.parse(req.body);
 
-    /*
-     * Regenerate the session before establishing
-     * authenticated state.
-     *
-     * This helps prevent session fixation.
-     */
+    const user = await loginUser(data);
+
     await new Promise((resolve, reject) => {
       req.session.regenerate((error) => {
         if (error) reject(error);
@@ -22,11 +15,28 @@ export async function login(req, res, next) {
       });
     });
 
-    const user = await loginUser(data);
-
     req.session.user = {
       id: user.id,
     };
+
+    req.session.authenticatedAt = new Date().toISOString();
+
+    req.session.cookie.maxAge = 1000 * 60 * 60 * 8;
+
+    const sessionId = req.sessionID;
+
+    const expiresAt = new Date(
+      Date.now() + req.session.cookie.maxAge
+    );
+
+    await registerSession({
+      userId: user.id,
+      sessionId,
+      deviceId: null,
+      userAgent: req.get("user-agent") || null,
+      ipAddress: req.ip || null,
+      expiresAt,
+    });
 
     await new Promise((resolve, reject) => {
       req.session.save((error) => {
@@ -66,7 +76,16 @@ export async function logout(req, res, next) {
 
 export async function me(req, res, next) {
   try {
-    const user = await getCurrentUser(req.session.user.id);
+    const userId = req.session?.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    const user = await getCurrentUser(userId);
 
     if (!user) {
       return res.status(401).json({
