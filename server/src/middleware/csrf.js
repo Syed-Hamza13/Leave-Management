@@ -6,20 +6,15 @@ const {
   generateCsrfToken,
   doubleCsrfProtection,
 } = doubleCsrf({
-  getSecret: () => env.SESSION_SECRET,
-
-  // Required by csrf-csrf
+  getSecret: () => env.CSRF_SECRET,
   getSessionIdentifier: (req) => req.session.id,
-
   cookieName: "csrf-token",
-
   cookieOptions: {
     httpOnly: false,
     secure: env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
   },
-
   getCsrfTokenFromRequest: (req) => {
     return req.headers["x-csrf-token"];
   },
@@ -29,4 +24,4 @@ export {
   generateCsrfToken,
   doubleCsrfProtection,
   invalidCsrfTokenError,
-};
+}; 
