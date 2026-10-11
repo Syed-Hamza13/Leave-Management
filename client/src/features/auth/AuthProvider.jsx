@@ -1,10 +1,5 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
-
+import { createContext, useContext, useEffect, useState } from "react";
+import { getDeviceId } from "../../lib/deviceId.js";
 import api from "../../services/api.js";
 
 const AuthContext = createContext(null);
@@ -44,6 +39,7 @@ export function AuthProvider({ children }) {
       body: JSON.stringify({
         email,
         password,
+        deviceId: getDeviceId(),
       }),
     });
 
@@ -73,20 +69,14 @@ export function AuthProvider({ children }) {
     refreshUser: loadCurrentUser,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
   const context = useContext(AuthContext);
 
   if (!context) {
-    throw new Error(
-      "useAuth must be used inside AuthProvider"
-    );
+    throw new Error("useAuth must be used inside AuthProvider");
   }
 
   return context;

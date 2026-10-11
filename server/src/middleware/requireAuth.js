@@ -1,4 +1,8 @@
 import { getUserSecurityState } from "../modules/auth/auth.repository.js";
+import {
+  validateSession,
+  touchSession,
+} from "../modules/auth/session.service.js";
 
 function destroySession(req) {
   return new Promise((resolve, reject) => {
@@ -22,15 +26,46 @@ function parseDatabaseUtcDate(value) {
 export async function requireAuth(req, res, next) {
   try {
     const userId = req.session?.user?.id;
+    const sessionId = req.sessionID;
     const authenticatedAt = req.session?.authenticatedAt;
 
-    if (!userId || !authenticatedAt) {
+    /*
+     * Basic session check
+     */
+    if (!userId || !sessionId || !authenticatedAt) {
       return res.status(401).json({
         success: false,
         message: "Authentication required",
       });
     }
 
+    /*
+     * Check application-level session registry.
+     *
+     * This allows us to revoke a session from the database
+     * even though the Redis session itself may still exist.
+     */
+    const registeredSession = await validateSession(
+      sessionId,
+      userId
+    );
+
+    if (!registeredSession) {
+      console.log(
+        "🚨 SESSION INVALID OR REVOKED — DESTROYING SESSION"
+      );
+
+      await destroySession(req);
+
+      return res.status(401).json({
+        success: false,
+        message: "Session expired or revoked. Please login again.",
+      });
+    }
+
+    /*
+     * Check current user security state.
+     */
     const securityState = await getUserSecurityState(userId);
 
     if (!securityState || securityState.status !== "active") {
@@ -42,6 +77,9 @@ export async function requireAuth(req, res, next) {
       });
     }
 
+    /*
+     * Validate session authentication timestamp.
+     */
     const authenticatedDate = new Date(authenticatedAt);
 
     if (Number.isNaN(authenticatedDate.getTime())) {
@@ -53,12 +91,23 @@ export async function requireAuth(req, res, next) {
       });
     }
 
+    /*
+     * Password-change invalidation.
+     *
+     * If the password was changed after this session
+     * was authenticated, invalidate the session.
+     */
     const passwordChangedDate = parseDatabaseUtcDate(
-      securityState.password_changed_at,
+      securityState.password_changed_at
     );
 
-    if (passwordChangedDate && authenticatedDate < passwordChangedDate) {
-      console.log("🚨 PASSWORD CHANGED — DESTROYING SESSION");
+    if (
+      passwordChangedDate &&
+      authenticatedDate < passwordChangedDate
+    ) {
+      console.log(
+        "🚨 PASSWORD CHANGED — DESTROYING SESSION"
+      );
 
       await destroySession(req);
 
@@ -67,6 +116,11 @@ export async function requireAuth(req, res, next) {
         message: "Session expired. Please login again.",
       });
     }
+
+    /*
+     * Update session activity.
+     */
+    await touchSession(sessionId);
 
     next();
   } catch (error) {

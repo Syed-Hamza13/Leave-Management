@@ -1,6 +1,7 @@
 import { loginUser, getCurrentUser } from "./auth.service.js";
 import { loginSchema } from "./auth.validation.js";
 import { registerSession } from "./session.service.js";
+import { revokeSessionById } from "./session.service.js";
 
 export async function login(req, res, next) {
   try {
@@ -25,14 +26,12 @@ export async function login(req, res, next) {
 
     const sessionId = req.sessionID;
 
-    const expiresAt = new Date(
-      Date.now() + req.session.cookie.maxAge
-    );
+    const expiresAt = new Date(Date.now() + req.session.cookie.maxAge);
 
     await registerSession({
       userId: user.id,
       sessionId,
-      deviceId: null,
+      deviceId: data.deviceId || null,
       userAgent: req.get("user-agent") || null,
       ipAddress: req.ip || null,
       expiresAt,
@@ -56,6 +55,18 @@ export async function login(req, res, next) {
 
 export async function logout(req, res, next) {
   try {
+    const sessionId = req.sessionID;
+
+    /*
+     * Revoke the application-level session record first.
+     */
+    if (sessionId) {
+      await revokeSessionById(sessionId);
+    }
+
+    /*
+     * Destroy the actual Express/Redis session.
+     */
     await new Promise((resolve, reject) => {
       req.session.destroy((error) => {
         if (error) reject(error);
