@@ -6,7 +6,13 @@ import { revokeSessionById } from "./session.service.js";
 export async function login(req, res, next) {
   try {
     const data = loginSchema.parse(req.body);
-
+    console.log("========== LOGIN REQUEST ==========");
+    console.log("IP:", req.ip);
+    console.log("User-Agent:", req.get("user-agent"));
+    console.log("X-Device-ID:", req.get("X-Device-ID"));
+    console.log("Body deviceId:", data.deviceId);
+    console.log("Session ID BEFORE regenerate:", req.sessionID);
+    console.log("===================================");
     const user = await loginUser(data);
 
     await new Promise((resolve, reject) => {

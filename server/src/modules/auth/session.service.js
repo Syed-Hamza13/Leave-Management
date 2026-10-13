@@ -29,29 +29,85 @@ export async function getSession(sessionId) {
   return findSessionById(sessionId);
 }
 
-export async function validateSession(sessionId, userId) {
+export async function validateSession(
+  sessionId,
+  userId,
+  deviceId,
+  userAgent
+) {
   const session = await findSessionById(sessionId);
 
   if (!session) {
-    return null;
+    return {
+      valid: false,
+      reason: "NOT_FOUND",
+    };
   }
 
   if (String(session.user_id) !== String(userId)) {
-    return null;
+    return {
+      valid: false,
+      reason: "USER_MISMATCH",
+    };
   }
 
   if (session.revoked_at) {
-    return null;
+    return {
+      valid: false,
+      reason: "REVOKED",
+    };
   }
 
   if (
     session.expires_at &&
     new Date(session.expires_at).getTime() <= Date.now()
   ) {
-    return null;
+    return {
+      valid: false,
+      reason: "EXPIRED",
+    };
   }
 
-  return session;
+  if (!deviceId || !session.device_id) {
+    return {
+      valid: false,
+      reason: "DEVICE_ID_MISSING",
+    };
+  }
+
+  if (session.device_id !== deviceId) {
+    console.log(
+      "🚨 DEVICE ID MISMATCH — SESSION REJECTED"
+    );
+
+    return {
+      valid: false,
+      reason: "DEVICE_MISMATCH",
+    };
+  }
+
+  if (!userAgent || !session.user_agent) {
+    return {
+      valid: false,
+      reason: "USER_AGENT_MISSING",
+    };
+  }
+
+  if (session.user_agent !== userAgent) {
+    console.log(
+      "🚨 USER-AGENT MISMATCH — SESSION REJECTED"
+    );
+
+    return {
+      valid: false,
+      reason: "USER_AGENT_MISMATCH",
+    };
+  }
+
+  return {
+    valid: true,
+    session,
+  };
 }
 
 export async function touchSession(sessionId) {

@@ -1,4 +1,5 @@
 const API_PREFIX = "/api/v1";
+import { getDeviceId } from "../lib/deviceId.js";
 
 let csrfToken = null;
 
@@ -62,19 +63,16 @@ async function api(path, options = {}) {
 
   const headers = {
     ...(options.headers || {}),
+    "X-Device-ID": getDeviceId(),
   };
 
-  /*
-   * Only send JSON Content-Type when a body exists.
-   * This avoids unnecessarily sending Content-Type on GET requests.
-   */
-  if (options.body && !headers["Content-Type"]) {
+  if (
+    options.body &&
+    !headers["Content-Type"]
+  ) {
     headers["Content-Type"] = "application/json";
   }
 
-  /*
-   * Cookie/session based authentication requires credentials.
-   */
   const requestOptions = {
     ...options,
     method,
@@ -82,11 +80,6 @@ async function api(path, options = {}) {
     headers,
   };
 
-  /*
-   * All state-changing requests require CSRF protection.
-   *
-   * GET, HEAD and OPTIONS are treated as safe methods.
-   */
   const requiresCsrf = !["GET", "HEAD", "OPTIONS"].includes(method);
 
   if (requiresCsrf) {
@@ -107,13 +100,6 @@ async function api(path, options = {}) {
 
   let data = await parseResponse(response);
 
-  /*
-   * If the CSRF token became invalid/stale, refresh it once
-   * and retry the original request.
-   *
-   * This is especially useful after login because the backend
-   * regenerates the session.
-   */
   if (
     requiresCsrf &&
     response.status === 403 &&

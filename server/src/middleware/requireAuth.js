@@ -29,6 +29,9 @@ export async function requireAuth(req, res, next) {
     const sessionId = req.sessionID;
     const authenticatedAt = req.session?.authenticatedAt;
 
+    const deviceId = req.get("X-Device-ID");
+    const userAgent = req.get("User-Agent");
+
     /*
      * Basic session check
      */
@@ -45,22 +48,49 @@ export async function requireAuth(req, res, next) {
      * This allows us to revoke a session from the database
      * even though the Redis session itself may still exist.
      */
+
     const registeredSession = await validateSession(
       sessionId,
-      userId
+      userId,
+      deviceId,
+      userAgent,
     );
 
-    if (!registeredSession) {
-      console.log(
-        "🚨 SESSION INVALID OR REVOKED — DESTROYING SESSION"
-      );
+    if (!registeredSession.valid) {
+      const { reason } = registeredSession;
 
-      await destroySession(req);
+      console.log(`🚨 SESSION VALIDATION FAILED: ${reason}`);
 
-      return res.status(401).json({
-        success: false,
-        message: "Session expired or revoked. Please login again.",
-      });
+      // Device/User-Agent mismatch:
+      // DO NOT destroy the actual session.
+      if (
+        reason === "DEVICE_MISMATCH" ||
+        reason === "USER_AGENT_MISMATCH" ||
+        reason === "DEVICE_ID_MISSING" ||
+        reason === "USER_AGENT_MISSING"
+      ) {
+        return res.status(401).json({
+          success: false,
+          message:
+            "This session is not valid for this device. Please login again.",
+        });
+      }
+
+      // Actual server-side invalidation:
+      // revoked / expired / missing session
+      if (
+        reason === "REVOKED" ||
+        reason === "EXPIRED" ||
+        reason === "NOT_FOUND" ||
+        reason === "USER_MISMATCH"
+      ) {
+        await destroySession(req);
+
+        return res.status(401).json({
+          success: false,
+          message: "Session expired or revoked. Please login again.",
+        });
+      }
     }
 
     /*
@@ -98,16 +128,11 @@ export async function requireAuth(req, res, next) {
      * was authenticated, invalidate the session.
      */
     const passwordChangedDate = parseDatabaseUtcDate(
-      securityState.password_changed_at
+      securityState.password_changed_at,
     );
 
-    if (
-      passwordChangedDate &&
-      authenticatedDate < passwordChangedDate
-    ) {
-      console.log(
-        "🚨 PASSWORD CHANGED — DESTROYING SESSION"
-      );
+    if (passwordChangedDate && authenticatedDate < passwordChangedDate) {
+      console.log("🚨 PASSWORD CHANGED — DESTROYING SESSION");
 
       await destroySession(req);
 
