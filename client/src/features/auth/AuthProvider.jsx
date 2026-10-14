@@ -13,6 +13,7 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
 
   /*
    * Every successful login increments this value.
@@ -37,6 +38,7 @@ export function AuthProvider({ children }) {
 
       if (data?.success && data?.user) {
         setUser(data.user);
+        setAuthError(null);
       } else {
         setUser(null);
       }
@@ -49,11 +51,44 @@ export function AuthProvider({ children }) {
       }
 
       if (error.status === 401) {
+        if (error.code === "SESSION_INVALID") {
+          setUser(null);
+          setAuthError(null);
+          return;
+        }
+
+        if (error.code === "DEVICE_VALIDATION_FAILED") {
+          /*
+           * The server-side session may still be valid.
+           *
+           * Do not immediately destroy local auth state here.
+           *
+           * The UI can later use this state to ask the user
+           * to authenticate this browser/device again.
+           */
+          setAuthError({
+            code: "DEVICE_VALIDATION_FAILED",
+            message:
+              "This browser needs to be authenticated again.",
+          });
+
+          return;
+        }
+
+        /*
+         * Unknown 401:
+         * Fail closed on the client.
+         */
         setUser(null);
-      } else {
-        console.error("Failed to load current user:", error);
-        setUser(null);
+        setAuthError(null);
+        return;
       }
+
+      console.error("Failed to load current user:", error);
+      setAuthError({
+        code: "AUTH_CHECK_FAILED",
+        message: "Unable to verify your session.",
+      });
     } finally {
       /*
        * Only the latest auth initialization should control loading.
@@ -84,6 +119,7 @@ export function AuthProvider({ children }) {
       authGeneration.current += 1;
 
       setUser(data.user);
+      setAuthError(null);
       setLoading(false);
     }
 
@@ -102,6 +138,7 @@ export function AuthProvider({ children }) {
       });
     } finally {
       setUser(null);
+      setAuthError(null);
       setLoading(false);
     }
   }
@@ -109,6 +146,7 @@ export function AuthProvider({ children }) {
   const value = {
     user,
     loading,
+    authError,
     isAuthenticated: Boolean(user),
     login,
     logout,

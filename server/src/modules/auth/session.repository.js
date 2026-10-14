@@ -4,7 +4,6 @@ export async function createSessionRecord({
   userId,
   sessionId,
   userDeviceId = null,
-  deviceId = null,
   userAgent = null,
   ipAddress = null,
   expiresAt = null,
@@ -15,18 +14,16 @@ export async function createSessionRecord({
         user_id,
         user_device_id,
         session_id,
-        device_id,
         user_agent,
         ip_address,
         expires_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?)
     `,
     [
       userId,
       userDeviceId,
       sessionId,
-      deviceId,
       userAgent,
       ipAddress,
       expiresAt,
@@ -74,6 +71,18 @@ export async function updateSessionLastSeen(sessionId) {
 }
 
 export async function revokeSession(sessionId) {
+  await db.execute(
+    `
+      UPDATE user_sessions
+      SET revoked_at = UTC_TIMESTAMP(3)
+      WHERE session_id = ?
+        AND revoked_at IS NULL
+    `,
+    [sessionId]
+  );
+}
+
+export async function markSessionExpired(sessionId) {
   await db.execute(
     `
       UPDATE user_sessions

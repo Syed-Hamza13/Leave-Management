@@ -2,6 +2,7 @@ import { getUserSecurityState } from "../modules/auth/auth.repository.js";
 import {
   validateSession,
   touchSession,
+  markSessionAsExpired,
 } from "../modules/auth/session.service.js";
 import {
   getDeviceByToken,
@@ -83,11 +84,25 @@ export async function requireAuth(req, res, next) {
         });
       }
 
+      // Expired: revoke the DB row as well so the registry
+      // stops carrying a session that can never be used again.
+      if (reason === "EXPIRED") {
+        await markSessionAsExpired(sessionId);
+
+        await destroySession(req);
+
+        return res.status(401).json({
+          success: false,
+          code: "SESSION_INVALID",
+          message:
+            "Session expired or revoked. Please login again.",
+        });
+      }
+
       // Actual server-side invalidation:
-      // revoked / expired / missing session
+      // revoked / missing session
       if (
         reason === "REVOKED" ||
-        reason === "EXPIRED" ||
         reason === "NOT_FOUND" ||
         reason === "USER_MISMATCH"
       ) {

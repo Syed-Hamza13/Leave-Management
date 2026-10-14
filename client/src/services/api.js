@@ -124,6 +124,7 @@ async function api(path, options = {}) {
     );
 
     error.status = response.status;
+    error.code = data?.code || null;
     error.data = data;
 
     throw error;

@@ -55,12 +55,6 @@ export async function login(req, res, next) {
 
     const userAgent = req.get("user-agent") || null;
 
-    /*
-     * Legacy client device id. It is no longer a validation factor —
-     * sessions keep it only until the device_id cleanup migration.
-     */
-    const clientDeviceId = req.get("X-Device-ID") || null;
-
     let device = null;
     let deviceToken = req.cookies?.[DEVICE_COOKIE_NAME];
 
@@ -71,7 +65,6 @@ export async function login(req, res, next) {
     console.log("========== LOGIN REQUEST ==========");
     console.log("IP:", req.ip);
     console.log("User-Agent:", userAgent);
-    console.log("X-Device-ID:", clientDeviceId);
     console.log("Device cookie present:", Boolean(deviceToken));
     console.log("Known device:", device ? device.id : null);
     console.log("Session ID BEFORE fresh session:", req.sessionID);
@@ -181,25 +174,54 @@ export async function login(req, res, next) {
 
     const expiresAt = new Date(Date.now() + SESSION_MAX_AGE);
 
-    await registerSession({
-      userId: user.id,
-      sessionId,
-      userDeviceId,
-      deviceId: clientDeviceId,
-      userAgent,
-      ipAddress: req.ip || null,
-      expiresAt,
-    });
+    /*
+     * Redis and MySQL are not one atomic transaction, so the two
+     * writes are coordinated: if the Redis save fails after the DB
+     * record exists, the DB record is revoked instead of being left
+     * as a session nobody can authorize against.
+     */
+    let sessionRegistered = false;
 
-    await new Promise((resolve, reject) => {
-      req.session.save((error) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve();
-        }
+    try {
+      await registerSession({
+        userId: user.id,
+        sessionId,
+        userDeviceId,
+        userAgent,
+        ipAddress: req.ip || null,
+        expiresAt,
       });
-    });
+
+      sessionRegistered = true;
+
+      await new Promise((resolve, reject) => {
+        req.session.save((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve();
+        });
+      });
+    } catch (error) {
+      /*
+       * If DB registration succeeded but Redis session save failed,
+       * revoke the DB record so it cannot remain valid.
+       */
+      if (sessionRegistered) {
+        await revokeSessionById(sessionId);
+      }
+
+      /*
+       * Destroy the in-memory/request session as well.
+       */
+      await new Promise((resolve) => {
+        req.session.destroy(() => resolve());
+      });
+
+      throw error;
+    }
 
     console.log("========== LOGIN SUCCESS ==========");
     console.log("Previous Session ID:", previousSessionId);

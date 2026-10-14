@@ -3,6 +3,7 @@ import {
   findSessionById,
   updateSessionLastSeen,
   revokeSession,
+  markSessionExpired,
   revokeAllUserSessions,
   revokeOtherUserSessions,
 } from "./session.repository.js";
@@ -11,7 +12,6 @@ export async function registerSession({
   userId,
   sessionId,
   userDeviceId,
-  deviceId,
   userAgent,
   ipAddress,
   expiresAt,
@@ -20,7 +20,6 @@ export async function registerSession({
     userId,
     sessionId,
     userDeviceId,
-    deviceId,
     userAgent,
     ipAddress,
     expiresAt,
@@ -128,6 +127,10 @@ export async function touchSession(sessionId) {
 
 export async function revokeSessionById(sessionId) {
   return revokeSession(sessionId);
+}
+
+export async function markSessionAsExpired(sessionId) {
+  return markSessionExpired(sessionId);
 }
 
 export async function revokeAllSessions(userId) {
