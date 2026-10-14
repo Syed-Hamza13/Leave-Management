@@ -1,54 +1,156 @@
 import { loginUser, getCurrentUser } from "./auth.service.js";
 import { loginSchema } from "./auth.validation.js";
-import { registerSession } from "./session.service.js";
+import {
+  registerSession,
+  getSession,
+  validateSession,
+} from "./session.service.js";
 import { revokeSessionById } from "./session.service.js";
+
+const SESSION_MAX_AGE = 1000 * 60 * 60 * 8;
+
+function generateFreshSession(req) {
+  return new Promise((resolve, reject) => {
+    if (
+      !req.sessionStore ||
+      typeof req.sessionStore.generate !== "function"
+    ) {
+      return reject(
+        new Error("Session store does not support fresh session generation")
+      );
+    }
+
+    /*
+     * IMPORTANT:
+     *
+     * Do NOT use req.session.regenerate() here.
+     *
+     * regenerate() destroys the existing Redis session first.
+     *
+     * If the incoming cookie belongs to another device/session,
+     * that could destroy the legitimate user's session.
+     *
+     * store.generate() creates a completely fresh SID/session
+     * without destroying the previous one.
+     */
+    req.sessionStore.generate(req);
+
+    resolve();
+  });
+}
 
 export async function login(req, res, next) {
   try {
     const data = loginSchema.parse(req.body);
+
+    const deviceId = data.deviceId || null;
+    const userAgent = req.get("user-agent") || null;
+
     console.log("========== LOGIN REQUEST ==========");
     console.log("IP:", req.ip);
-    console.log("User-Agent:", req.get("user-agent"));
+    console.log("User-Agent:", userAgent);
     console.log("X-Device-ID:", req.get("X-Device-ID"));
-    console.log("Body deviceId:", data.deviceId);
-    console.log("Session ID BEFORE regenerate:", req.sessionID);
+    console.log("Body deviceId:", deviceId);
+    console.log("Session ID BEFORE fresh session:", req.sessionID);
+    console.log("Existing session user:", req.session?.user?.id || null);
     console.log("===================================");
+
+    /*
+     * First validate credentials.
+     *
+     * We deliberately do this BEFORE touching the current session.
+     */
     const user = await loginUser(data);
 
-    await new Promise((resolve, reject) => {
-      req.session.regenerate((error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
+    /*
+     * Capture the incoming session before replacing req.session.
+     *
+     * This is important because the incoming session may belong
+     * to another legitimate browser.
+     */
+    const previousSessionId = req.sessionID;
+    const previousSessionUserId = req.session?.user?.id || null;
 
+    /*
+     * If an authenticated session already exists, inspect it.
+     *
+     * This is only informational/security logic.
+     * We NEVER destroy it here.
+     */
+    if (previousSessionId && previousSessionUserId) {
+      const existingSession = await getSession(previousSessionId);
+
+      if (existingSession) {
+        const validation = await validateSession(
+          previousSessionId,
+          previousSessionUserId,
+          deviceId,
+          userAgent
+        );
+
+        if (!validation.valid) {
+          console.log(
+            `⚠️ Existing session will NOT be destroyed: ${validation.reason}`
+          );
+        } else {
+          console.log(
+            "ℹ️ Existing authenticated session belongs to this device."
+          );
+        }
+      }
+    }
+
+    /*
+     * Create a completely NEW Express/Redis session.
+     *
+     * Unlike req.session.regenerate(), this does NOT destroy
+     * the previous session.
+     */
+    await generateFreshSession(req);
+
+    /*
+     * The browser will now receive the new session ID.
+     *
+     * The previous session remains untouched in Redis and in
+     * user_sessions.
+     */
     req.session.user = {
       id: user.id,
     };
 
     req.session.authenticatedAt = new Date().toISOString();
 
-    req.session.cookie.maxAge = 1000 * 60 * 60 * 8;
+    req.session.cookie.maxAge = SESSION_MAX_AGE;
 
     const sessionId = req.sessionID;
 
-    const expiresAt = new Date(Date.now() + req.session.cookie.maxAge);
+    const expiresAt = new Date(Date.now() + SESSION_MAX_AGE);
 
     await registerSession({
       userId: user.id,
       sessionId,
-      deviceId: data.deviceId || null,
-      userAgent: req.get("user-agent") || null,
+      deviceId,
+      userAgent,
       ipAddress: req.ip || null,
       expiresAt,
     });
 
     await new Promise((resolve, reject) => {
       req.session.save((error) => {
-        if (error) reject(error);
-        else resolve();
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
       });
     });
+
+    console.log("========== LOGIN SUCCESS ==========");
+    console.log("Previous Session ID:", previousSessionId);
+    console.log("New Session ID:", sessionId);
+    console.log("User ID:", user.id);
+    console.log("Previous session preserved:", Boolean(previousSessionId));
+    console.log("===================================");
 
     res.json({
       success: true,
@@ -64,19 +166,22 @@ export async function logout(req, res, next) {
     const sessionId = req.sessionID;
 
     /*
-     * Revoke the application-level session record first.
+     * Revoke only the current application-level session.
      */
     if (sessionId) {
       await revokeSessionById(sessionId);
     }
 
     /*
-     * Destroy the actual Express/Redis session.
+     * Destroy only the current Express/Redis session.
      */
     await new Promise((resolve, reject) => {
       req.session.destroy((error) => {
-        if (error) reject(error);
-        else resolve();
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
       });
     });
 
