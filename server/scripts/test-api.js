@@ -1,9 +1,11 @@
 import "dotenv/config";
+import crypto from "node:crypto";
 
 const BASE_URL = `http://localhost:${process.env.PORT || 4000}`;
 
 const TEST_EMAIL = process.env.TEST_EMAIL;
 const TEST_PASSWORD = process.env.TEST_PASSWORD;
+const DEVICE_ID = crypto.randomUUID();
 
 let csrfToken = null;
 
@@ -51,6 +53,7 @@ function printResult(name, passed, details = "") {
 async function request(path, options = {}) {
   const headers = {
     ...(options.headers || {}),
+    "X-Device-ID": DEVICE_ID,
   };
 
   const cookieHeader = getCookieHeader();
@@ -125,12 +128,10 @@ async function testCsrf() {
     "CSRF Token API",
     passed,
     passed
-      ? `Token received | Cookies: ${
-          cookieNames.join(", ") || "none"
-        }`
-      : `HTTP ${response.status} - ${
-          data?.message || "CSRF token request failed"
-        }`
+      ? `Token received | Cookies: ${cookieNames.join(", ") || "none"
+      }`
+      : `HTTP ${response.status} - ${data?.message || "CSRF token request failed"
+      }`
   );
 
   return passed;
@@ -168,9 +169,8 @@ async function testInvalidLoginValidation() {
     passed,
     passed
       ? "Correctly rejected with HTTP 400"
-      : `HTTP ${response.status} - ${
-          data?.message || "Validation test failed"
-        }`
+      : `HTTP ${response.status} - ${data?.message || "Validation test failed"
+      }`
   );
 
   return passed;
@@ -216,9 +216,8 @@ async function testInvalidCredentials() {
     passed,
     passed
       ? "Correctly rejected with HTTP 401"
-      : `HTTP ${response.status} - ${
-          data?.message || "Authentication test failed"
-        }`
+      : `HTTP ${response.status} - ${data?.message || "Authentication test failed"
+      }`
   );
 
   return passed;
@@ -268,6 +267,7 @@ async function testLogin() {
       body: JSON.stringify({
         email: TEST_EMAIL,
         password: TEST_PASSWORD,
+        deviceId: DEVICE_ID,
       }),
     }
   );
@@ -282,9 +282,8 @@ async function testLogin() {
     passed,
     passed
       ? `Logged in as ${data.user.email}`
-      : `HTTP ${response.status} - ${
-          data?.message || "Login failed"
-        }`
+      : `HTTP ${response.status} - ${data?.message || "Login failed"
+      }`
   );
 
   return passed;
@@ -309,9 +308,8 @@ async function testMe() {
     passed,
     passed
       ? `Current user: ${data.user.email}`
-      : `HTTP ${response.status} - ${
-          data?.message || "Failed"
-        }`
+      : `HTTP ${response.status} - ${data?.message || "Failed"
+      }`
   );
 
   return passed;
@@ -342,9 +340,8 @@ async function testInvalidCsrf() {
     passed,
     passed
       ? "Correctly rejected with HTTP 403"
-      : `HTTP ${response.status} - ${
-          data?.message || "CSRF test failed"
-        }`
+      : `HTTP ${response.status} - ${data?.message || "CSRF test failed"
+      }`
   );
 
   return passed;
@@ -374,9 +371,8 @@ async function testLogout() {
     passed,
     passed
       ? "Session destroyed"
-      : `HTTP ${response.status} - ${
-          data?.message || "Logout failed"
-        }`
+      : `HTTP ${response.status} - ${data?.message || "Logout failed"
+      }`
   );
 
   return passed;
@@ -425,9 +421,8 @@ async function testNotFound() {
     passed,
     passed
       ? "Correctly rejected with HTTP 404"
-      : `HTTP ${response.status} - ${
-          data?.message || "404 test failed"
-        }`
+      : `HTTP ${response.status} - ${data?.message || "404 test failed"
+      }`
   );
 
   return passed;
