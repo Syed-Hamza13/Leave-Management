@@ -6,7 +6,6 @@ import {
   useState,
 } from "react";
 
-import { getDeviceId } from "../../lib/deviceId.js";
 import api from "../../services/api.js";
 
 const AuthContext = createContext(null);
@@ -75,7 +74,6 @@ export function AuthProvider({ children }) {
       body: JSON.stringify({
         email,
         password,
-        deviceId: getDeviceId(),
       }),
     });
 

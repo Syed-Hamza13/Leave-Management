@@ -1,3 +1,4 @@
+import { env } from "../../config/env.js";
 import { loginUser, getCurrentUser } from "./auth.service.js";
 import { loginSchema } from "./auth.validation.js";
 import {
@@ -6,8 +7,17 @@ import {
   validateSession,
 } from "./session.service.js";
 import { revokeSessionById } from "./session.service.js";
+import {
+  generateDeviceToken,
+  getDeviceByToken,
+  registerDevice,
+} from "./device.service.js";
 
 const SESSION_MAX_AGE = 1000 * 60 * 60 * 8;
+
+const DEVICE_COOKIE_NAME = "leave.device";
+
+const DEVICE_COOKIE_MAX_AGE = 1000 * 60 * 60 * 24 * 365;
 
 function generateFreshSession(req) {
   return new Promise((resolve, reject) => {
@@ -43,14 +53,28 @@ export async function login(req, res, next) {
   try {
     const data = loginSchema.parse(req.body);
 
-    const deviceId = data.deviceId || null;
     const userAgent = req.get("user-agent") || null;
+
+    /*
+     * Legacy client device id. requireAuth.js still compares
+     * user_sessions.device_id against this header, so sessions
+     * keep carrying it until the device cookie check replaces it.
+     */
+    const clientDeviceId = req.get("X-Device-ID") || null;
+
+    let device = null;
+    let deviceToken = req.cookies?.[DEVICE_COOKIE_NAME];
+
+    if (deviceToken) {
+      device = await getDeviceByToken(deviceToken);
+    }
 
     console.log("========== LOGIN REQUEST ==========");
     console.log("IP:", req.ip);
     console.log("User-Agent:", userAgent);
-    console.log("X-Device-ID:", req.get("X-Device-ID"));
-    console.log("Body deviceId:", deviceId);
+    console.log("X-Device-ID:", clientDeviceId);
+    console.log("Device cookie present:", Boolean(deviceToken));
+    console.log("Known device:", device ? device.id : null);
     console.log("Session ID BEFORE fresh session:", req.sessionID);
     console.log("Existing session user:", req.session?.user?.id || null);
     console.log("===================================");
@@ -61,6 +85,38 @@ export async function login(req, res, next) {
      * We deliberately do this BEFORE touching the current session.
      */
     const user = await loginUser(data);
+
+    /*
+     * registerDevice() returns { deviceId, deviceToken }, whereas
+     * getDeviceByToken() returns the user_devices row. userDeviceId
+     * keeps one consistent source for the session binding.
+     */
+    let userDeviceId = device?.id ?? null;
+
+    if (!userDeviceId || String(device.user_id) !== String(user.id)) {
+      /*
+       * Either no known device credential, or the credential
+       * belongs to another user. Never attach this user's
+       * sessions to that device — issue a fresh credential.
+       */
+      deviceToken = generateDeviceToken();
+
+      const registered = await registerDevice({
+        userId: user.id,
+        deviceToken,
+        userAgent,
+      });
+
+      userDeviceId = registered.deviceId;
+    }
+
+    res.cookie(DEVICE_COOKIE_NAME, deviceToken, {
+      httpOnly: true,
+      secure: env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: DEVICE_COOKIE_MAX_AGE,
+      path: "/",
+    });
 
     /*
      * Capture the incoming session before replacing req.session.
@@ -84,7 +140,7 @@ export async function login(req, res, next) {
         const validation = await validateSession(
           previousSessionId,
           previousSessionUserId,
-          deviceId,
+          device,
           userAgent
         );
 
@@ -129,7 +185,8 @@ export async function login(req, res, next) {
     await registerSession({
       userId: user.id,
       sessionId,
-      deviceId,
+      userDeviceId,
+      deviceId: clientDeviceId,
       userAgent,
       ipAddress: req.ip || null,
       expiresAt,

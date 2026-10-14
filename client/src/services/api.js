@@ -1,5 +1,4 @@
 const API_PREFIX = "/api/v1";
-import { getDeviceId } from "../lib/deviceId.js";
 
 let csrfToken = null;
 
@@ -63,7 +62,6 @@ async function api(path, options = {}) {
 
   const headers = {
     ...(options.headers || {}),
-    "X-Device-ID": getDeviceId(),
   };
 
   if (

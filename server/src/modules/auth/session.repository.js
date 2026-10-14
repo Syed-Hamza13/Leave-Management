@@ -3,6 +3,7 @@ import { db } from "../../config/database.js";
 export async function createSessionRecord({
   userId,
   sessionId,
+  userDeviceId = null,
   deviceId = null,
   userAgent = null,
   ipAddress = null,
@@ -12,16 +13,18 @@ export async function createSessionRecord({
     `
       INSERT INTO user_sessions (
         user_id,
+        user_device_id,
         session_id,
         device_id,
         user_agent,
         ip_address,
         expires_at
       )
-      VALUES (?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `,
     [
       userId,
+      userDeviceId,
       sessionId,
       deviceId,
       userAgent,
@@ -39,6 +42,7 @@ export async function findSessionById(sessionId) {
       SELECT
         id,
         user_id,
+        user_device_id,
         session_id,
         device_id,
         user_agent,

@@ -10,6 +10,7 @@ import {
 export async function registerSession({
   userId,
   sessionId,
+  userDeviceId,
   deviceId,
   userAgent,
   ipAddress,
@@ -18,6 +19,7 @@ export async function registerSession({
   return createSessionRecord({
     userId,
     sessionId,
+    userDeviceId,
     deviceId,
     userAgent,
     ipAddress,
@@ -32,7 +34,7 @@ export async function getSession(sessionId) {
 export async function validateSession(
   sessionId,
   userId,
-  deviceId,
+  device,
   userAgent
 ) {
   const session = await findSessionById(sessionId);
@@ -68,21 +70,31 @@ export async function validateSession(
     };
   }
 
-  if (!deviceId || !session.device_id) {
+  if (!session.user_device_id) {
     return {
       valid: false,
-      reason: "DEVICE_ID_MISSING",
+      reason: "DEVICE_NOT_BOUND",
     };
   }
 
-  if (session.device_id !== deviceId) {
-    console.log(
-      "🚨 DEVICE ID MISMATCH — SESSION REJECTED"
-    );
+  if (!device) {
+    return {
+      valid: false,
+      reason: "DEVICE_MISSING",
+    };
+  }
 
+  if (String(device.id) !== String(session.user_device_id)) {
     return {
       valid: false,
       reason: "DEVICE_MISMATCH",
+    };
+  }
+
+  if (String(device.user_id) !== String(userId)) {
+    return {
+      valid: false,
+      reason: "DEVICE_USER_MISMATCH",
     };
   }
 
@@ -107,6 +119,7 @@ export async function validateSession(
   return {
     valid: true,
     session,
+    device,
   };
 }
 

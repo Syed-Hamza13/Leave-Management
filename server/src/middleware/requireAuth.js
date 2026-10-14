@@ -3,6 +3,10 @@ import {
   validateSession,
   touchSession,
 } from "../modules/auth/session.service.js";
+import {
+  getDeviceByToken,
+  touchDevice,
+} from "../modules/auth/device.service.js";
 
 function destroySession(req) {
   return new Promise((resolve, reject) => {
@@ -29,8 +33,10 @@ export async function requireAuth(req, res, next) {
     const sessionId = req.sessionID;
     const authenticatedAt = req.session?.authenticatedAt;
 
-    const deviceId = req.get("X-Device-ID");
+    const deviceToken = req.cookies?.["leave.device"];
     const userAgent = req.get("User-Agent");
+
+    const device = await getDeviceByToken(deviceToken);
 
     /*
      * Basic session check
@@ -52,7 +58,7 @@ export async function requireAuth(req, res, next) {
     const registeredSession = await validateSession(
       sessionId,
       userId,
-      deviceId,
+      device,
       userAgent,
     );
 
@@ -64,13 +70,16 @@ export async function requireAuth(req, res, next) {
       // Device/User-Agent mismatch:
       // DO NOT destroy the actual session.
       if (
+        reason === "DEVICE_MISSING" ||
+        reason === "DEVICE_NOT_BOUND" ||
         reason === "DEVICE_MISMATCH" ||
+        reason === "DEVICE_USER_MISMATCH" ||
         reason === "USER_AGENT_MISMATCH" ||
-        reason === "DEVICE_ID_MISSING" ||
         reason === "USER_AGENT_MISSING"
       ) {
         return res.status(401).json({
           success: false,
+          code: "DEVICE_VALIDATION_FAILED",
           message:
             "This session is not valid for this device. Please login again.",
         });
@@ -88,7 +97,9 @@ export async function requireAuth(req, res, next) {
 
         return res.status(401).json({
           success: false,
-          message: "Session expired or revoked. Please login again.",
+          code: "SESSION_INVALID",
+          message:
+            "Session expired or revoked. Please login again.",
         });
       }
     }
@@ -146,6 +157,10 @@ export async function requireAuth(req, res, next) {
      * Update session activity.
      */
     await touchSession(sessionId);
+
+    if (device?.id) {
+      await touchDevice(device.id);
+    }
 
     next();
   } catch (error) {
