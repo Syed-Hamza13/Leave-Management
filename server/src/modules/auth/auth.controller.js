@@ -56,9 +56,8 @@ export async function login(req, res, next) {
     const userAgent = req.get("user-agent") || null;
 
     /*
-     * Legacy client device id. requireAuth.js still compares
-     * user_sessions.device_id against this header, so sessions
-     * keep carrying it until the device cookie check replaces it.
+     * Legacy client device id. It is no longer a validation factor —
+     * sessions keep it only until the device_id cleanup migration.
      */
     const clientDeviceId = req.get("X-Device-ID") || null;
 

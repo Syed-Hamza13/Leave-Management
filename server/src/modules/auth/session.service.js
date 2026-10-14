@@ -98,22 +98,21 @@ export async function validateSession(
     };
   }
 
-  if (!userAgent || !session.user_agent) {
-    return {
-      valid: false,
-      reason: "USER_AGENT_MISSING",
-    };
-  }
-
-  if (session.user_agent !== userAgent) {
-    console.log(
-      "🚨 USER-AGENT MISMATCH — SESSION REJECTED"
-    );
-
-    return {
-      valid: false,
-      reason: "USER_AGENT_MISMATCH",
-    };
+  /*
+   * User-Agent is intentionally NOT an authentication factor.
+   *
+   * It is client-controlled and changes legitimately (browser
+   * updates, extensions, mobile/desktop environments), so treating
+   * it as proof of identity causes false logouts.
+   *
+   * It stays here only as an audit/observability signal.
+   */
+  if (
+    userAgent &&
+    session.user_agent &&
+    userAgent !== session.user_agent
+  ) {
+    console.log("ℹ️ USER-AGENT CHANGED FOR ACTIVE SESSION");
   }
 
   return {

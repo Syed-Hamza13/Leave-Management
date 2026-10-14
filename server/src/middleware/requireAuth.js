@@ -67,15 +67,13 @@ export async function requireAuth(req, res, next) {
 
       console.log(`🚨 SESSION VALIDATION FAILED: ${reason}`);
 
-      // Device/User-Agent mismatch:
+      // Device binding mismatch:
       // DO NOT destroy the actual session.
       if (
+        reason === "DEVICE_MISMATCH" ||
         reason === "DEVICE_MISSING" ||
         reason === "DEVICE_NOT_BOUND" ||
-        reason === "DEVICE_MISMATCH" ||
-        reason === "DEVICE_USER_MISMATCH" ||
-        reason === "USER_AGENT_MISMATCH" ||
-        reason === "USER_AGENT_MISSING"
+        reason === "DEVICE_USER_MISMATCH"
       ) {
         return res.status(401).json({
           success: false,

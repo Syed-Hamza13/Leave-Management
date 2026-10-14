@@ -76,7 +76,7 @@ export async function updateDeviceLastSeen(deviceId) {
       WHERE id = ?
         AND revoked_at IS NULL
     `,
-    [deviceId]
+    [deviceId] 
   );
 }
 
