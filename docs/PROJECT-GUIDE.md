@@ -1,323 +1,328 @@
-# Leave Management - Project Guide
+# Leave Management - Current State and Product Development Plan
 
-**Guide date:** 10 October 2026  
-**Scope:** Current tracked project files and the behavior implemented in this repository.  
-**Important:** This document describes the current state; it does not claim that planned leave-management features already exist.
+**Updated:** 16 October 2026
+**Purpose:** Record what is implemented today, describe the configurable administration product requested, and give a safe, incremental path from the authentication foundation to that product. Proposed features below are plans, not claims about shipped code.
 
-## 1. Quick summary
+## 1. Executive summary
 
-This repository is an early foundation for a leave-management application:
+The repository has a working application shell and an authentication foundation:
 
-- **Server:** Express API with environment validation, MySQL access, Redis-backed sessions and rate limiting, CSRF protection, health checks, and basic login/session endpoints.
-- **Client:** React + Vite starter. `App.jsx` contains a static placeholder component, but its HTML entry file is empty, so the app currently has no working browser mount point; its router file is empty too.
-- **Database:** One SQL schema exists, for the `users` table. There are no leave requests, departments, roles, approvals, holidays, or audit tables yet.
-- **Current implemented features:** health check, CSRF-token issuance, login, current-user lookup, logout, and a command-line user creator.
-- **Not implemented yet:** leave application and approval workflows, user-management screens, frontend authentication flow, authorization roles/permissions, and a database migration system.
+- **Backend:** Express 5 API, MySQL connection pool, Redis-backed sessions and rate limits, CSRF protection, request validation with Zod, auth/health/security modules, and a checksum-verified SQL migration runner.
+- **Frontend:** React 19 + Vite + Tailwind CSS 4, router, login screen, auth provider, protected routes, shared API helper, and a basic authenticated dashboard.
+- **Authentication data:** `users`, session registry, and device registry tables are managed through numbered migrations.
+- **Not implemented yet:** dynamic field/dropdown/form/table builders, configurable records, form-to-table mappings, organization entities, administration user-management UI/API, authorization roles/permissions, reusable design-system components, and product-level test coverage.
 
-So the project is a useful **authentication and infrastructure starting point**, not yet a complete leave-management product.
+The next product is broader than a conventional leave-request form. It is a **metadata-configurable application platform**: administrators define fields, forms, logical tables, mappings, and organization entity types; users then submit records through configured forms.
 
-## 2. Current repository structure
+The first architectural decision should be to treat administrator-created “tables” as **logical tables defined by metadata**, not as arbitrary MySQL tables created from browser input. Keep the authentication `users` table protected and use a validated metadata/record model for extensible data. This avoids unsafe dynamic SQL and makes schema changes, form reuse, and access controls manageable.
+
+## 2. What exists today
+
+### 2.1 Repository layout
 
 ```text
 Leave-Management/
 |-- README.md
-|-- LICENSE
-|-- folder structure.cmd
 |-- docs/
 |   `-- PROJECT-GUIDE.md
 |-- client/
 |   |-- index.html
 |   |-- package.json
-|   |-- package-lock.json
-|   |-- vite.config.js
-|   |-- eslint.config.js
-|   |-- README.md
-|   |-- .gitignore
-|   |-- public/
-|   |   |-- favicon.svg
-|   |   `-- icons.svg
 |   `-- src/
-|       |-- main.jsx
-|       |-- app/
-|       |   |-- App.jsx
-|       |   |-- App.css
-|       |   `-- router.jsx
-|       |-- services/
-|       |   `-- api.js
-|       |-- styles/
-|       |   `-- index.css
-|       `-- assets/
-|           |-- hero.png
-|           |-- react.svg
-|           `-- vite.svg
+|       |-- app/                 # App composition and routes
+|       |-- components/auth/     # ProtectedRoute
+|       |-- features/
+|       |   |-- auth/            # AuthProvider and LoginPage
+|       |   `-- dashboard/       # Initial dashboard
+|       |-- layouts/             # AppShell
+|       |-- services/            # Shared API helper
+|       `-- styles/
 `-- server/
     |-- package.json
-    |-- package-lock.json
     |-- .env.example
-    |-- .gitignore
-    |-- sql/
-    |   `-- 001_auth.sql
-    |-- scripts/
-    |   |-- create-user.js
-    |   `-- test-api.js
+    |-- scripts/                 # Migration, user, password, API scripts
+    |-- sql/migrations/           # Numbered SQL migrations
     `-- src/
-        |-- server.js
-        |-- app.js
-        |-- config/
-        |   |-- env.js
-        |   |-- database.js
-        |   |-- redis.js
-        |   `-- session.js
-        |-- middleware/
-        |   |-- csrf.js
-        |   |-- errorHandler.js
-        |   |-- notFound.js
-        |   |-- rateLimiter.js
-        |   `-- requireAuth.js
+        |-- config/              # Environment, DB, Redis, session
+        |-- middleware/          # CSRF, auth, rate limits, errors
         `-- modules/
-            |-- auth/
-            |   |-- auth.routes.js
-            |   |-- auth.controller.js
-            |   |-- auth.service.js
-            |   |-- auth.repository.js
-            |   `-- auth.validation.js
+            |-- auth/            # Controller/service/repository/validation
             |-- health/
-            |   |-- health.routes.js
-            |   |-- health.controller.js
-            |   `-- health.service.js
             `-- security/
-                `-- security.routes.js
 ```
 
-`node_modules/`, local environment files, and build output are not source files and are excluded by the respective `.gitignore` files. The two `package-lock.json` files lock each application's installed dependency tree.
+The tree intentionally omits dependencies, generated build output, and local environment files. Continue the existing feature/module-based organization rather than moving all business logic into generic shared folders.
 
-## 3. Server: architecture and request lifecycle
+### 2.2 Backend and authentication
 
-### 3.1 Startup sequence
+`server/src/server.js` validates environment configuration, connects Redis, builds the Express application, and starts the listener. `server/src/app.js` composes Helmet, CORS, body parsing, cookies, Redis sessions, rate limiting, API routes, not-found handling, and the error handler.
 
-1. `server/src/server.js` loads `.env` values through `dotenv/config`.
-2. Importing `config/env.js` validates the required configuration with Zod. Invalid/missing values stop the process.
-3. `connectRedis()` connects to Redis. The server does not proceed if this connection fails.
-4. `createApp()` builds the Express app and registers middleware and routes.
-5. Express listens on the configured `HOST` and `PORT` (defaults: `0.0.0.0:4000`).
+Authentication is split into HTTP routes/controllers, services, repositories, and Zod validation. The login route validates credentials, checks the active account and Argon2 hash, creates a fresh session, registers the session in MySQL, and returns a sanitized user object. Authenticated routes validate the registered session/device and user state. `GET /api/v1/auth/me` restores the browser's current-user state; logout revokes and destroys the current session.
 
-Redis is therefore required for the server to start. MySQL is configured as a pool but is not pinged during startup; it is checked by the health endpoint and when an authentication query is made.
+The frontend has a `LoginPage`, `AuthProvider`, `ProtectedRoute`, router, and a fetch helper that sends cookies, fetches/attaches CSRF tokens for mutations, retries once on the recognized invalid-token response, and reports HTTP failures as errors. The dashboard and `AppShell` are deliberately minimal foundations, not the planned administration UX.
 
-### 3.2 Express middleware and route order
+### 2.3 Existing API surface
 
-`server/src/app.js` registers the request pipeline in this order:
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/health` | Report MySQL and Redis dependency health |
+| `GET` | `/api/v1/security/csrf` | Create/refresh the CSRF context and return its token |
+| `POST` | `/api/v1/auth/login` | Validate credentials and establish a session |
+| `GET` | `/api/v1/auth/me` | Return the current active user's sanitized profile |
+| `POST` | `/api/v1/auth/logout` | Revoke and destroy the current session |
 
-1. Disable the `X-Powered-By` header.
-2. Add Helmet security headers.
-3. Configure CORS for the single `FRONTEND_URL`, with credentials enabled.
-4. Parse JSON (up to 1 MB) and URL-encoded request bodies.
-5. Parse cookies, then attach the Redis-backed session.
-6. Apply the global Redis-backed rate limiter (300 requests per 15 minutes).
-7. Mount health, security, and auth routes under `/api/v1`.
-8. Apply the general CSRF-protection middleware for requests that continue past those routes. Login/logout also install CSRF protection explicitly on their routes.
-9. Return a JSON 404 for unmatched routes, then pass errors to the central error handler.
+### 2.4 Persistence and dependencies
 
-Middleware order matters: for example, session middleware must run before a route reads `req.session`, and Redis must be ready before rate-limiter instances are created.
+- MySQL is the source of truth for users and the relational session/device registry.
+- Redis backs Express sessions and rate-limit state.
+- `server/sql/migrations/001_auth.sql` through `005_session_device_binding.sql` create/extend the authentication schema. `server/scripts/migrate.js` applies ordered SQL files, stores SHA-256 checksums, and rejects edits to already-applied migrations.
+- The client uses React, React Router, Vite, and Tailwind CSS 4. The current client scripts are `dev`, `build`, `lint`, and `preview`; no unit-test runner is configured.
+- The server has operational scripts and an integration-style `test-api.js`; its package does not currently expose a unit-test script.
 
-### 3.3 Login and session data flow
+## 3. Product requirements translated into modules
+
+### 3.1 Administration navigation
+
+The authenticated application shell should provide a persistent left navigation with top-level **Administration**, **Organization**, and **Settings** groups. The shell owns navigation state, active route styling, responsive collapse behavior, page header/breadcrumb, and the main content outlet. Do not duplicate sidebars or page chrome across feature pages.
+
+Administration should expose:
+
+1. **Fields** - Create and edit reusable field definitions (label, stable key, type, required/default/constraints, help text, and type-specific settings). Initial types: short text, long text, number, date, dropdown, boolean/checkbox, and toggle. Add email/URL only when there is a clear validation and storage contract. A field definition can be reused by multiple forms.
+2. **Dropdowns** - Manage named option sets with stable option values and editable display labels, ordering, and active state. Dropdown-type fields reference an option set; they must not copy an uncontrolled list into each form.
+3. **Forms** - Define named forms by selecting reusable fields, configuring per-form required/visibility/label overrides only where explicitly supported, and sorting fields by drag-and-drop. Save field order as data. Submit and cancel actions belong to the form renderer, not to persisted field definitions. Provide keyboard-accessible reorder controls as an alternative to drag-and-drop.
+4. **Tables** - Define logical tables, columns, types, and relationships. Allow columns to be added/removed/edited with validation. Show immutable system columns separately from user-managed columns.
+5. **Form mappings** - Configure a form-to-table mapping: each source form field maps to a compatible target logical-table column. Mapping is explicit and editable. The visual connector overlay is a UI for editing this mapping; the persisted mapping is a set of IDs, never screen coordinates or generated SQL.
+
+### 3.2 Organization
+
+Organization has two separate concerns:
+
+- **Entity type definitions** such as Department, Council, Group, or Team. Creating an entity type adds a navigable sub-section.
+- **Entity records** such as “People Operations” or “Engineering”. These records use an explicitly configured form/table mapping.
+
+Do not equate “creating a Team entity type” with creating a new MySQL table. Entity type definitions are metadata; entity records are normal logical-table records. Decide whether the first release supports parent/child organization hierarchy, membership, and multiple organizations. If installations can contain multiple customer organizations, every relevant query and unique key needs a tenant/organization boundary from the start.
+
+### 3.3 User administration and settings
+
+- User management lists existing users and supports authorized creation, deactivation/deletion policy, and password set/reset flows. Prefer deactivation or soft deletion for accounts with historical records.
+- The user-creation form can use a selected form only for safe profile attributes. Email uniqueness, account status, authorization assignment, and password setting remain explicit server-controlled operations. Passwords must never be stored as ordinary dynamic form values or displayed after submission.
+- SMTP configuration is a later Settings feature. Store credentials encrypted using a managed secret/key strategy, never return secrets from read APIs, and validate delivery with an explicit test action.
+- Separate **authentication** (who signed in) from **authorization** (what they may do). The current auth guard does not provide role/permission management. Add server-enforced permissions before exposing admin mutation APIs.
+
+## 4. Recommended architecture and data safety
+
+### 4.1 Metadata-first logical tables
+
+Recommended baseline schema (names are illustrative; finalize through migrations):
+
+| Area | Suggested metadata/data |
+|---|---|
+| Fields | `field_definitions`: stable key, label, data type, config JSON, status, timestamps |
+| Dropdowns | `dropdown_definitions`, `dropdown_options`: stable option value, label, order, status |
+| Logical tables | `table_definitions`, `column_definitions`: table/column keys, data type, constraints, relation target, system/managed flag |
+| Forms | `form_definitions`, `form_fields`: form-to-field references, order, per-form config |
+| Mappings | `form_table_mappings`, `field_column_mappings`: selected form/table and source/target IDs |
+| Organization | `organization_entity_types`: label/key and optional hierarchy/configuration |
+| Records | `table_records`: logical table ID, schema version, typed/validated JSON values, timestamps and actor |
+| Auditing | `audit_events`: actor, action, target, safe change summary, timestamp |
+
+Keep ownership, actor, status, and timestamps as indexed relational columns on records where querying/access policy needs them. A JSON payload is appropriate for the variable user-defined values in an initial release; validate every key and value against the active table definition on the server. For high-volume reporting or filtering across arbitrary values, benchmark first and introduce typed value rows/generated indexes as required. Do not choose a fully generic EAV model or dynamically created SQL tables without a demonstrated need and measured query plan.
+
+For column relationships, persist a target logical table/column reference and an explicit relation policy (for example, single reference vs. multi-reference). Validate referenced records belong to the expected logical table and are visible to the current organization. Enforce referential integrity in the application transaction; add physical foreign keys only for stable, fixed relationships.
+
+### 4.2 Protect authentication-owned data
+
+`users` is an authentication/system table, not an administrator-defined table. Its core columns (`id`, `email`, `password_hash`, status, login/security timestamps, and audit timestamps) are immutable through the generic table builder. If admins need extra user profile fields, store those in a separate custom-profile mechanism keyed to `users.id`; do not let custom column operations alter auth columns. User APIs must use the auth/user service, not generic record CRUD.
+
+### 4.3 SQL injection and validation controls
+
+SQL parameter placeholders protect **values**, not table names, column names, sort expressions, or SQL fragments. Therefore:
+
+- Never interpolate client-provided identifiers or mapping values into SQL.
+- Prefer fixed metadata tables plus parameterized queries. If an identifier must be generated, derive it only from a server-owned definition and validate it against a strict allow-list; do not treat a valid-looking string as trusted.
+- Parse request bodies with Zod schemas on every write endpoint. Enforce allowed keys, field types, lengths, numeric/date bounds, option membership, required fields, and relation targets on the server even if the browser already validates them.
+- Validate stored form/table/mapping metadata again at submission time. Definitions can change after a browser loaded a form.
+- Use transactions for record insert plus related writes/audit events; return a clear 400/409 for invalid values or stale/conflicting definitions without leaking SQL details.
+- Add authorization checks, rate limits for sensitive operations, CSRF checks for cookie-authenticated mutations, and audit events for administration actions.
+
+Frontend validation is for guidance and fast feedback; backend validation is authoritative. React escaping should be preserved; never render administrator labels/record values as raw HTML.
+
+### 4.4 Mapping and schema lifecycle
+
+- Give each field, form, table, column, option set, and option a stable ID/key. Labels are editable; IDs/keys are not silently regenerated.
+- A mapping must reject missing fields/columns, incompatible data types, duplicate target assignments where disallowed, and inactive/deleted definitions.
+- Deleting an item referenced by forms, mappings, or records must be blocked or require an explicit archive/migration workflow. Avoid destructive cascade deletion of user-created data.
+- Version definitions. On form submission, validate against the current published version and record the version used. Decide whether editing a table/form changes old records, preserves old schema versions, or requires an explicit migration.
+- Define transaction/rollback expectations for creating an entity type and its required form/table configuration.
+
+## 5. Frontend component and interaction plan
+
+Keep shared components reusable by behavior and variants, not by adding unrelated flags until a single component becomes hard to understand. Feature pages should compose shared controls and own feature-specific workflows.
+
+### 5.1 Shared UI primitives
+
+Establish a small `components/ui/` layer before implementing the builders:
+
+- `Button`: variants, sizes, loading/disabled state, icon placement, accessible name.
+- `TextInput`, `Textarea`, `Select`, `Checkbox`, `Toggle`, `DateInput`, `NumberInput`: controlled value, label, hint, error, disabled state, required state; native semantic inputs where suitable.
+- `FormField`/`FieldRenderer`: render a supported dynamic-field definition through the shared input primitives and a single typed-value contract.
+- `SearchInput`: query value, clear action, accessible label, optional debounce controlled by caller.
+- `DataTable`: column definitions, empty/loading/error states, row actions, sorting and pagination contract.
+- `ColumnFilter`: per-column filter UI. Fetch distinct values from a bounded, searchable, paginated server endpoint; do not load every possible database value into the browser. Support type-appropriate operators (text contains/equality, number/date range, boolean, dropdown option).
+- `Modal`/`Drawer`: focus trap, escape/close behavior, focus restoration, accessible title. Use the same overlay foundation for mapping configuration.
+- `ToastProvider`/`useToast`: consistent success/info/warning/error messages with dismissal and accessible live region. Do not use toast as the only way to show persistent form errors.
+- `LoadingState`/`Spinner` and skeleton primitives: configurable size/label; use for route, table, and submit states. Avoid indefinite spinners when a request fails.
+- `ConfirmDialog`: destructive action confirmation with explicit object/action context.
+
+Use a single design token/theme source in Tailwind/CSS for color, spacing, radii, focus rings, and typography. Reusable components should accept focused `className`/variant options where repository conventions allow, rather than copy-pasted styling on every page.
+
+### 5.2 Builder UX
+
+- Provide create/edit pages with list, search, empty state, validation, loading, save feedback, and unsaved-change handling.
+- Show a guided sequence: create field/option set → compose form → define table/columns → map form → configure organization use → submit and inspect records.
+- The mapping overlay should display form fields and target columns as clear labelled lists/canvases; connecting a field to a column updates a mapping draft. Include keyboard-accessible mapping controls, type compatibility messages, remove/reassign actions, and save/cancel. Persist mapping IDs only after validation.
+- Drag-and-drop form ordering must support pointer and keyboard operation, visible position feedback, and a non-drag reorder option.
+- Responsive navigation should collapse to a labelled menu on narrow screens; tables need a deliberate mobile strategy rather than horizontal overflow as the only interaction.
+- For all mutation flows, disable duplicate submission, preserve recoverable user input after server errors, and show field-level errors from the API.
+
+## 6. Backend module and API plan
+
+Continue the current Express pattern: `*.routes.js` → `*.controller.js` → `*.service.js` → `*.repository.js` with `*.validation.js`. Keep SQL in repositories, business rules in services, and HTTP concerns in controllers. Add focused shared helpers only when more than one module needs the same behavior.
+
+Suggested modules as the product grows:
 
 ```text
-Browser/client
-  | GET /api/v1/security/csrf
-  v
-Express -> session middleware -> security route
-  | saves anonymous session in Redis
-  | returns CSRF token and cookies
-  v
-Browser stores leave.sid cookie and sends token in X-CSRF-Token
-  | POST /api/v1/auth/login { email, password }
-  v
-auth route -> login limiter -> CSRF check -> controller
-  -> Zod validation -> regenerate session -> auth service
-  -> repository SELECT from MySQL -> Argon2 password verification
-  -> update last_login_at -> set session.user.id -> save session in Redis
-  v
-JSON user response + authenticated session cookie
+server/src/modules/
+|-- auth/                     # Existing login/session/device
+|-- users/                    # Admin user lifecycle and custom profile values
+|-- authorization/            # Roles, permissions, policy checks
+|-- fields/                   # Field definitions
+|-- dropdowns/                # Option-set definitions/options
+|-- forms/                    # Form definitions and field ordering
+|-- tables/                   # Logical table/column definitions
+|-- mappings/                 # Form-to-table mapping and validation
+|-- records/                  # Validated record submissions, reads and filters
+|-- organization/             # Entity types, records and configuration
+|-- settings/                 # Non-secret app settings and SMTP workflow
+`-- audit/                    # Administrative audit recording/query
 ```
 
-The authenticated session stores only the user ID (`session.user.id`); profile fields are fetched from MySQL by `/auth/me`. The controller regenerates the session before checking the password, so even an unsuccessful login attempt replaces the prior anonymous session. After successful login the session ID changes, so clients should fetch a fresh CSRF token before a later CSRF-protected request such as logout.
+Potential versioned API boundaries (exact resource names may evolve):
 
-#### Current API endpoints
+| Resource | Example endpoints |
+|---|---|
+| Fields | `GET/POST /api/v1/admin/fields`, `GET/PATCH/DELETE /api/v1/admin/fields/:id` |
+| Dropdowns | `GET/POST /api/v1/admin/dropdowns`, item/option update routes |
+| Forms | `GET/POST /api/v1/admin/forms`, `GET/PATCH/DELETE /api/v1/admin/forms/:id` |
+| Tables | `GET/POST /api/v1/admin/tables`, table/column update and archive routes |
+| Mappings | `GET/PUT /api/v1/admin/tables/:tableId/mappings/:formId` |
+| Records | `POST /api/v1/tables/:tableId/records`, paginated list and filter-facet routes |
+| Organization | entity-type CRUD plus scoped entity-record routes |
+| Users | paginated list, create, deactivate, and explicit password reset/set routes |
 
-| Method | Path | Purpose | Main behavior |
-|---|---|---|---|
-| `GET` | `/api/v1/health` | Dependency health | Pings MySQL and Redis; returns HTTP 200 when both are up, otherwise 503. |
-| `GET` | `/api/v1/security/csrf` | Start/refresh CSRF context | Saves an anonymous session and returns a CSRF token. |
-| `POST` | `/api/v1/auth/login` | Sign in | Requires CSRF token; validates input; verifies active user and Argon2 hash; establishes session. |
-| `GET` | `/api/v1/auth/me` | Get signed-in user | Requires a session user ID; loads the current active user from MySQL. |
-| `POST` | `/api/v1/auth/logout` | Sign out | Requires CSRF and authentication; destroys the server-side session and clears `leave.sid`. |
+Every protected route must check both authentication and the permission required for the action. Add pagination, stable sorting, bounded filter complexity, and a consistent response/error contract before implementing large lists.
 
-### 3.4 How data is stored
+## 7. Phased implementation roadmap
 
-`server/sql/001_auth.sql` creates one table, `users`:
+The order below reduces rework: establish shared contracts and authorization before exposing configurable mutations, then deliver a complete vertical slice before expanding builders. Estimates are indicative **single-developer effort**, excluding stakeholder decisions, deployment, and waiting time; revise after the first schema/API spike.
 
-- `id`: auto-increment unsigned integer primary key.
-- `email`: required and unique.
-- `password_hash`: required Argon2 hash; plaintext passwords should not be stored.
-- `first_name`, `last_name`, `status`: profile and account status (`active` by default).
-- `last_login_at`, `password_changed_at`, `created_at`, `updated_at`: timestamps.
-- `idx_users_status`: index for status lookups.
+| Phase | Scope and deliverable | Indicative effort | Completion gate |
+|---|---|---:|---|
+| 0. Foundation audit | Verify login/CSRF/session flows against a clean environment; record API/error conventions; decide single-org vs multi-org and permission roles; define dynamic data model and deletion/version policy. | 2-4 days | Written domain decisions and reproducible auth checks; no stale claims in docs. |
+| 1. Authorization + platform base | Add roles/permissions and server-side guards; audit primitives; migration and test conventions; shared API error/validation contract. | 4-7 days | Unauthorized users cannot call admin mutations directly; tests cover deny/allow. |
+| 2. Reusable UI foundation + shell | Navigation layout, design tokens, UI primitives, loading/empty/error/toast, search, modal, table shell and accessibility baseline. | 4-7 days | Shared controls are used by at least two feature surfaces; lint/build pass. |
+| 3. Metadata builders | CRUD for fields and dropdowns, type-specific validation/config, search/list/detail states, safe archive behavior. | 5-8 days | Definition CRUD survives reload; invalid type/config rejected by API. |
+| 4. Forms and ordering | Form CRUD, reusable fields, per-form settings, persisted order, keyboard/pointer reorder, dynamic renderer. | 4-7 days | One field can be reused in multiple forms without changing other forms. |
+| 5. Logical tables and records | Table/column builder, protected system columns, typed record validation/storage, bounded list/search/sort/filter. | 6-10 days | Valid rows persist; invalid columns/values cannot affect SQL or auth schema. |
+| 6. Mapping and organization | Mapping overlay/API, compatibility checks, organization entity types, configured record entry, transaction/audit behavior. | 5-8 days | Submit through mapped form stores every value in the intended logical column; mapping edit works. |
+| 7. User admin + settings | User list/create/deactivate/reset flows with dedicated service; safe profile form mapping; SMTP configuration only when secret storage and deployment approach are decided. | 4-8 days | Admin actions are permission-gated and audited; passwords are never exposed/stored as form values. |
+| 8. Hardening and release | Performance, accessibility, security, migrations, backups, observability, integration/e2e tests, upgrade/recovery docs. | 4-8 days | Release checklist, migration rehearsal, restore/rollback plan and acceptance sign-off. |
 
-The SQL file must currently be applied manually to the configured MySQL database. No migration runner or schema version table is present.
+**Indicative total:** about 34-59 developer-days for the described breadth. A narrower MVP can omit SMTP, advanced hierarchy, arbitrary cross-table reporting, and bulk imports. Estimate again after Phase 0; scope/permission decisions can materially change the design.
 
-Redis stores Express sessions with the `leave-session:` prefix. Rate limiting also uses Redis, so the service is being used for more than just session persistence. The Redis connection settings come from environment variables.
+### Recommended MVP vertical slice
 
-### 3.5 Server file-by-file guide
+1. Admin permission can create a field, one dropdown, one form, one logical table and compatible columns.
+2. Admin maps the form to the table.
+3. An authorized organization user opens that form, submits valid data, and sees the new record in a paginated table.
+4. Invalid data, stale mappings, duplicate submissions, and unauthorized users receive explicit errors.
+5. The action is audited; the users authentication columns remain unchanged.
 
-#### Entrypoints and app wiring
+Deliver this full slice before creating every requested field type or advanced Excel-like filter. It validates the data model and integration points early.
 
-- `server/src/server.js` - Loads environment values, connects Redis, creates the Express app, and starts listening. Startup failures are logged and terminate the process.
-- `server/src/app.js` - Central Express composition point: security/CORS/body/session/rate-limit middleware, API mounting, not-found and error handling.
+## 8. Validation, security, and quality gates
 
-#### Configuration
+### Backend
 
-- `server/src/config/env.js` - Zod schema and validation for runtime configuration. Defaults are provided for environment, host, ports, and Redis password; frontend URL, database/Redis hosts and credentials, and a 32-character session secret are required.
-- `server/src/config/database.js` - Creates a MySQL connection pool and exports a ping helper. Auth repository functions use this pool.
-- `server/src/config/redis.js` - Creates the Redis client, registers connection-state logging, and exports connect/ping helpers.
-- `server/src/config/session.js` - Configures Express sessions to use Redis, names the cookie `leave.sid`, sets an eight-hour lifetime, and enables secure cookies in production.
+- Unit-test field-type validators, mapping compatibility, permission policies, and record validation.
+- Integration-test migrations against MySQL; test repositories/services with isolated data and rollback/cleanup.
+- Test CSRF, session expiry/revocation, permission denial, duplicate keys, oversized bodies, invalid IDs, relation targets, and concurrent edits.
+- Exercise injection payloads in labels, keys, filters, sort requests, and record values. Verify identifiers are never directly interpolated and query errors do not expose SQL.
+- Use transactions for record plus audit writes. Plan for MySQL DDL non-transactional behavior and migrations that may partially apply; back up before production migrations.
+- Establish rate limits for login and sensitive admin actions; review PII retention, logs, password reset policy, secrets, and audit visibility.
 
-#### Middleware
+### Frontend
 
-- `server/src/middleware/csrf.js` - Configures `csrf-csrf`; the request token is read from `X-CSRF-Token`. The CSRF cookie is readable by JavaScript, while the session cookie is HttpOnly.
-- `server/src/middleware/errorHandler.js` - Logs errors and returns JSON. It avoids writing a second response if headers have already been sent and hides details for status 500.
-- `server/src/middleware/notFound.js` - Returns JSON 404 including the requested method and URL.
-- `server/src/middleware/rateLimiter.js` - Creates global and login-specific rate limiters backed by Redis. Login limit: 100 attempts per 15 minutes.
-- `server/src/middleware/requireAuth.js` - Allows a request through only when `req.session.user.id` exists; otherwise returns 401.
+- Component tests for field rendering, validation feedback, loading/error/empty states, keyboard interaction and accessible labels.
+- Feature tests for builder CRUD, mapping edits, record submission, duplicate-submit prevention, and permission-aware navigation. Hiding a menu item is not authorization.
+- End-to-end test login → admin config → organization form submit → record list, including failed validation and stale/expired session.
+- Run `npm run lint` and `npm run build` in `client/`; add a test script/runner only when the test design and dependency change are agreed.
 
-#### Auth module
+### Operational gates
 
-- `server/src/modules/auth/auth.routes.js` - Declares login, logout, and `/me` routes and attaches the relevant login limiter, CSRF check, and auth guard.
-- `server/src/modules/auth/auth.controller.js` - HTTP boundary. Parses login input, manages session regeneration/save/destroy, calls the service, and shapes JSON responses.
-- `server/src/modules/auth/auth.service.js` - Authentication rules: lowercases email, checks active status, verifies Argon2 password hashes, updates last login, and returns a sanitized user object.
-- `server/src/modules/auth/auth.repository.js` - MySQL queries for finding users by email/ID and updating last-login time. Uses placeholders for query values.
-- `server/src/modules/auth/auth.validation.js` - Zod login input schema: trimmed valid email (maximum 255 chars) and non-empty password (maximum 128 chars).
+- Add `/api/v1` contract documentation (or generated OpenAPI) and seed/test data procedures.
+- Verify startup/readiness behavior for both MySQL and Redis; health checks must distinguish liveness from readiness if deployment needs them.
+- Record migration backups, deploy ordering, checksum policy, recovery steps, and environment-secret ownership.
+- Use structured, redacted logs; do not log session IDs, device tokens, passwords, CSRF tokens, SMTP credentials, or full sensitive record payloads.
 
-#### Health and security modules
+## 9. Current gaps and design risks to resolve
 
-- `server/src/modules/health/health.routes.js` - Maps `GET /` on the health router to its controller.
-- `server/src/modules/health/health.controller.js` - Converts health status to the HTTP response and chooses 200 or 503.
-- `server/src/modules/health/health.service.js` - Pings MySQL and Redis independently and reports each as up/down plus an overall status and timestamp.
-- `server/src/modules/security/security.routes.js` - Implements `GET /csrf`; persists an anonymous session before generating and returning the CSRF token.
+1. **Authorization is absent:** current `requireAuth` establishes an authenticated user, not an admin/organization permission model. Build server-side RBAC/policy checks before dynamic builders.
+2. **No product domain/schema yet:** field/form/table/record/organization concepts need a versioned data model and lifecycle rules before the UI/API are implemented.
+3. **Flexible schema can become unsafe:** dynamic SQL identifiers and user-defined SQL tables are high-risk. Use fixed metadata tables, validated typed values, and server-owned IDs.
+4. **Excel-style filters can become expensive:** querying every distinct value for every column is unbounded. Use server-side, indexed/paginated facets, search, and filter complexity limits.
+5. **Definition changes can invalidate saved mappings or records:** stable identifiers, archive rules, compatibility checks, schema versions, and explicit migrations are needed.
+6. **User table is security-sensitive:** generic column editing must not modify/delete authentication fields. Custom user attributes need a separate storage boundary.
+7. **Testing is thin:** available scripts include an API integration helper, but package scripts do not define unit/e2e test suites. Add tests with the first new domain module, not after all builders are complete.
+8. **Auth should be verified, not assumed:** the repository contains a substantial login/session/CSRF implementation, but product readiness still depends on running the API checks in the target environment and testing failure paths. Avoid expanding the meaning of “authentication complete” to include authorization, user lifecycle, recovery/MFA, or account policy that is not present.
+9. **Two router packages are listed:** client dependencies include both `react-router` and `react-router-dom` at different major versions. Before adding routes, confirm the intended React Router package/version and remove duplication only after compatibility is verified.
+10. **No committed design system:** Tailwind is configured, but reusable Button/Input/Table/Toast/Loading primitives and design tokens are not yet established. Build them early to avoid inconsistent one-off UI.
+11. **SMTP/security operations need a secret strategy:** credentials must be encrypted and rotation/deployment key ownership defined before SMTP settings are built.
+12. **Tenant boundary is undecided:** if a deployment may host multiple organizations/customers, add tenant isolation to schema, indexes, authorization, and every repository query before the first data feature. Retrofitting this is expensive.
 
-#### Database and operational scripts
+These are planning findings, not a security audit or a claim that each item is currently exploitable.
 
-- `server/sql/001_auth.sql` - Initial `users` table definition. It is not automatically executed.
-- `server/scripts/create-user.js` - Interactive command-line utility to create a user and hash their password with Argon2id.
-- `server/scripts/test-api.js` - Small end-to-end API test runner. Maintains a cookie jar and tests health, CSRF, login, `/me`, logout, and `/me` after logout. It needs `TEST_EMAIL` and `TEST_PASSWORD` in the local environment for authenticated checks.
-- `server/package.json` - Server scripts and runtime dependencies. `dev` starts nodemon, `start` runs Node, `create-user` runs the user utility, and `test-api` runs the API script.
-- `server/package-lock.json` - Exact resolved server dependency versions; normally updated by npm when dependency manifests change.
-- `server/.env.example` - Names and example values for required server configuration. Copy to a local `.env` and replace placeholders; do not commit real credentials.
-- `server/.gitignore` - Excludes dependency folders, environment files (except the example), logs, coverage, and build output.
+## 10. Working agreements for future changes
 
-## 4. Client: current behavior and connection to the server
+- Keep frontend features under `client/src/features/<feature>/`; put generic visual primitives in `client/src/components/ui/`; keep app composition and route definitions under `client/src/app/`.
+- Keep each backend feature cohesive under `server/src/modules/<feature>/`, following existing routes/controller/service/repository/validation conventions.
+- Put all persistent schema changes in a new, numbered migration. Never edit a migration already applied to a shared environment; the current runner enforces checksums.
+- Keep values parameterized and identifiers server-owned. No endpoint accepts raw SQL, SQL fragments, or arbitrary column names.
+- Keep a stable API contract and use shared client API/error handling; avoid page-specific fetch implementations.
+- Preserve accessibility, loading/error/empty states, and server-side authorization in each feature.
+- Update this guide when actual shipped behavior changes; label planned behavior as planned until implemented and tested.
 
-### Current browser/API flow
-
-- Vite serves the client on port 5173.
-- `client/vite.config.js` proxies requests beginning with `/api` to `http://localhost:4000` during development.
-- `client/src/services/api.js` sends requests to `/api/v1...` with `credentials: "include"` so browser cookies can travel with requests. It expects a JSON response and throws an `Error` when the response is not successful.
-- `client/src/main.jsx` is intended to mount `App` into the HTML element with ID `root`.
-- `client/src/app/App.jsx` currently returns only a centered heading and “Application foundation is running.”
-
-At present, the `api.js` helper is not used by `App.jsx`; there is no implemented login form, CSRF-token fetching flow, session state, or API-driven page.
-
-### Client file-by-file guide
-
-- `client/index.html` - Vite's HTML entry point. **Currently empty (0 bytes)**, so it has no `#root` element or module script to load React.
-- `client/src/main.jsx` - Imports React's `createRoot`, `App`, and global CSS, then tries to mount the app at `#root`.
-- `client/src/app/App.jsx` - Minimal static placeholder component; no application screens or leave features. The component is not currently mounted because the HTML entry file is empty.
-- `client/src/app/router.jsx` - **Currently empty (0 bytes)** and not imported by `main.jsx`; no client-side routing is in use.
-- `client/src/app/App.css` - Starter/template CSS selectors for a sample landing page. `App.jsx` does not import it, so these styles currently have no effect.
-- `client/src/styles/index.css` - Imports Tailwind CSS and sets basic page/root sizing and body margin.
-- `client/src/services/api.js` - Shared fetch helper for the backend API; includes cookies, JSON content type, and basic HTTP error handling, but does not yet manage CSRF tokens.
-- `client/src/assets/hero.png` - Static image asset (layered abstract graphic); no current import/use in `App.jsx`.
-- `client/src/assets/react.svg`, `client/src/assets/vite.svg` - Starter logos; no current import/use in `App.jsx`.
-- `client/public/favicon.svg` - Browser favicon asset.
-- `client/public/icons.svg` - SVG symbol collection (social/documentation-style icons); not currently referenced by the placeholder app.
-- `client/vite.config.js` - Enables React and Tailwind Vite plugins and configures the dev server/proxy.
-- `client/eslint.config.js` - ESLint configuration for JavaScript/JSX, React Hooks, React Refresh, and browser globals.
-- `client/package.json` - Client scripts (`dev`, `build`, `lint`, `preview`) and React/Vite/Tailwind dependencies.
-- `client/package-lock.json` - Exact resolved client dependency versions.
-- `client/README.md` - Still the generic React/Vite starter README; it does not explain this application's actual setup or features.
-- `client/.gitignore` - Excludes dependencies, local environment files, build output, logs, and coverage.
-
-## 5. Root-level files
-
-- `README.md` - Currently only contains the project title; it does not provide setup or architecture guidance.
-- `LICENSE` - Repository license file.
-- `folder structure.cmd` - Windows command script intended to create a starter directory/file layout. It does not represent the current implemented architecture exactly.
-- `docs/PROJECT-GUIDE.md` - This guide.
-
-**Caution about `folder structure.cmd`:** it uses `type nul > file` for a number of files. That redirection creates an empty file and can truncate an existing file if the script is run again. It also includes `server/.env` among the target paths. Do not rerun it in its current form without first changing it to safely create only missing files and protecting local secrets.
-
-## 6. Current gaps and flaws to plan around
-
-These are observations about the current code, not changes made by this guide.
-
-### Priority 0 - Client cannot currently boot as an app
-
-`client/index.html` is empty, while `main.jsx` requires an element with `id="root"` and a script that loads the React entry point. As-is, there is no HTML mount point or module entry to render the UI. `router.jsx` is also empty and unused. Restore a valid Vite HTML entry first, then decide whether routing is needed.
-
-### Priority 1 - Login input validation errors can become HTTP 500
-
-`auth.controller.js` calls `loginSchema.parse()`. A Zod validation exception reaches `errorHandler.js`, which only reads `err.statusCode`; validation errors do not get translated to a client-facing 400 response here, so malformed login input can be reported as an internal server error. Add an explicit validation-error mapping and test invalid email/password cases.
-
-### Priority 1 - Frontend and backend security flow are not connected
-
-The server requires a CSRF token for login/logout, and successful login regenerates the session. The frontend API helper includes cookies but does not fetch or attach `X-CSRF-Token`; the current UI does not call the helper at all. Implement and test the complete CSRF-cookie/session/login/logout lifecycle before building authenticated screens.
-
-### Priority 1 - User creation and login validation are not fully consistent
-
-The CLI creator enforces a minimum password length of 8, while login accepts at most 128 characters. The creator does not enforce that same maximum, so it can create a password that the login endpoint later rejects. The creator also has less input validation than the API schema. Share or align these rules and add tests.
-
-### Priority 2 - Error responses and API helper assumptions need hardening
-
-The client helper always calls `response.json()`. A non-JSON response (for example, a proxy/server error page) will throw a parsing error before the helper can report a useful API error. Consider safe content-type-aware parsing and a consistent API error shape.
-
-### Priority 2 - Operational/schema lifecycle is manual
-
-There is one SQL file but no migration/rollback mechanism, startup DB readiness check, or documented environment setup at the repository root. Schema changes will need a repeatable migration approach before multiple environments or contributors are involved.
-
-### Priority 2 - Account-management boundaries are still minimal
-
-There is no role/permission model, account administration API, password reset/change flow, account lockout policy, leave-related schema, or audit trail. `status` is checked for active users, but there is no workflow in this repository to manage status or permissions.
-
-### Priority 3 - Project documentation and setup script are stale
-
-Root README is only a title, client README is template text, and the structure script can truncate files. Replace these with accurate setup instructions and make the script safe or retire it.
-
-## 7. Suggested next implementation order
-
-1. **Make the app start:** fill in `client/index.html` with the Vite module entry and `#root`; verify the client build and browser render.
-2. **Document local setup:** explain MySQL/Redis prerequisites, `.env` creation, manual schema application, server/client startup, and user creation.
-3. **Fix API contracts:** map Zod errors to 400 and add validation/error-shape tests; align CLI and login password rules.
-4. **Wire authentication end to end:** implement CSRF token acquisition, login, `/me`, logout, loading/error states, and session refresh behavior in the client.
-5. **Define the product domain:** decide roles and permissions, leave request states, approvers, leave types/balances, holidays, and audit requirements before adding tables/endpoints.
-6. **Add durable schema management and tests:** introduce migrations and tests for authorization, failure paths, and leave workflows as those features are implemented.
-
-## 8. Local run outline
+## 11. Local commands currently available
 
 From `server/`:
 
-1. Install dependencies with `npm install`.
-2. Copy `.env.example` to `.env`, then configure MySQL, Redis, frontend URL, and a strong session secret.
-3. Apply `sql/001_auth.sql` to the configured MySQL database.
-4. Create a user with `npm run create-user`.
-5. Start the API with `npm run dev`.
+```powershell
+npm run migrate
+npm run dev
+npm run create-user
+npm run test-api
+```
 
-From `client/`, install dependencies and run `npm run dev`. The Vite proxy forwards `/api` requests to the local server. **The client entry file is currently empty, so restore it before expecting the React UI to render.**
+From `client/`:
 
-To run the API script, start the server and provide `TEST_EMAIL` and `TEST_PASSWORD` locally, then run `npm run test-api` from `server/`. It is an integration-style script, not a unit-test suite, and authenticated cases depend on a valid test user.
+```powershell
+npm run dev
+npm run lint
+npm run build
+```
 
-## 9. Key takeaways
+The server requires values from `server/.env.example`, a reachable MySQL and Redis instance, and a strong session/CSRF secret. The Vite development server proxies `/api` requests to the configured local API. Use disposable test users/data for integration checks; never put real secrets in the repository.
 
-- The backend currently has a clear separation of routes, controllers, services, repositories, config, and middleware.
-- The implemented backend domain is authentication/health only; leave-management behavior is still future work.
-- MySQL is the source for user records; Redis stores sessions and rate-limit state.
-- The frontend is not yet connected to backend behavior and currently has empty boot/router placeholders.
-- The safest next step is to repair and verify the client entry, then align API validation and CSRF behavior before expanding product features.
+## 12. Summary
+
+The repository is a useful modular authentication foundation and already has a basic authenticated React shell. The requested configurable platform should be built as a metadata-driven system, with authorization, schema/version lifecycle, protected auth data, reusable UI, and server-authoritative validation designed in before CRUD screens multiply. The safest first milestone is the end-to-end MVP vertical slice described above, followed by the remaining admin, organization, user-management, and settings workflows.
