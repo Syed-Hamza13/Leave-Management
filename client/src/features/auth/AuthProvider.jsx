@@ -1,14 +1,11 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useRef,
   useState,
 } from "react";
 
 import api from "../../services/api.js";
-
-const AuthContext = createContext(null);
+import { AuthContext } from "./AuthContext.js";
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -100,7 +97,12 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    loadCurrentUser();
+    /*
+     * Started from a microtask: the session check only writes state once the
+     * request settles, and this keeps the mount effect itself free of state
+     * writes.
+     */
+    void Promise.resolve().then(loadCurrentUser);
   }, []);
 
   async function login(email, password) {
@@ -159,13 +161,4 @@ export function AuthProvider({ children }) {
     </AuthContext.Provider>
   );
 }
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-
-  if (!context) {
-    throw new Error("useAuth must be used inside AuthProvider");
-  }
-
-  return context;
-} 
+ 

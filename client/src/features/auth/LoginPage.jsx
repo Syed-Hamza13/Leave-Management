@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
-import { useAuth } from "./AuthProvider.jsx";
+import { useAuth } from "./AuthContext.js";
 
 function LoginPage() {
   const { login, isAuthenticated } = useAuth();

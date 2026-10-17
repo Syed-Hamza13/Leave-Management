@@ -1,8 +1,10 @@
 import "dotenv/config";
 
-import argon2 from "argon2";
 import { db } from "../src/config/database.js";
-import { validatePassword } from "../src/modules/auth/password.policy.js";
+import {
+  hashPassword,
+  validatePassword,
+} from "../src/modules/auth/password.policy.js";
 
 async function resetPassword() {
   const email = process.argv[2];
@@ -46,12 +48,7 @@ async function resetPassword() {
       process.exit(1);
     }
 
-    const passwordHash = await argon2.hash(password, {
-      type: argon2.argon2id,
-      memoryCost: 65536,
-      timeCost: 3,
-      parallelism: 4,
-    });
+    const passwordHash = await hashPassword(password);
 
     await db.execute(
       `

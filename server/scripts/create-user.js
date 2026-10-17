@@ -1,11 +1,13 @@
 import "dotenv/config";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import argon2 from "argon2";
 
 import { db } from "../src/config/database.js";
 
-import { validatePassword } from "../src/modules/auth/password.policy.js";
+import {
+  hashPassword,
+  validatePassword,
+} from "../src/modules/auth/password.policy.js";
 
 const rl = readline.createInterface({
   input,
@@ -78,12 +80,7 @@ async function main() {
       throw new Error("A user with this email already exists.");
     }
 
-    const passwordHash = await argon2.hash(password, {
-      type: argon2.argon2id,
-      memoryCost: 65536,
-      timeCost: 3,
-      parallelism: 4,
-    });
+    const passwordHash = await hashPassword(password);
 
     const [result] = await db.execute(
       `

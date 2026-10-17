@@ -1,5 +1,22 @@
+import argon2 from "argon2";
+
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 128;
+
+/*
+ * One set of Argon2 parameters for every writer, so a hash produced by the CLI
+ * and one produced by the API verify the same way.
+ */
+const ARGON2_OPTIONS = {
+  type: argon2.argon2id,
+  memoryCost: 65536,
+  timeCost: 3,
+  parallelism: 4,
+};
+
+export async function hashPassword(password) {
+  return argon2.hash(password, ARGON2_OPTIONS);
+}
 
 const PASSWORD_RULES = {
   uppercase: /[A-Z]/,

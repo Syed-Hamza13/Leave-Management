@@ -43,3 +43,24 @@ export function createLoginRateLimiter() {
     },
   });
 }
+
+/*
+ * Credential and outbound-touching administration actions are rate limited
+ * separately from ordinary admin traffic: creating an account, setting a
+ * password and probing an SMTP host are each low-frequency by nature, so a
+ * tight window cannot disrupt legitimate work. Each surface gets its own named
+ * window so exhausting one does not spend the other's budget.
+ */
+export function createSensitiveRateLimiter(name) {
+  return rateLimit({
+    store: createRedisStore(`leave-ratelimit:sensitive:${name}`),
+    windowMs: 15 * 60 * 1000,
+    limit: 20,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    message: {
+      success: false,
+      message: "Too many sensitive operations. Please try again later.",
+    },
+  });
+}

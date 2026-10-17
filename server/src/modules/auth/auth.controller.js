@@ -63,15 +63,6 @@ export async function login(req, res, next) {
       device = await getDeviceByToken(deviceToken);
     }
 
-    console.log("========== LOGIN REQUEST ==========");
-    console.log("IP:", req.ip);
-    console.log("User-Agent:", userAgent);
-    console.log("Device cookie present:", Boolean(deviceToken));
-    console.log("Known device:", device ? device.id : null);
-    console.log("Session ID BEFORE fresh session:", req.sessionID);
-    console.log("Existing session user:", req.session?.user?.id || null);
-    console.log("===================================");
-
     /*
      * First validate credentials.
      *
@@ -231,13 +222,10 @@ export async function login(req, res, next) {
       throw error;
     }
 
-    console.log("========== LOGIN SUCCESS ==========");
-    console.log("Previous Session ID:", previousSessionId);
-    console.log("New Session ID:", sessionId);
-    console.log("User ID:", user.id);
-    console.log("Previous session preserved:", Boolean(previousSessionId));
-    console.log("===================================");
-
+    /*
+     * Session identifiers are secrets, so nothing about this login is written to
+     * the log here. The user_sessions row registered above is the audit record.
+     */
     res.json({
       success: true,
       user,

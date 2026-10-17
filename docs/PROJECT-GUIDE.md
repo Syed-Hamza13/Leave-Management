@@ -1,20 +1,26 @@
 # Leave Management - Current State and Product Development Plan
 
-**Updated:** 16 October 2026
-**Purpose:** Record what is implemented today, describe the configurable administration product requested, and give a safe, incremental path from the authentication foundation to that product. Proposed features below are plans, not claims about shipped code.
+**Updated:** 17 October 2026
+**Purpose:** Record what is implemented today, describe the configurable administration product requested, and give a safe, incremental path from the authentication foundation to that product. Sections 1-2 and the status markers in sections 7 and 9 describe shipped code; the remaining planning text is still a plan.
 
 ## 1. Executive summary
 
-The repository has a working application shell and an authentication foundation:
+The platform described below is now largely **built**. What exists today:
 
-- **Backend:** Express 5 API, MySQL connection pool, Redis-backed sessions and rate limits, CSRF protection, request validation with Zod, auth/health/security modules, and a checksum-verified SQL migration runner.
-- **Frontend:** React 19 + Vite + Tailwind CSS 4, router, login screen, auth provider, protected routes, shared API helper, and a basic authenticated dashboard.
-- **Authentication data:** `users`, session registry, and device registry tables are managed through numbered migrations.
-- **Not implemented yet:** dynamic field/dropdown/form/table builders, configurable records, form-to-table mappings, organization entities, administration user-management UI/API, authorization roles/permissions, reusable design-system components, and product-level test coverage.
+- **Backend:** Express 5 API under `/api/v1`, MySQL connection pool, Redis-backed sessions and rate limits, CSRF protection, Zod validation on every write, and modules for auth, health, security, authorization (roles/permissions), fields, dropdowns, forms, logical tables, mappings, metadata, records, organization, audit, users and settings. Migrations `001`–`008` are checksum-verified and append-only.
+- **Frontend:** React 19 + Vite + Tailwind CSS 4 with a shared `components/ui/` layer (Button, inputs, Modal, DataTable, ColumnFilter, Toast, Pagination, EmptyState, skeletons, ConfirmDialog), a permission-filtered left navigation shell with route-driven page chrome, and screens for every builder surface plus users, settings and audit.
+- **Authorization:** server-enforced permissions (`requirePermission`, any-of) mirrored in the client only for navigation. Four roles ship: `super_admin`, `admin`, `manager`, `employee`. The first successful login on a fresh install is promoted to `super_admin`.
+- **Data model:** administrator-defined **logical tables** stored as metadata (`table_definitions`, `column_definitions`) with typed, server-validated JSON record values (`table_records`). No endpoint creates MySQL tables, and the `users` auth columns are immutable through the generic builders.
+- **Records flow:** mapped form → validated submission → stored record → paginated, searchable, sortable, filterable list, with organization entity scoping and audit events.
+- **Settings:** SMTP configuration stored in `app_settings` with the credential encrypted (AES-256-GCM, `ENCRYPTION_KEY`), never returned by any read endpoint, and verified by an explicit connection-and-auth test action that queues no mail.
 
-The next product is broader than a conventional leave-request form. It is a **metadata-configurable application platform**: administrators define fields, forms, logical tables, mappings, and organization entity types; users then submit records through configured forms.
+**Still open:** automated test coverage (blocked on a test-design and dependency decision, §8), the tenant boundary question (§9.12), custom user profile attributes (§4.2), a session-cleanup job, log aggregation/retention, and the duplicated `react-router` dependency (§9.9).
 
-The first architectural decision should be to treat administrator-created “tables” as **logical tables defined by metadata**, not as arbitrary MySQL tables created from browser input. Keep the authentication `users` table protected and use a validated metadata/record model for extensible data. This avoids unsafe dynamic SQL and makes schema changes, form reuse, and access controls manageable.
+**API contract:** `docs/API.md`. **Deploy, migration, backup and release procedures:** `docs/OPERATIONS.md`.
+
+The product is broader than a conventional leave-request form. It is a **metadata-configurable application platform**: administrators define fields, forms, logical tables, mappings, and organization entity types; users then submit records through configured forms.
+
+The first architectural decision should be to treat administrator-created “tables” as **logical tables defined by metadata**, not as arbitrary MySQL tables created from browser input. Keep the authentication `users` table protected and use a validated metadata/record model for extensible data. This avoids unsafe dynamic SQL and makes schema changes, form reuse, and access controls manageable. **This decision is implemented and must not be reversed.**
 
 ## 2. What exists today
 
@@ -24,31 +30,50 @@ The first architectural decision should be to treat administrator-created “tab
 Leave-Management/
 |-- README.md
 |-- docs/
-|   `-- PROJECT-GUIDE.md
+|   |-- PROJECT-GUIDE.md         # this file: state + plan
+|   |-- API.md                   # /api/v1 contract: envelopes, codes, endpoints
+|   `-- OPERATIONS.md            # environment, migrations, backup, release checklist
 |-- client/
 |   |-- index.html
 |   |-- package.json
+|   |-- vite.config.js           # dev proxy /api -> localhost:4000
 |   `-- src/
-|       |-- app/                 # App composition and routes
-|       |-- components/auth/     # ProtectedRoute
-|       |-- features/
-|       |   |-- auth/            # AuthProvider and LoginPage
-|       |   `-- dashboard/       # Initial dashboard
-|       |-- layouts/             # AppShell
-|       |-- services/            # Shared API helper
-|       `-- styles/
+|       |-- app/                 # router.jsx (routes + page chrome), providers
+|       |-- components/
+|       |   |-- auth/            # ProtectedRoute, RequirePermission
+|       |   |-- builders/        # TypeConfigEditor - the per-data-type settings editor
+|       |   `-- ui/              # shared primitives: Button, inputs, Modal, DataTable,
+|       |                        # ColumnFilter, Toast, Pagination, EmptyState, ConfirmDialog…
+|       |-- features/            # one folder per surface: auth, dashboard, fields, dropdowns,
+|       |                        # forms, tables, mappings, records, organization, metadata,
+|       |                        # permissions, users, settings, audit
+|       |-- hooks/               # useAsyncData, useMutation, useDropdownOptions
+|       |-- layouts/             # AppShell + navigation.js (the nav is data, not JSX)
+|       |-- lib/                 # permissions.js (client mirror of the server catalogue)
+|       |-- services/            # api.js (fetch/CSRF), resources.js (endpoint names), errors.js
+|       `-- styles/              # index.css - the single Tailwind token source
 `-- server/
     |-- package.json
     |-- .env.example
-    |-- scripts/                 # Migration, user, password, API scripts
-    |-- sql/migrations/           # Numbered SQL migrations
+    |-- scripts/                 # migrate, create-user, reset-password, test-api
+    |-- sql/migrations/          # 001_auth … 008_records_organization (append-only)
     `-- src/
-        |-- config/              # Environment, DB, Redis, session
-        |-- middleware/          # CSRF, auth, rate limits, errors
-        `-- modules/
-            |-- auth/            # Controller/service/repository/validation
-            |-- health/
-            `-- security/
+        |-- config/              # env, database, redis, session
+        |-- lib/                 # appError, responses, pagination, recordQuery, dataTypes,
+        |                        # permissions, encryption, identifiers, jsonColumn, transactions
+        |-- middleware/          # csrf, requireAuth, requirePermission, rateLimiter,
+        |                        # validate, notFound, errorHandler
+        |-- modules/
+        |   |-- auth/            # login/session/device
+        |   |-- authorization/   # roles, permissions, assignment
+        |   |-- fields/ dropdowns/ forms/ tables/ mappings/ metadata/
+        |   |-- records/         # validated submissions, list/search/sort/filter/facets
+        |   |-- organization/    # entity types, entities, configurations
+        |   |-- users/           # admin user lifecycle and password setting
+        |   |-- settings/        # app settings and the encrypted SMTP workflow
+        |   |-- audit/           # recording and querying administrative events
+        |   `-- health/ security/
+        `-- app.js, server.js
 ```
 
 The tree intentionally omits dependencies, generated build output, and local environment files. Continue the existing feature/module-based organization rather than moving all business logic into generic shared folders.
@@ -59,31 +84,41 @@ The tree intentionally omits dependencies, generated build output, and local env
 
 Authentication is split into HTTP routes/controllers, services, repositories, and Zod validation. The login route validates credentials, checks the active account and Argon2 hash, creates a fresh session, registers the session in MySQL, and returns a sanitized user object. Authenticated routes validate the registered session/device and user state. `GET /api/v1/auth/me` restores the browser's current-user state; logout revokes and destroys the current session.
 
-The frontend has a `LoginPage`, `AuthProvider`, `ProtectedRoute`, router, and a fetch helper that sends cookies, fetches/attaches CSRF tokens for mutations, retries once on the recognized invalid-token response, and reports HTTP failures as errors. The dashboard and `AppShell` are deliberately minimal foundations, not the planned administration UX.
+The frontend has a `LoginPage`, `AuthProvider`, `ProtectedRoute`, `RequirePermission`, a router whose `handle` supplies page chrome, and a fetch helper that sends cookies, fetches/attaches CSRF tokens for mutations, retries once on the recognized invalid-token response, and reports HTTP failures as errors. `AppShell` renders the permission-filtered navigation, the page header, and the outlet; the dashboard lists the builder sequence rather than being a placeholder.
 
-### 2.3 Existing API surface
+### 2.3 API surface
 
-| Method | Path | Purpose |
+The complete contract is in **`docs/API.md`** — transport conventions, response and error envelopes, the stable error-code index, the list/sort/filter query contract, the permission catalogue, and every endpoint with its required permission. The summary, by module:
+
+| Area | Root | What it does |
 |---|---|---|
-| `GET` | `/api/v1/health` | Report MySQL and Redis dependency health |
-| `GET` | `/api/v1/security/csrf` | Create/refresh the CSRF context and return its token |
-| `POST` | `/api/v1/auth/login` | Validate credentials and establish a session |
-| `GET` | `/api/v1/auth/me` | Return the current active user's sanitized profile |
-| `POST` | `/api/v1/auth/logout` | Revoke and destroy the current session |
+| Health, CSRF | `/api/v1/health`, `/api/v1/security/csrf` | dependency health (200/503) and the CSRF token |
+| Auth | `/api/v1/auth` | login, logout, current user |
+| Definitions | `/api/v1/admin/fields`, `/dropdowns`, `/forms`, `/tables`, `/mappings` | metadata CRUD, ordering, usage counts, compatibility checks, archive guards |
+| Reference data | `/api/v1/admin/metadata` | data types with per-type config and filter operators; active lookups for pickers |
+| Records | `/api/v1/tables/:tableId/records` | list/search/sort/filter/facets, mapped-form submission, read/update/archive |
+| Organization | `/api/v1/organization` | entity types, configurations, entities, hierarchy rules |
+| Authorization | `/api/v1/authorization` | own permissions, role catalogue, role assignment |
+| Users | `/api/v1/admin/users` | paginated user administration and password setting |
+| Settings | `/api/v1/admin/settings` | SMTP read/update/test; secrets never leave the server |
+| Audit | `/api/v1/admin/audit/events` | filtered, paginated administrative trail |
 
 ### 2.4 Persistence and dependencies
 
-- MySQL is the source of truth for users and the relational session/device registry.
-- Redis backs Express sessions and rate-limit state.
-- `server/sql/migrations/001_auth.sql` through `005_session_device_binding.sql` create/extend the authentication schema. `server/scripts/migrate.js` applies ordered SQL files, stores SHA-256 checksums, and rejects edits to already-applied migrations.
-- The client uses React, React Router, Vite, and Tailwind CSS 4. The current client scripts are `dev`, `build`, `lint`, and `preview`; no unit-test runner is configured.
-- The server has operational scripts and an integration-style `test-api.js`; its package does not currently expose a unit-test script.
+- MySQL is the source of truth for users, the session/device registry, all metadata definitions, records, organization entities, audit events and app settings.
+- Redis backs Express sessions and rate-limit state. Losing it signs everyone out but loses no data; `user_sessions` in MySQL is authoritative for revocation.
+- `server/sql/migrations/001_auth.sql` … `008_records_organization.sql` create the full schema: auth, session/device registry, `roles`/`permissions`/`role_permissions`/`user_roles`/`audit_events`, the metadata definition tables, then records, organization, `app_settings` and `user_profile_values`. `server/scripts/migrate.js` applies ordered SQL files, stores SHA-256 checksums, and refuses to run when an applied file's text changed. There is no down-migration: recovery is `docs/OPERATIONS.md` §3.
+- The client uses React 19, React Router 7 (`react-router-dom`), Vite 8 and Tailwind CSS 4. Scripts are `dev`, `build`, `lint`, `preview`; **no unit-test runner is configured**, by the §8 agreement that a runner needs an agreed design and dependency change first.
+- The server has operational scripts (`migrate`, `create-user`, `reset-password`, `test-api`) and no unit-test script, for the same reason.
+- `ENCRYPTION_KEY` (optional at boot, ≥ 32 chars) enables the encrypted `app_settings` secrets path; without it, saving an SMTP credential is refused with `ENCRYPTION_NOT_CONFIGURED`.
 
 ## 3. Product requirements translated into modules
 
 ### 3.1 Administration navigation
 
 The authenticated application shell should provide a persistent left navigation with top-level **Administration**, **Organization**, and **Settings** groups. The shell owns navigation state, active route styling, responsive collapse behavior, page header/breadcrumb, and the main content outlet. Do not duplicate sidebars or page chrome across feature pages.
+
+**Status — implemented.** `client/src/layouts/AppShell.jsx` renders the three groups plus Records from `navigation.js`, filters each item by the signed-in user's permissions, collapses to a labelled menu below the `md` breakpoint, and owns the page header. `client/src/app/router.jsx` supplies each screen's title, description and breadcrumb through its route `handle`, so no feature page repeats page chrome. Hiding an item is presentation only; the same permission is enforced on the API.
 
 Administration should expose:
 
@@ -92,6 +127,8 @@ Administration should expose:
 3. **Forms** - Define named forms by selecting reusable fields, configuring per-form required/visibility/label overrides only where explicitly supported, and sorting fields by drag-and-drop. Save field order as data. Submit and cancel actions belong to the form renderer, not to persisted field definitions. Provide keyboard-accessible reorder controls as an alternative to drag-and-drop.
 4. **Tables** - Define logical tables, columns, types, and relationships. Allow columns to be added/removed/edited with validation. Show immutable system columns separately from user-managed columns.
 5. **Form mappings** - Configure a form-to-table mapping: each source form field maps to a compatible target logical-table column. Mapping is explicit and editable. The visual connector overlay is a UI for editing this mapping; the persisted mapping is a set of IDs, never screen coordinates or generated SQL.
+
+**Status — all five surfaces implemented.** Fields (`/admin/fields`), Dropdowns (list + option editor with ordering), Forms (builder with persisted field order and pointer/keyboard reorder), Tables (list + column editor with system columns shown separately and locked), Form mappings (`/admin/mappings` plus the `/admin/mappings/connect` field-to-column editor). Every definition archive is refused while it is referenced, and each screen reports the referencing usage counts from the API. Field types shipped: `text`, `textarea`, `number`, `date`, `email`, `dropdown`, `checkbox`, `toggle`, `record_reference` — the `email` type has a server-side validation and storage contract, and `record_reference` carries the relation policy (single vs multi) the mapping layer validates.
 
 ### 3.2 Organization
 
@@ -102,6 +139,8 @@ Organization has two separate concerns:
 
 Do not equate “creating a Team entity type” with creating a new MySQL table. Entity type definitions are metadata; entity records are normal logical-table records. Decide whether the first release supports parent/child organization hierarchy, membership, and multiple organizations. If installations can contain multiple customer organizations, every relevant query and unique key needs a tenant/organization boundary from the start.
 
+**Status — implemented for two of the three decisions.** Entity types (`organization_entity_types`), their configurations (`entity_type_configurations`: profile plus record sections bound to a form/table mapping) and entity records (`organization_entities`) are all metadata-driven, with navigable sub-sections in `/organization`. Parent/child hierarchy ships with a bounded depth and cycle/self-reference guards (`HIERARCHY_TOO_DEEP`, `PARENT_TYPE_CYCLE`, `PARENT_ENTITY_CYCLE`). Records can be scoped to an entity (`organizationEntityId` on `table_records`, filterable in the record list). **Membership** (which users belong to which entity) has no table and no UI, and the **tenant boundary decision is still open** — the schema assumes one organization per deployment (§9.12).
+
 ### 3.3 User administration and settings
 
 - User management lists existing users and supports authorized creation, deactivation/deletion policy, and password set/reset flows. Prefer deactivation or soft deletion for accounts with historical records.
@@ -109,11 +148,21 @@ Do not equate “creating a Team entity type” with creating a new MySQL table.
 - SMTP configuration is a later Settings feature. Store credentials encrypted using a managed secret/key strategy, never return secrets from read APIs, and validate delivery with an explicit test action.
 - Separate **authentication** (who signed in) from **authorization** (what they may do). The current auth guard does not provide role/permission management. Add server-enforced permissions before exposing admin mutation APIs.
 
+**Status — implemented, with one deliberate omission.**
+
+- **Users** (`/admin/users`, `server/src/modules/users/`): paginated, searchable, role-filtered, sortable list; create with role assignment; profile edit; **deactivation is the policy** — there is no hard delete for accounts, because records and audit rows reference `users.id`. Setting a password writes an Argon2id hash and closes that account's sessions. Guards: `EMAIL_TAKEN`, `SELF_DEACTIVATION_BLOCKED`, `LAST_ADMINISTRATOR_PROTECTED`.
+- **Passwords are never form values.** They are set only through `POST /api/v1/admin/users` or `PUT /api/v1/admin/users/:userId/password`, are never returned by any read endpoint, and the audit summary redacts any key matching the secret pattern. The generic record builders cannot target the `users` auth columns at all (`SYSTEM_TABLE_READONLY`, `SYSTEM_COLUMN_LOCKED`).
+- **Settings** (`/admin/settings`, `server/src/modules/settings/`): SMTP stored in `app_settings` with the credential encrypted as an AES-256-GCM envelope under `ENCRYPTION_KEY`. Reads report `passwordConfigured` and never the value. `POST /smtp/test` opens a socket, negotiates STARTTLS/TLS and attempts auth, then disconnects — it queues no mail, echoes no password, and is rate limited separately.
+- **Authorization** is a separate module with its own tables (`roles`, `permissions`, `role_permissions`, `user_roles`) and the `requirePermission` guard; the client mirrors the catalogue only to decide navigation.
+- **Not built:** using a configured form for extra user profile attributes. `user_profile_values` exists and the dropdown in-use guard reads it, but nothing writes to it. This stays optional per §4.2 until an admin actually needs a custom profile field.
+
 ## 4. Recommended architecture and data safety
+
+**Status — this is the shipped architecture.** The table below is no longer illustrative: migrations `006_authorization.sql`, `007_metadata_definitions.sql` and `008_records_organization.sql` create exactly these tables, and `docs/API.md` documents the contracts. The safety rules in §4.2–§4.4 are enforced in code, and each subsection notes where.
 
 ### 4.1 Metadata-first logical tables
 
-Recommended baseline schema (names are illustrative; finalize through migrations):
+Shipped schema (created by the migrations above):
 
 | Area | Suggested metadata/data |
 |---|---|
@@ -130,9 +179,13 @@ Keep ownership, actor, status, and timestamps as indexed relational columns on r
 
 For column relationships, persist a target logical table/column reference and an explicit relation policy (for example, single reference vs. multi-reference). Validate referenced records belong to the expected logical table and are visible to the current organization. Enforce referential integrity in the application transaction; add physical foreign keys only for stable, fixed relationships.
 
+**Status — implemented as described.** Records store `table_id`, `schema_version`, a validated `data` JSON payload, `organization_entity_id`, `status`, and actor/timestamp columns, each indexed for the list query that needs it (`docs/API.md` §3). Values are coerced and range-checked per data type in `server/src/lib/dataTypes.js` against the **live** column definitions on every write, and a `record_reference` column carries its target table/column plus the single vs multi policy, with target existence checked inside the write transaction (`RELATION_TARGET_NOT_FOUND`, `RELATION_TARGET_ARCHIVED`, `RELATION_TYPE_MISMATCH`). There is no EAV table and no runtime `CREATE TABLE` anywhere in the codebase.
+
 ### 4.2 Protect authentication-owned data
 
 `users` is an authentication/system table, not an administrator-defined table. Its core columns (`id`, `email`, `password_hash`, status, login/security timestamps, and audit timestamps) are immutable through the generic table builder. If admins need extra user profile fields, store those in a separate custom-profile mechanism keyed to `users.id`; do not let custom column operations alter auth columns. User APIs must use the auth/user service, not generic record CRUD.
+
+**Status — enforced.** `users` exists only as a `storage_kind = system_users` definition: read-only through the metadata layer (`SYSTEM_TABLE_READONLY`), with its columns flagged system and rejected from edit/archive (`SYSTEM_COLUMN_LOCKED`), and record CRUD refused against it. Account writes go through `server/src/modules/users/` (create, profile, status, password) and `server/src/modules/authorization/` (roles) — never the generic record service. `user_profile_values` is the reserved custom-profile mechanism keyed to `users.id`; the table ships, nothing writes to it yet, so the "if admins need" condition has not been met.
 
 ### 4.3 SQL injection and validation controls
 
@@ -147,6 +200,16 @@ SQL parameter placeholders protect **values**, not table names, column names, so
 
 Frontend validation is for guidance and fast feedback; backend validation is authoritative. React escaping should be preserved; never render administrator labels/record values as raw HTML.
 
+**Status — enforced, and the enforcement is structural.**
+
+- Every list/filter/sort request names an **opaque key only**. `server/src/lib/recordQuery.js` and each repository resolve that key through a server-owned descriptor whose SQL comes from definitions, and bind every value — including JSON paths, literals and `IN` lists — as a parameter. `LIKE` input is escaped (`escapeLikePattern`, `!` escape character). `limitClause()` emits clamped integers, which is the only literal interpolation in the codebase and takes no client text.
+- Identifiers (`field`/`form`/`table`/`column`/`option` keys) are validated against `^[a-z][a-z0-9_]{1,62}$`, reserved names are rejected (`RESERVED_KEY`), and a key is never trusted merely because it is well-formed.
+- Every write endpoint parses a Zod schema (in the controller, from the module's `*.validation.js`); record values are then re-validated against the **live** definitions, so a definition edited after the browser loaded a form fails with `MAPPING_STALE`, `FIELD_NOT_MAPPED`, `INVALID_RECORD_VALUES` rather than writing anything.
+- Multi-write operations run inside `withTransaction()` — record writes, mapping saves, entity type/configuration creation, user creation and role assignment, settings saves — with the audit event written in the same transaction where the caller passes its connection.
+- `errorHandler` translates driver failures to `409 DUPLICATE_ENTRY` / `REFERENCE_CONFLICT` with human text, logs the redacted error shape (never `err.sql`), and returns no SQL detail to the client.
+- Guards are stacked per request: `requireAuth` → `requirePermission` → CSRF (all admin routers mount after `doubleCsrfProtection`) → rate limits (global, login, and a separate `sensitive` window for account creation, password setting and the SMTP probe) → audit recording. `recordAudit()` redacts secret-shaped keys before the row is written.
+- No feature page renders an administrator label or a record value as HTML; everything goes through React text nodes.
+
 ### 4.4 Mapping and schema lifecycle
 
 - Give each field, form, table, column, option set, and option a stable ID/key. Labels are editable; IDs/keys are not silently regenerated.
@@ -154,6 +217,14 @@ Frontend validation is for guidance and fast feedback; backend validation is aut
 - Deleting an item referenced by forms, mappings, or records must be blocked or require an explicit archive/migration workflow. Avoid destructive cascade deletion of user-created data.
 - Version definitions. On form submission, validate against the current published version and record the version used. Decide whether editing a table/form changes old records, preserves old schema versions, or requires an explicit migration.
 - Define transaction/rollback expectations for creating an entity type and its required form/table configuration.
+
+**Status — implemented, with one open decision.**
+
+- Keys are stable: `PATCH` accepts labels, descriptions and behaviour but rejects key changes (`RESERVED_KEY` applies to new definitions only). Labels are data, IDs/keys are references.
+- `PUT /api/v1/admin/mappings` (`GET /compatibility` for the picker) rejects a missing or archived field/column, an incompatible data type, a duplicate target where disallowed, and definitions that no longer exist — and reports **every** problem at once in `details.errors` instead of the first one (`INVALID_MAPPING`, `MAPPING_PAIR_MISMATCH`, `MAPPING_DEFINITION_INACTIVE`).
+- Nothing user-created is hard-deleted while it is referenced: each archive route first checks usage (`*_IN_USE`, `TABLE_HAS_RECORDS`, `FORM_HAS_MAPPINGS`, `OPTION_IN_USE`, `ENTITY_TYPE_HAS_ENTITIES`, `LAST_ADMINISTRATOR_PROTECTED`, …) and the usage counts are surfaced in the UI before the action.
+- Versioning is live: `table_definitions.schema_version` increments when columns change and every `table_records` row stores the version its values were validated against, so an old record is never reinterpreted by a new definition.
+- Creating an entity type (and its configuration) runs in one transaction, as do record + audit writes. **Still to decide:** whether editing a table or form should offer an explicit migration for existing records, or continue to preserve them under their stored version. Today it preserves them and nothing rewrites history.
 
 ## 5. Frontend component and interaction plan
 
@@ -176,6 +247,8 @@ Establish a small `components/ui/` layer before implementing the builders:
 
 Use a single design token/theme source in Tailwind/CSS for color, spacing, radii, focus rings, and typography. Reusable components should accept focused `className`/variant options where repository conventions allow, rather than copy-pasted styling on every page.
 
+**Status — built and in use.** `client/src/components/ui/` ships `Button`, `TextInput`, `Textarea`, `NumberInput`, `Select`, `Checkbox`, `Toggle`, `DateInput`, `SearchInput`, `FormField`, `FieldRenderer` (the one typed-value contract for dynamic fields), `DataTable` (loading / error-with-retry / empty / populated + sorting + pagination), `ColumnFilter` (server-backed facets, never a full-table scan), `Pagination`, `Modal`, `ConfirmDialog`, `EmptyState`, `Badge`, `LoadingState`/`Skeleton`, `Spinner`, `PageHeader` and `ToastProvider`/`useToast`. Every builder and record surface composes them — no feature page carries its own input or table styling. Tokens live in `client/src/styles/index.css` (`bg-surface`, `border-line`, `text-ink-soft`, `rounded-control`, `text-brand`, `bg-danger-soft`, …). Contexts and hooks are exported from `.js` modules so `react-refresh/only-export-components` stays clean.
+
 ### 5.2 Builder UX
 
 - Provide create/edit pages with list, search, empty state, validation, loading, save feedback, and unsaved-change handling.
@@ -184,6 +257,17 @@ Use a single design token/theme source in Tailwind/CSS for color, spacing, radii
 - Drag-and-drop form ordering must support pointer and keyboard operation, visible position feedback, and a non-drag reorder option.
 - Responsive navigation should collapse to a labelled menu on narrow screens; tables need a deliberate mobile strategy rather than horizontal overflow as the only interaction.
 - For all mutation flows, disable duplicate submission, preserve recoverable user input after server errors, and show field-level errors from the API.
+
+**Status — implemented, except one gap noted at the end.**
+
+- Each surface is list → search/filters → create/edit dialog or detail page → save feedback, with loading, error-with-retry and empty states coming from `DataTable`/`EmptyState` rather than per-page markup. Duplicate submission is blocked by the pending state in `useMutation` (`loading` on buttons, dialog close suppressed while a save is in flight), and every dialog keeps its draft mounted on a server failure so typed input survives; field errors render under the control that caused them via `fieldErrors()`.
+- The guided sequence is the dashboard itself: it lists Fields → Dropdowns → Forms → Tables → Form mappings → Organization → Records, filtered to what the signed-in user may actually open.
+- The mapping editor (`/admin/mappings/connect`) presents the form's fields and the table's columns as labelled lists, offers only type-compatible targets, states the incompatibility when a pair will not connect, and keeps a removable/reassignable draft until save; the persisted payload is `{ fieldId → columnId }` pairs plus the mapping's own label — never coordinates or SQL. Warnings (e.g. an unmapped required column) are listed next to the result through `warningMessages()`.
+- Reordering (form fields, dropdown options, table columns) is pointer drag-and-drop **plus** explicitly labelled ↑/↓ buttons with `aria-label`s, and each order is saved as data through a `PUT …/order` endpoint that requires the complete set.
+- Narrow screens get a labelled menu button (`aria-expanded`, `aria-controls`, Escape to close, hidden sidebar taken out of the tab order) and a skip-to-content link; wide screens get the persistent sidebar. Data tables scroll horizontally, which is the current mobile strategy for wide lists — a card/priority-column layout is a deliberate open item, not an oversight.
+- **Open:** an unsaved-draft guard on navigation away. Draft-vs-saved state with a Discard action exists (mapping editor, settings page), but leaving the route is not blocked.
+
+Accessibility baseline shipped with this layer: native semantic inputs, labelled controls with hints and per-field error text wired by `FormField`, `role="dialog"` + `aria-modal` + focus trap + focus restoration in `Modal`, an `aria-live="polite"` toast region, `aria-sort` on sortable headers, `sr-only` captions and action headings in `DataTable`, and one visible focus ring from the token source.
 
 ## 6. Backend module and API plan
 
@@ -207,40 +291,65 @@ server/src/modules/
 `-- audit/                    # Administrative audit recording/query
 ```
 
-Potential versioned API boundaries (exact resource names may evolve):
+Shipped versioned API boundaries (full contract: `docs/API.md`):
 
-| Resource | Example endpoints |
+| Resource | Endpoints |
 |---|---|
-| Fields | `GET/POST /api/v1/admin/fields`, `GET/PATCH/DELETE /api/v1/admin/fields/:id` |
-| Dropdowns | `GET/POST /api/v1/admin/dropdowns`, item/option update routes |
-| Forms | `GET/POST /api/v1/admin/forms`, `GET/PATCH/DELETE /api/v1/admin/forms/:id` |
-| Tables | `GET/POST /api/v1/admin/tables`, table/column update and archive routes |
-| Mappings | `GET/PUT /api/v1/admin/tables/:tableId/mappings/:formId` |
-| Records | `POST /api/v1/tables/:tableId/records`, paginated list and filter-facet routes |
-| Organization | entity-type CRUD plus scoped entity-record routes |
-| Users | paginated list, create, deactivate, and explicit password reset/set routes |
+| Fields | `GET/POST /api/v1/admin/fields`, `GET/PATCH/DELETE /api/v1/admin/fields/:id`, `GET /:id/usage` |
+| Dropdowns | `GET/POST /api/v1/admin/dropdowns`, item update/archive, `…/:id/options`, `…/options/order`, option update/delete |
+| Forms | `GET/POST /api/v1/admin/forms`, `GET/PATCH/DELETE /api/v1/admin/forms/:id`, `GET /:id/usage`, `GET /:id/render`, `PUT /:id/fields/order` |
+| Tables | `GET/POST /api/v1/admin/tables`, table update/archive, `…/:id/columns`, `…/columns/order`, column update/archive, `GET /:id/usage` |
+| Mappings | `GET /api/v1/admin/mappings`, `GET /compatibility`, `GET /for/:formId/:tableId`, `PUT /` (create-or-replace), `GET/PATCH/DELETE /:id` |
+| Records | `GET/POST /api/v1/tables/:tableId/records`, `GET /:tableId/records/facets`, `GET/PATCH/DELETE /:tableId/records/:recordId` |
+| Organization | entity-type CRUD, entity-type configuration CRUD, entity CRUD under `/api/v1/organization` |
+| Users | `GET` (paginated) / `POST /api/v1/admin/users`, `GET/PATCH /:userId`, `PUT /:userId/password`; role assignment via `PUT /api/v1/authorization/users/:userId/roles` |
+| Settings | `GET /api/v1/admin/settings`, `GET/PATCH /smtp`, `POST /smtp/test` |
+| Audit | `GET /api/v1/admin/audit/events` |
 
 Every protected route must check both authentication and the permission required for the action. Add pagination, stable sorting, bounded filter complexity, and a consistent response/error contract before implementing large lists.
+
+**Status — shipped exactly as listed**, with two naming decisions made during the build:
+
+- Records are the **data plane** and mount at `/api/v1/tables/:tableId/records…`, not under `/admin`, because the same endpoints serve authorized employees and administrators; `VIEW`/`CREATE`/`UPDATE`/`DELETE` on records are separate permissions from the `admin.tables.*` definition rights.
+- Mappings are their own resource (`/api/v1/admin/mappings`, `GET /for/:formId/:tableId`, `PUT /` to create-or-replace a pair, `GET /compatibility` for the picker) instead of nesting under `/admin/tables/:tableId/mappings/:formId`. Both shapes express the same contract; this one keeps the mapping list, usage and archive behaviour in one module.
+- `server/src/middleware/validate.js` exists but the modules parse in the controller (`XxxSchema.parse(req.body|query|params)`), so every handler's validation is visible at its own first line. One convention, applied consistently — do not mix the two.
+- Pagination (`page`, `pageSize` ≤ 200, default 25), allow-listed sorting, bounded filters (12) and sorts (3), search length limits, `ok/created/okList/okMessage` envelopes and the stable error-code contract are all documented in **`docs/API.md`** and enforced by `server/src/lib/pagination.js` + `recordQuery.js`.
 
 ## 7. Phased implementation roadmap
 
 The order below reduces rework: establish shared contracts and authorization before exposing configurable mutations, then deliver a complete vertical slice before expanding builders. Estimates are indicative **single-developer effort**, excluding stakeholder decisions, deployment, and waiting time; revise after the first schema/API spike.
 
-| Phase | Scope and deliverable | Indicative effort | Completion gate |
-|---|---|---:|---|
-| 0. Foundation audit | Verify login/CSRF/session flows against a clean environment; record API/error conventions; decide single-org vs multi-org and permission roles; define dynamic data model and deletion/version policy. | 2-4 days | Written domain decisions and reproducible auth checks; no stale claims in docs. |
-| 1. Authorization + platform base | Add roles/permissions and server-side guards; audit primitives; migration and test conventions; shared API error/validation contract. | 4-7 days | Unauthorized users cannot call admin mutations directly; tests cover deny/allow. |
-| 2. Reusable UI foundation + shell | Navigation layout, design tokens, UI primitives, loading/empty/error/toast, search, modal, table shell and accessibility baseline. | 4-7 days | Shared controls are used by at least two feature surfaces; lint/build pass. |
-| 3. Metadata builders | CRUD for fields and dropdowns, type-specific validation/config, search/list/detail states, safe archive behavior. | 5-8 days | Definition CRUD survives reload; invalid type/config rejected by API. |
-| 4. Forms and ordering | Form CRUD, reusable fields, per-form settings, persisted order, keyboard/pointer reorder, dynamic renderer. | 4-7 days | One field can be reused in multiple forms without changing other forms. |
-| 5. Logical tables and records | Table/column builder, protected system columns, typed record validation/storage, bounded list/search/sort/filter. | 6-10 days | Valid rows persist; invalid columns/values cannot affect SQL or auth schema. |
-| 6. Mapping and organization | Mapping overlay/API, compatibility checks, organization entity types, configured record entry, transaction/audit behavior. | 5-8 days | Submit through mapped form stores every value in the intended logical column; mapping edit works. |
-| 7. User admin + settings | User list/create/deactivate/reset flows with dedicated service; safe profile form mapping; SMTP configuration only when secret storage and deployment approach are decided. | 4-8 days | Admin actions are permission-gated and audited; passwords are never exposed/stored as form values. |
-| 8. Hardening and release | Performance, accessibility, security, migrations, backups, observability, integration/e2e tests, upgrade/recovery docs. | 4-8 days | Release checklist, migration rehearsal, restore/rollback plan and acceptance sign-off. |
+| Phase | Scope and deliverable | Indicative effort | Completion gate | Status |
+|---|---|---:|---|---|
+| 0. Foundation audit | Verify login/CSRF/session flows against a clean environment; record API/error conventions; decide single-org vs multi-org and permission roles; define dynamic data model and deletion/version policy. | 2-4 days | Written domain decisions and reproducible auth checks; no stale claims in docs. | **Done**, except two decisions still owned by the product: multi-org/tenant boundary (§9.12) and record-migration policy (§4.4). Docs now describe shipped behavior; `docs/API.md` + `docs/OPERATIONS.md` carry the conventions. |
+| 1. Authorization + platform base | Add roles/permissions and server-side guards; audit primitives; migration and test conventions; shared API error/validation contract. | 4-7 days | Unauthorized users cannot call admin mutations directly; tests cover deny/allow. | **Done in code** — `requirePermission`, the role catalogue, `audit_events` + `recordAudit`, transaction and response helpers, the error contract. **Gate not met:** deny/allow is verified by inspection and manual checks only; there is no automated test (§8 decision). |
+| 2. Reusable UI foundation + shell | Navigation layout, design tokens, UI primitives, loading/empty/error/toast, search, modal, table shell and accessibility baseline. | 4-7 days | Shared controls are used by at least two feature surfaces; lint/build pass. | **Done** — every surface in phases 3-7 composes these controls; `npm run lint` and `npm run build` pass. |
+| 3. Metadata builders | CRUD for fields and dropdowns, type-specific validation/config, search/list/detail states, safe archive behavior. | 5-8 days | Definition CRUD survives reload; invalid type/config rejected by API. | **Done** — `TypeConfigEditor` drives per-type settings from the data-type registry; archives are usage-guarded with counts shown first. |
+| 4. Forms and ordering | Form CRUD, reusable fields, per-form settings, persisted order, keyboard/pointer reorder, dynamic renderer. | 4-7 days | One field can be reused in multiple forms without changing other forms. | **Done** — `GET /forms/:id/render` plus `FieldRenderer`; field reuse is by ID with per-form overrides only. |
+| 5. Logical tables and records | Table/column builder, protected system columns, typed record validation/storage, bounded list/search/sort/filter. | 6-10 days | Valid rows persist; invalid columns/values cannot affect SQL or auth schema. | **Done** — system tables/columns are read-only, values are coerced against live definitions, filters/sorts are allow-listed and bounded, facets come from a bounded server endpoint. |
+| 6. Mapping and organization | Mapping overlay/API, compatibility checks, organization entity types, configured record entry, transaction/audit behavior. | 5-8 days | Submit through mapped form stores every value in the intended logical column; mapping edit works. | **Done** — mapped submission (`formId` on the record POST), `details.errors` on invalid mapping saves, entity types + configurations + hierarchy, writes and audit in one transaction. |
+| 7. User admin + settings | User list/create/deactivate/reset flows with dedicated service; safe profile form mapping; SMTP configuration only when secret storage and deployment approach are decided. | 4-8 days | Admin actions are permission-gated and audited; passwords are never exposed/stored as form values. | **Done** — users module + `/admin/users`, `/admin/settings`, `/admin/audit` screens; encrypted SMTP credential, `passwordConfigured`-only reads, connection/auth test probe, session revocation on password change/deactivation, last-administrator guards. "Safe profile form mapping" intentionally not built (§4.2). |
+| 8. Hardening and release | Performance, accessibility, security, migrations, backups, observability, integration/e2e tests, upgrade/recovery docs. | 4-8 days | Release checklist, migration rehearsal, restore/rollback plan and acceptance sign-off. | **In progress** — see below. |
+
+**Phase 8 breakdown as it stands today:**
+
+| Item | State |
+|---|---|
+| `/api/v1` contract documentation | **Done** — `docs/API.md` |
+| Migration, backup, restore/rollback, deploy order, release checklist | **Written** — `docs/OPERATIONS.md`; the rehearsal itself and the first restore drill still have to be performed in the real environment and recorded |
+| Log redaction / observability baseline | **Done in code** — session identifiers and device tokens no longer reach the log, `errorHandler` logs a redacted error instead of the interpolated SQL, audit summaries drop secret keys. No log pipeline, metrics or retention policy yet |
+| Rate limits on sensitive operations | **Done** — separate windows for account creation/password setting and the SMTP probe, on top of the global and login limiters |
+| Accessibility pass | **Done for the shell** — skip-to-content link, closed mobile drawer removed from the tab order, per-route `document.title`, favicon reference (removes a 404 per load) — on top of the phase-2 baseline (focus trap, live region, labelled controls, `aria-sort`) |
+| Hashing consistency | **Done** — `create-user` and `reset-password` now call the shared `hashPassword()` instead of repeating the Argon2 parameters |
+| Performance | **Open** — one ~502 kB (gzip ~142 kB) initial chunk. Route-level code splitting is available but changes first-paint behaviour, so it needs a measured pass, not a blind edit |
+| Integration / e2e / unit tests | **Blocked on a decision** — §8 permits a runner only after the test design and the dependency change are agreed |
+| Acceptance sign-off | **Open** — needs the checklist in `docs/OPERATIONS.md` §7 executed in the deployed environment |
 
 **Indicative total:** about 34-59 developer-days for the described breadth. A narrower MVP can omit SMTP, advanced hierarchy, arbitrary cross-table reporting, and bulk imports. Estimate again after Phase 0; scope/permission decisions can materially change the design.
 
 ### Recommended MVP vertical slice
+
+**Delivered.** All five steps are reachable in the shipped product and are the exact path the screens and endpoints implement: create the definitions, map them, submit through the mapped form, watch the value land in the intended column, read the audit row.
 
 1. Admin permission can create a field, one dropdown, one form, one logical table and compatible columns.
 2. Admin maps the form to the table.
@@ -252,43 +361,45 @@ Deliver this full slice before creating every requested field type or advanced E
 
 ## 8. Validation, security, and quality gates
 
+**Status — the code-level controls below are in place; the automated-test gates are not, and that is the single biggest remaining risk.** Nothing in this section has been verified by a test suite: verification so far is static (lint, build, `node --check`, code inspection) plus manual checks against the running development server.
+
 ### Backend
 
-- Unit-test field-type validators, mapping compatibility, permission policies, and record validation.
-- Integration-test migrations against MySQL; test repositories/services with isolated data and rollback/cleanup.
-- Test CSRF, session expiry/revocation, permission denial, duplicate keys, oversized bodies, invalid IDs, relation targets, and concurrent edits.
-- Exercise injection payloads in labels, keys, filters, sort requests, and record values. Verify identifiers are never directly interpolated and query errors do not expose SQL.
-- Use transactions for record plus audit writes. Plan for MySQL DDL non-transactional behavior and migrations that may partially apply; back up before production migrations.
-- Establish rate limits for login and sensitive admin actions; review PII retention, logs, password reset policy, secrets, and audit visibility.
+- Unit-test field-type validators, mapping compatibility, permission policies, and record validation. **— not built; needs the runner decision below.**
+- Integration-test migrations against MySQL; test repositories/services with isolated data and rollback/cleanup. **— not built. The rehearsal procedure that stands in for it is `docs/OPERATIONS.md` §2.**
+- Test CSRF, session expiry/revocation, permission denial, duplicate keys, oversized bodies, invalid IDs, relation targets, and concurrent edits. **— not automated. `npm run test-api` covers the login/CSRF/health path only.**
+- Exercise injection payloads in labels, keys, filters, sort requests, and record values. Verify identifiers are never directly interpolated and query errors do not expose SQL. **— the structural guarantee holds (keys are resolved through server-owned descriptors, values are bound, `LIMIT`/`OFFSET` are clamped integers, driver failures map to `409` with human text and the logged error carries no `err.sql`); it has not been probed with adversarial input.**
+- Use transactions for record plus audit writes. Plan for MySQL DDL non-transactional behavior and migrations that may partially apply; back up before production migrations. **— transactions in place; the DDL/partial-apply rules and the backup requirement are written up in `docs/OPERATIONS.md` §2–§3.**
+- Establish rate limits for login and sensitive admin actions; review PII retention, logs, password reset policy, secrets, and audit visibility. **— limits in place (global, login, per-sensitive-surface). Retention is the open part: audit events and `user_sessions` rows accumulate unbounded, and no purge window has been chosen.**
 
 ### Frontend
 
-- Component tests for field rendering, validation feedback, loading/error/empty states, keyboard interaction and accessible labels.
-- Feature tests for builder CRUD, mapping edits, record submission, duplicate-submit prevention, and permission-aware navigation. Hiding a menu item is not authorization.
-- End-to-end test login → admin config → organization form submit → record list, including failed validation and stale/expired session.
-- Run `npm run lint` and `npm run build` in `client/`; add a test script/runner only when the test design and dependency change are agreed.
+- Component tests for field rendering, validation feedback, loading/error/empty states, keyboard interaction and accessible labels. **— not built.**
+- Feature tests for builder CRUD, mapping edits, record submission, duplicate-submit prevention, and permission-aware navigation. Hiding a menu item is not authorization. **— not built; navigation gating is presentation only and every mutation is re-checked by `requirePermission`.**
+- End-to-end test login → admin config → organization form submit → record list, including failed validation and stale/expired session. **— not built; the manual version of this walk is step 8 of the release checklist.**
+- Run `npm run lint` and `npm run build` in `client/`; add a test script/runner only when the test design and dependency change are agreed. **— lint and build pass and are the current gate. The runner decision is still outstanding: it needs an agreement on framework, scope (unit/component/e2e) and fixture strategy, and it is deliberately not smuggled in as a side effect of feature work.**
 
 ### Operational gates
 
-- Add `/api/v1` contract documentation (or generated OpenAPI) and seed/test data procedures.
-- Verify startup/readiness behavior for both MySQL and Redis; health checks must distinguish liveness from readiness if deployment needs them.
-- Record migration backups, deploy ordering, checksum policy, recovery steps, and environment-secret ownership.
-- Use structured, redacted logs; do not log session IDs, device tokens, passwords, CSRF tokens, SMTP credentials, or full sensitive record payloads.
+- Add `/api/v1` contract documentation (or generated OpenAPI) and seed/test data procedures. **— done as `docs/API.md`; seed/test procedures are `docs/OPERATIONS.md` §6 (bootstrap administrator, `create-user`, `reset-password`, `test-api`) plus the QA-account convention for manual checks.**
+- Verify startup/readiness behavior for both MySQL and Redis; health checks must distinguish liveness from readiness if deployment needs them. **— documented: `GET /api/v1/health` is readiness-only (200/503), and `docs/OPERATIONS.md` §4 says explicitly not to use it as a liveness probe.**
+- Record migration backups, deploy ordering, checksum policy, recovery steps, and environment-secret ownership. **— done in `docs/OPERATIONS.md` §1–§3, §7.**
+- Use structured, redacted logs; do not log session IDs, device tokens, passwords, CSRF tokens, SMTP credentials, or full sensitive record payloads. **— enforced in code and listed in `docs/OPERATIONS.md` §5. Logs are still plain `console` output with no aggregation or retention.**
 
 ## 9. Current gaps and design risks to resolve
 
-1. **Authorization is absent:** current `requireAuth` establishes an authenticated user, not an admin/organization permission model. Build server-side RBAC/policy checks before dynamic builders.
-2. **No product domain/schema yet:** field/form/table/record/organization concepts need a versioned data model and lifecycle rules before the UI/API are implemented.
-3. **Flexible schema can become unsafe:** dynamic SQL identifiers and user-defined SQL tables are high-risk. Use fixed metadata tables, validated typed values, and server-owned IDs.
-4. **Excel-style filters can become expensive:** querying every distinct value for every column is unbounded. Use server-side, indexed/paginated facets, search, and filter complexity limits.
-5. **Definition changes can invalidate saved mappings or records:** stable identifiers, archive rules, compatibility checks, schema versions, and explicit migrations are needed.
-6. **User table is security-sensitive:** generic column editing must not modify/delete authentication fields. Custom user attributes need a separate storage boundary.
-7. **Testing is thin:** available scripts include an API integration helper, but package scripts do not define unit/e2e test suites. Add tests with the first new domain module, not after all builders are complete.
-8. **Auth should be verified, not assumed:** the repository contains a substantial login/session/CSRF implementation, but product readiness still depends on running the API checks in the target environment and testing failure paths. Avoid expanding the meaning of “authentication complete” to include authorization, user lifecycle, recovery/MFA, or account policy that is not present.
-9. **Two router packages are listed:** client dependencies include both `react-router` and `react-router-dom` at different major versions. Before adding routes, confirm the intended React Router package/version and remove duplication only after compatibility is verified.
-10. **No committed design system:** Tailwind is configured, but reusable Button/Input/Table/Toast/Loading primitives and design tokens are not yet established. Build them early to avoid inconsistent one-off UI.
-11. **SMTP/security operations need a secret strategy:** credentials must be encrypted and rotation/deployment key ownership defined before SMTP settings are built.
-12. **Tenant boundary is undecided:** if a deployment may host multiple organizations/customers, add tenant isolation to schema, indexes, authorization, and every repository query before the first data feature. Retrofitting this is expensive.
+1. **Authorization is absent:** current `requireAuth` establishes an authenticated user, not an admin/organization permission model. Build server-side RBAC/policy checks before dynamic builders. — **Resolved.** `server/src/modules/authorization/` + `requirePermission` guard every admin, record and organization mutation; `client/src/lib/permissions.js` mirrors the catalogue for navigation only.
+2. **No product domain/schema yet:** field/form/table/record/organization concepts need a versioned data model and lifecycle rules before the UI/API are implemented. — **Resolved** by migrations `007`/`008` and the definition services; versioning is live (`schema_version` on definitions and records).
+3. **Flexible schema can become unsafe:** dynamic SQL identifiers and user-defined SQL tables are high-risk. Use fixed metadata tables, validated typed values, and server-owned IDs. — **Resolved structurally.** No runtime DDL exists; identifiers resolve through server-owned descriptors and everything else is a bound parameter (§4.3).
+4. **Excel-style filters can become expensive:** querying every distinct value for every column is unbounded. Use server-side, indexed/paginated facets, search, and filter complexity limits. — **Resolved.** `GET …/records/facets` is bounded and searchable, filters cap at 12 and sorts at 3, and `ColumnFilter` fetches per column instead of loading a column's domain into the browser.
+5. **Definition changes can invalidate saved mappings or records:** stable identifiers, archive rules, compatibility checks, schema versions, and explicit migrations are needed. — **Largely resolved.** Keys are immutable, archives are usage-guarded, mapping saves validate compatibility, records keep their schema version. **Open:** the record-migration policy for a changed definition (§4.4) — today old records are preserved, never rewritten.
+6. **User table is security-sensitive:** generic column editing must not modify/delete authentication fields. Custom user attributes need a separate storage boundary. — **Resolved** (`SYSTEM_TABLE_READONLY`, `SYSTEM_COLUMN_LOCKED`, dedicated user service). The separate mechanism for custom attributes exists as `user_profile_values` but has no writer or UI yet.
+7. **Testing is thin:** available scripts include an API integration helper, but package scripts do not define unit/e2e test suites. Add tests with the first new domain module, not after all builders are complete. — **Still the largest open risk.** The planned "with the first module" step did not happen, and the guide's own §8 rule blocks adding a runner without an agreed design and dependency change. Decide explicitly: agree the test stack, or accept manual verification as the standing policy for this project.
+8. **Auth should be verified, not assumed:** the repository contains a substantial login/session/CSRF implementation, but product readiness still depends on running the API checks in the target environment and testing failure paths. Avoid expanding the meaning of “authentication complete” to include authorization, user lifecycle, recovery/MFA, or account policy that is not present. — **Partly addressed.** Authorization and user lifecycle now exist and are described accurately in §2/§3.3. **Not present:** MFA, recovery codes, self-service password change, account lockout beyond the login rate limit. Failure paths are still not exercised in an automated way.
+9. **Two router packages are listed:** client dependencies include both `react-router` and `react-router-dom` at different major versions. Before adding routes, confirm the intended React Router package/version and remove duplication only after compatibility is verified. — **Confirmed, not cleaned.** The code imports `react-router-dom@7` only; `react-router@8` is an unused direct dependency. Removing it needs a verified install (it may be a transitive pin), so it is left alone rather than edited blind.
+10. **No committed design system:** Tailwind is configured, but reusable Button/Input/Table/Toast/Loading primitives and design tokens are not yet established. Build them early to avoid inconsistent one-off UI. — **Resolved.** `client/src/components/ui/` + the token source in `client/src/styles/index.css`, used by every surface (§5.1).
+11. **SMTP/security operations need a secret strategy:** credentials must be encrypted and rotation/deployment key ownership defined before SMTP settings are built. — **Resolved enough to ship.** AES-256-GCM envelopes under `ENCRYPTION_KEY`, deployment-owner holds the key, reads never return the credential, rotation consequences are documented in `docs/OPERATIONS.md` §1. **Open:** no key id inside the envelope, so rotation means re-entering secrets rather than re-encrypting in place.
+12. **Tenant boundary is undecided:** if a deployment may host multiple organizations/customers, add tenant isolation to schema, indexes, authorization, and every repository query before the first data feature. Retrofitting this is expensive. — **Still open, and now expensive.** Data exists in single-tenant-shaped tables (no organization id on definitions, records or users; unique keys are global). This needs a product decision before any second-customer work starts.
 
 These are planning findings, not a security audit or a claim that each item is currently exploitable.
 
@@ -301,16 +412,21 @@ These are planning findings, not a security audit or a claim that each item is c
 - Keep a stable API contract and use shared client API/error handling; avoid page-specific fetch implementations.
 - Preserve accessibility, loading/error/empty states, and server-side authorization in each feature.
 - Update this guide when actual shipped behavior changes; label planned behavior as planned until implemented and tested.
+- Consult `docs/API.md` before changing a request/response shape, a status code, an error code, a permission key, or a list/filter contract, and update it in the same change.
+- Consult `docs/OPERATIONS.md` before touching migrations, environment variables, secrets, SMTP storage, logging, or anything that affects deployment or recovery.
+- This guide stays the source of truth for product scope, architecture decisions, and roadmap status; the other two documents describe behavior that is already in the code.
 
 ## 11. Local commands currently available
 
 From `server/`:
 
 ```powershell
-npm run migrate
-npm run dev
-npm run create-user
-npm run test-api
+npm run dev           # nodemon src/server.js
+npm start             # node src/server.js
+npm run migrate       # apply pending sql/migrations, checksum-verified
+npm run create-user   # interactive prompt: email, password, names
+npm run reset-password -- <email> <new-password>
+npm run test-api      # auth/health/CSRF integration pass against a running server
 ```
 
 From `client/`:
@@ -321,8 +437,24 @@ npm run lint
 npm run build
 ```
 
-The server requires values from `server/.env.example`, a reachable MySQL and Redis instance, and a strong session/CSRF secret. The Vite development server proxies `/api` requests to the configured local API. Use disposable test users/data for integration checks; never put real secrets in the repository.
+Requirements and notes:
+
+- The server reads `server/.env` (template: `server/.env.example`) and needs a reachable MySQL and Redis instance plus `SESSION_SECRET` and `CSRF_SECRET`. `ENCRYPTION_KEY` (zod: a string of at least 32 characters; `.env.example` suggests base64 of 48 random bytes) is optional until a secret setting such as SMTP is saved. `docs/OPERATIONS.md` §1 has the full variable table and secret ownership.
+- `npm run migrate` is idempotent for applied migrations and refuses to run when a stored checksum no longer matches the file. `docs/OPERATIONS.md` §2–§3 cover migration rules, backup, restore and rollback.
+- `npm run create-user` and `npm run reset-password` hash through the shared `hashPassword()` in `server/src/modules/auth/password.policy.js`, so CLI-created accounts verify exactly like API-created ones, and both enforce the same password policy.
+- `npm run test-api` targets `http://localhost:${PORT:-4000}` and needs `TEST_EMAIL` and `TEST_PASSWORD` in the environment. It exercises health, CSRF, validation failures, bad credentials, login, `/auth/me`, logout and a 404 only — it is not a test suite and does not cover the admin, record, organization or settings modules.
+- The Vite development server proxies `/api` requests to the configured local API. `npm run lint` and `npm run build` are the current client gates; there is no unit or e2e runner (§9.7).
+- Use disposable test users and data for integration checks; never put real secrets in the repository.
 
 ## 12. Summary
 
-The repository is a useful modular authentication foundation and already has a basic authenticated React shell. The requested configurable platform should be built as a metadata-driven system, with authorization, schema/version lifecycle, protected auth data, reusable UI, and server-authoritative validation designed in before CRUD screens multiply. The safest first milestone is the end-to-end MVP vertical slice described above, followed by the remaining admin, organization, user-management, and settings workflows.
+The repository is no longer only an authentication foundation. Phases 1–7 are implemented: session/CSRF authentication with device-bound sessions, server-side RBAC, the metadata-driven field/form/table/dropdown builders with `schema_version` lifecycle, the record engine over fixed metadata tables with bounded Excel-style search/filter/sort/facets, the organization module, user administration, encrypted SMTP settings with a connection test, the audit trail, and a single React administration surface built on shared UI primitives and permission-aware navigation. Migrations `001`–`008`, the endpoint contract, and the operational runbook are documented in `docs/API.md` and `docs/OPERATIONS.md`.
+
+The remaining work is quality and decisions, not missing screens:
+
+1. **Automated testing (§9.7)** — the only gating item. Agree the test stack and dependencies, or record manual verification as the standing policy; either way it must be an explicit decision rather than a silent default.
+2. **Acceptance in a real environment** — run migrations through a rehearsal, exercise `npm run test-api` plus the failure paths it does not cover, and confirm each builder end to end on the deployed configuration.
+3. **Product decisions that get harder to change later** — the tenant boundary (§9.12), the record-migration policy when a definition changes (§4.4), custom user profile attributes with a writer and UI (§4.2), and PII/audit retention.
+4. **Known technical debt** — route-level code splitting for the ~500 kB client bundle, `react-router`/`react-router-dom` duplication (§9.9), the legacy `user_sessions.device_id` column and unused `middleware/validate.js`, a key id inside encrypted envelopes so rotation does not require re-entry, and a structured log pipeline with aggregation and retention.
+
+Nothing in this summary should be read as a security audit or as evidence that a listed path has been exercised; the verification actually performed for this state is client lint plus a production build and static syntax checks on the server. The safest next milestone is the test-stack decision in item 1, because every item after it depends on how behavior gets proven.

@@ -1,13 +1,17 @@
 import { RouterProvider } from "react-router-dom";
 
-import router from "./router.jsx";
+import ToastProvider from "../components/ui/ToastProvider.jsx";
 import { AuthProvider } from "../features/auth/AuthProvider.jsx";
+
+import router from "./router.jsx";
 
 function App() {
   return (
-    <AuthProvider>
-      <RouterProvider router={router} />
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </ToastProvider>
   );
 }
 

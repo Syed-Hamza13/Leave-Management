@@ -2,6 +2,7 @@ import { badRequest, forbidden, notFound } from "../../lib/appError.js";
 import { withTransaction } from "../../lib/transactions.js";
 import { ROLES } from "../../lib/permissions.js";
 import { findUserById } from "../auth/auth.repository.js";
+import { recordAudit } from "../audit/audit.service.js";
 import {
   findPermissionKeysByUserId,
   findRoleKeysByUserId,
@@ -81,6 +82,15 @@ export async function assignRoles({ userId, roleKeys, actorUserId }) {
 
   await withTransaction(async (connection) => {
     await replaceUserRoles(connection, userId, nextRoleIds, actorUserId);
+
+    await recordAudit({
+      connection,
+      actorUserId,
+      action: "authorization.roles.assign",
+      entityType: "user",
+      entityId: userId,
+      summary: { roleKeys },
+    });
   });
 
   return getAuthorizationSummary(userId);

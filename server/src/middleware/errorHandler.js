@@ -1,5 +1,25 @@
 import { ZodError } from "zod";
 
+/*
+ * A MySQL driver error carries the fully interpolated statement in `err.sql`,
+ * which contains the record values that statement used. Logging the raw error
+ * object would therefore write PII and SQL text to the log, so only the type,
+ * the server's own message, the driver code, the stack and the request route are
+ * reported.
+ */
+function describeError(err, req) {
+  return {
+    name: err?.name ?? "Error",
+    code: err?.code ?? null,
+    message:
+      typeof err?.sqlMessage === "string" && err.sqlMessage
+        ? err.sqlMessage
+        : (err?.message ?? "Unknown error"),
+    route: `${req.method} ${req.path}`,
+    stack: err?.stack ?? null,
+  };
+}
+
 export function errorHandler(err, req, res, next) {
   if (res.headersSent) {
     return next(err);
@@ -60,7 +80,7 @@ export function errorHandler(err, req, res, next) {
    * Never expose internal error details for 500 responses.
    */
   if (statusCode >= 500) {
-    console.error(err);
+    console.error(describeError(err, req));
 
     return res.status(500).json({
       success: false,

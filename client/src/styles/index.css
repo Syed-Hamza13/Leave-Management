@@ -1,5 +1,42 @@
 @import "tailwindcss";
 
+/*
+ * Single source of truth for color, radius and type tokens.
+ *
+ * Tailwind v4 turns each --color-* entry into a utility (bg-brand, text-ink,
+ * border-line, ...), so screens never hard-code a hex value and a theme change
+ * is one edit here.
+ */
+@theme {
+  --color-canvas: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #f1f5f9;
+
+  --color-line: #e3e8ef;
+  --color-line-strong: #cbd5e1;
+
+  --color-ink: #0f172a;
+  --color-ink-soft: #475569;
+  --color-ink-muted: #8a97a8;
+
+  --color-brand: #4f46e5;
+  --color-brand-hover: #4338ca;
+  --color-brand-soft: #eef2ff;
+
+  --color-danger: #dc2626;
+  --color-danger-hover: #b91c1c;
+  --color-danger-soft: #fef2f2;
+
+  --color-success: #15803d;
+  --color-success-soft: #f0fdf4;
+
+  --color-warning: #b45309;
+  --color-warning-soft: #fffbeb;
+
+  --radius-card: 0.75rem;
+  --radius-control: 0.5rem;
+}
+
 html,
 body,
 #root {
@@ -8,4 +45,23 @@ body,
 
 body {
   margin: 0;
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * One focus treatment everywhere, including on elements that only receive focus
+ * through keyboard reorder controls.
+ */
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
 }
