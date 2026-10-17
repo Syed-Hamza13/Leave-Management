@@ -27,6 +27,29 @@ export function errorHandler(err, req, res, next) {
   }
 
   /*
+   * Database integrity violations are translated to a safe 409 so unique-key
+   * and foreign-key failures never leak SQL text to the client.
+   */
+  if (err?.code === "ER_DUP_ENTRY") {
+    return res.status(409).json({
+      success: false,
+      code: "DUPLICATE_ENTRY",
+      message: "That value is already in use.",
+    });
+  }
+
+  if (
+    err?.code === "ER_ROW_IS_REFERENCED_2" ||
+    err?.code === "ER_NO_REFERENCED_ROW_2"
+  ) {
+    return res.status(409).json({
+      success: false,
+      code: "REFERENCE_CONFLICT",
+      message: "This item is referenced elsewhere and cannot be changed.",
+    });
+  }
+
+  /*
    * Explicit application errors
    */
   const statusCode = Number.isInteger(err?.statusCode)
@@ -46,10 +69,28 @@ export function errorHandler(err, req, res, next) {
   }
 
   /*
-   * Client/application errors
+   * Client/application errors.
+   *
+   * `appCode` is a stable machine-readable code the client branches on, and
+   * `errors` carries per-field messages. Internal identifiers are never
+   * forwarded.
    */
-  return res.status(statusCode).json({
+  const payload = {
     success: false,
     message: err?.message || "Request failed",
-  });
+  };
+
+  if (typeof err?.appCode === "string") {
+    payload.code = err.appCode;
+  }
+
+  if (err?.errors && typeof err.errors === "object") {
+    payload.errors = err.errors;
+  }
+
+  if (err?.details && typeof err.details === "object") {
+    payload.details = err.details;
+  }
+
+  return res.status(statusCode).json(payload);
 }

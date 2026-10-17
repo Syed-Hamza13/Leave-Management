@@ -12,6 +12,7 @@ import {
   getDeviceByToken,
   registerDevice,
 } from "./device.service.js";
+import { ensureBootstrapAdministrator } from "../authorization/permission.service.js";
 
 const SESSION_MAX_AGE = 1000 * 60 * 60 * 8;
 
@@ -77,6 +78,13 @@ export async function login(req, res, next) {
      * We deliberately do this BEFORE touching the current session.
      */
     const user = await loginUser(data);
+
+    /*
+     * A fresh installation has no administrator yet. The first account to sign
+     * in successfully is promoted so the administration screens are reachable;
+     * every later account must be assigned roles explicitly.
+     */
+    await ensureBootstrapAdministrator(user.id);
 
     /*
      * registerDevice() returns { deviceId, deviceToken }, whereas

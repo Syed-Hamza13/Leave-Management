@@ -23,6 +23,12 @@ const envSchema = z.object({
 
   SESSION_SECRET: z.string().min(32),
   CSRF_SECRET: z.string().min(32),
+
+  /*
+   * Required only when secret settings (SMTP credentials) are saved.
+   * Optional at startup so existing environments keep working.
+   */
+  ENCRYPTION_KEY: z.string().min(32).optional(),
 });
 
 const result = envSchema.safeParse(process.env);
