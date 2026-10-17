@@ -33,6 +33,13 @@ Leave-Management/
 |   |-- PROJECT-GUIDE.md         # this file: state + plan
 |   |-- API.md                   # /api/v1 contract: envelopes, codes, endpoints
 |   `-- OPERATIONS.md            # environment, migrations, backup, release checklist
+|-- testing/                     # Selenium end-to-end suite (own package.json, ESM)
+|   |-- run.js                   # orchestrator: preconditions, budget guard, suites
+|   |-- config.js                # argv flags + testing/.env, run-id and isolation tag
+|   |-- setup-accounts.js        # one-time QA/limited account bootstrap
+|   |-- lib/                     # browser, api (fetch+CSRF), session (page object),
+|   |                            # fixtures, report (markdown/json + artifacts)
+|   `-- suites/                  # 00-smoke … 13-vertical-slice, one per surface
 |-- client/
 |   |-- index.html
 |   |-- package.json
@@ -435,6 +442,17 @@ From `client/`:
 npm run dev
 npm run lint
 npm run build
+```
+
+From `testing/` (Selenium end-to-end; needs both dev servers already running):
+
+```powershell
+npm install
+npm test                  # every suite, visible Chrome window
+npm run smoke             # connectivity check only (the 00-smoke suite)
+node run.js --suite records   # run one or more suites by name substring
+node run.js --test "duplicate email"   # run one test by name substring
+node run.js --headless    # no window, for a machine with no display
 ```
 
 Requirements and notes:

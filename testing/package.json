@@ -1,0 +1,15 @@
+{
+  "name": "leave-management-testing",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Selenium end-to-end suite for the Leave Management admin platform",
+  "scripts": {
+    "test": "node run.js",
+    "smoke": "node run.js --suite smoke"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.8",
+    "selenium-webdriver": "^4.51.0"
+  }
+}
