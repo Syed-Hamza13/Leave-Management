@@ -532,7 +532,14 @@ export async function updateRecordInTransaction(
 export async function archiveRecord(tableId, recordId, actor) {
   const existing = await getRecord(tableId, recordId);
 
-  if (existing.status === "archived") return existing;
+  /*
+   * A second archive is refused rather than silently accepted: the row is
+   * already out of the active list, so answering 200 would tell the caller
+   * something changed when nothing did.
+   */
+  if (existing.status === "archived") {
+    throw conflict("This record is already archived.", { code: "RECORD_ARCHIVED" });
+  }
 
   await withTransaction(async (connection) => {
     const archived = await archiveRecordById(connection, recordId, actor?.userId ?? null);

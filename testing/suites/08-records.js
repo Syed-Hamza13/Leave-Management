@@ -149,7 +149,9 @@ export default {
 
         await session.waitForText("No records match");
 
-        await session.fill("Search records", "");
+        // Clearing must arrive as one input event; sendKeys("") leaves the
+        // debounced search holding its previous value.
+        await session.setReactValue("Search records", "");
         await session.driver.sleep(1200);
 
         assert.ok(

@@ -16,8 +16,16 @@ function LoginPage() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
+  const destination = location.state?.from?.pathname || "/";
+
+  /*
+   * Signing in flips the authenticated flag while the submit handler is still
+   * running. Navigating to the dashboard here would win that race and drop the
+   * screen the person was working on, so an already-signed-in visitor returns to
+   * the address they came from instead.
+   */
   if (isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={destination} replace />;
   }
 
   async function handleSubmit(event) {
@@ -29,9 +37,6 @@ function LoginPage() {
 
     try {
       await login(email, password);
-
-      const destination =
-        location.state?.from?.pathname || "/";
 
       navigate(destination, { replace: true });
     } catch (error) {

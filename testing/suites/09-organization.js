@@ -46,18 +46,32 @@ export default {
         await session.submitDialog();
         await session.expectToast("was created");
 
+        // The list is paged, so the new type is found by searching for it.
+        await session.fill("Search entity types", label);
         await session.waitRow(label);
 
         const cells = await session.rowCells(label);
         const configurations = await session.columnHeaderIndex("Configurations");
         const entities = await session.columnHeaderIndex("Entities");
+        const status = await session.columnHeaderIndex("Status");
 
         assert.eq(cells[configurations], "0", `a new type has no configurations: ${JSON.stringify(cells)}`);
         assert.eq(cells[entities], "0", `a new type has no entities: ${JSON.stringify(cells)}`);
-        assert.ok(cells.at(-1).includes("active"), "the row is marked active");
+
+        /*
+         * A trailing actions cell follows Status, so the badge is read by its
+         * header rather than by counting back from the end of the row.
+         */
+        assert.eq(
+          String(cells[status] ?? "").toLowerCase(),
+          "active",
+          `the row is marked active: ${JSON.stringify(cells)}`
+        );
 
         await session.reload();
         await session.waitForApp();
+        await session.fill("Search entity types", label);
+        await session.waitRow(label);
 
         assert.ok(await session.rowExists(label), "the type survives a reload");
       },
@@ -291,6 +305,15 @@ export default {
         await session.fill("Search entity types", campus.typeLabel);
         await session.waitForRows();
 
+        // "New <type>" belongs to the type screen, not to the list of types.
+        const typeLink = await session.driver.findElement(
+          By.xpath(`//table//a[normalize-space()="${campus.typeLabel}"]`)
+        );
+
+        await typeLink.click();
+        await session.step("open the campus type");
+        await session.waitForMainText(`New ${campus.typeLabel.toLowerCase()}`);
+
         await session.clickButton(`New ${campus.typeLabel.toLowerCase()}`);
         await session.anyDialogTitle(campus.typeLabel.toLowerCase());
 
@@ -356,7 +379,7 @@ export default {
           "read the section rows for this entity"
         );
 
-        const rows = Array.isArray(stored) ? stored : (stored?.rows ?? []);
+        const rows = Array.isArray(stored) ? stored : (stored?.data ?? []);
 
         assert.ok(
           rows.length >= 1 &&
@@ -370,6 +393,21 @@ export default {
       screen: "/organization",
       area: "Organization — definition guards",
       fn: async ({ session, assert, adminApi, campus }) => {
+        /*
+         * The guard only bites while the type still holds an entity. Checked
+         * before the click, so a missing entity fails here with its own reason
+         * instead of archiving the type and breaking the next two tests.
+         */
+        const before = await adminApi.expectOk(
+          adminApi.get(`/organization/entity-types/${campus.typeId}`),
+          "read the type before archiving"
+        );
+
+        assert.ok(
+          Number(before.entityCount) > 0,
+          `the type needs an entity for the guard to refuse (${before.entityCount})`
+        );
+
         await session.goto("/organization");
         await session.fill("Search entity types", campus.typeLabel);
         await session.waitForRows();

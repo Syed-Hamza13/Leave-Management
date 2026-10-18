@@ -151,11 +151,26 @@ export default {
           `the incompatible column carries a reason instead of being silently dropped: ${JSON.stringify(labels)}`
         );
 
+        /*
+         * The reason is the server's own verdict text, read off the option rather
+         * than off the page: a closed <select> does not reliably contribute its
+         * unchosen options to the rendered text of <main>.
+         */
+        assert.includesText(
+          refusal,
+          "cannot",
+          `the offered choice says why the pairing is refused: ${refusal}`
+        );
+
         const control = await session.control(travel.fieldLabel);
         const options = await control.findElements(By.css("option"));
 
+        let seenBlocked = 0;
+
         for (const option of options) {
           if ((await option.getText()).includes(blocked.label)) {
+            seenBlocked += 1;
+
             assert.ok(
               (await option.getAttribute("disabled")) !== null,
               `the blocked pairing is a disabled option: ${await option.getText()}`
@@ -163,10 +178,7 @@ export default {
           }
         }
 
-        assert.ok(
-          (await session.text(By.css("main"))).includes("cannot"),
-          "the screen explains that refused pairings are shown disabled"
-        );
+        assert.eq(seenBlocked, 1, "the blocked column is offered exactly once");
       },
     },
     {

@@ -27,8 +27,23 @@ export const NAV_GROUPS = [
   },
   {
     label: "Organization",
+    /*
+     * Entity types are administrator-defined, so the shell nests one entry per
+     * active type under this group: reaching a department or a branch should not
+     * cost two clicks on every visit.
+     */
+    nest: "entityTypes",
     items: [
-      { to: "/organization", label: "Structure", permission: PERMISSIONS.ORGANIZATION_VIEW },
+      /*
+       * `end` keeps this entry lit only on the list itself: the type screens
+       * branch off it and each has its own entry.
+       */
+      {
+        to: "/organization",
+        label: "Structure",
+        permission: PERMISSIONS.ORGANIZATION_VIEW,
+        end: true,
+      },
     ],
   },
   {

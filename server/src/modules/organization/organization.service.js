@@ -44,6 +44,8 @@ import {
  */
 const MAX_HIERARCHY_DEPTH = 25;
 
+const LOOKUP_TYPE_LIMIT = 100;
+
 /* ---------------------------------------------------------------- entity types */
 
 export async function listEntityTypes(query) {
@@ -53,6 +55,23 @@ export async function listEntityTypes(query) {
   ]);
 
   return { entityTypes, total };
+}
+
+/*
+ * Every usable entity type gets its own entry in the sidebar, so the shell needs
+ * the short list on all screens. The number is capped: the navigation would
+ * otherwise grow without bound on a large installation.
+ */
+export async function listActiveEntityTypeSummaries() {
+  const entityTypes = await findEntityTypes({ status: "active", limit: LOOKUP_TYPE_LIMIT });
+
+  return entityTypes.map((entityType) => ({
+    id: entityType.id,
+    key: entityType.key,
+    label: entityType.label,
+    entityCount: entityType.entityCount,
+    configurationCount: entityType.configurationCount,
+  }));
 }
 
 export async function getEntityType(entityTypeId, { includeConfigurations = true } = {}) {

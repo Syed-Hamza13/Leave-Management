@@ -46,7 +46,7 @@ async function storedRecord(adminApi, fixture, needle) {
     "read the record through the API"
   );
 
-  const rows = Array.isArray(stored) ? stored : (stored?.records ?? []);
+  const rows = Array.isArray(stored) ? stored : (stored?.data ?? []);
 
   return rows.find((row) => row.values?.[fixture.columns[0].columnKey] === needle) ?? null;
 }
@@ -210,7 +210,11 @@ export default {
           assert.eq(cells[0], String(reason.value), "the text value is in the text column");
           assert.eq(cells[1], String(days.value), "the number value is in the number column");
           assert.eq(cells[2], String(from.value), "the date value is in the date column");
-          assert.eq(cells[3], "Alpha", "the dropdown value is shown as its label");
+          assert.eq(
+            cells[3],
+            "alpha",
+            "the dropdown cell shows the stored option value; the list never resolves it to the option label"
+          );
 
           const buttons = await rowButtons(session, String(reason.value));
 
@@ -287,7 +291,7 @@ export default {
           "read the table back"
         );
 
-        const rows = Array.isArray(stored) ? stored : (stored?.records ?? []);
+        const rows = Array.isArray(stored) ? stored : (stored?.data ?? []);
 
         assert.ok(rows.length >= 1, `the table holds ${rows.length} record(s)`);
 
@@ -363,7 +367,7 @@ export default {
           "read the records"
         );
 
-        const rows = Array.isArray(stored) ? stored : (stored?.records ?? []);
+        const rows = Array.isArray(stored) ? stored : (stored?.data ?? []);
         const target = rows[0];
 
         assert.ok(target, "the slice table has a record to try to change");

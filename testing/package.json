@@ -6,7 +6,11 @@
   "description": "Selenium end-to-end suite for the Leave Management admin platform",
   "scripts": {
     "test": "node run.js",
-    "smoke": "node run.js --suite smoke"
+    "headless": "node run.js --headless",
+    "smoke": "node run.js --suite smoke",
+    "setup": "node setup-accounts.js",
+    "cleanup": "node cleanup.js",
+    "cleanup:apply": "node cleanup.js --yes"
   },
   "dependencies": {
     "dotenv": "^18.0.8",

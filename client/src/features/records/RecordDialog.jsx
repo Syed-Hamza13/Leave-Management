@@ -74,7 +74,9 @@ export default function RecordDialog({
 
   const values = draftValues ?? initialValues;
 
-  const { optionsFor, truncatedFor } = useEntryOptions(fields);
+  const { optionsFor, truncatedFor, failedFor, reload: reloadOptions } = useEntryOptions(fields);
+
+  const optionsFailed = fields.some((field) => failedFor(field));
 
   const busy = formsLoading || renderLoading || pairLoading;
 
@@ -185,6 +187,18 @@ export default function RecordDialog({
           </p>
         ) : null}
 
+        {optionsFailed ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-warning bg-warning-soft px-3 py-2">
+            <p className="text-sm font-medium text-warning">
+              Some dropdowns and relations could not be loaded, so those fields offer nothing yet.
+            </p>
+
+            <Button variant="secondary" size="sm" onClick={reloadOptions} disabled={pending}>
+              Try again
+            </Button>
+          </div>
+        ) : null}
+
         {mappedForms.length > 1 ? (
           <Select
             id="record-form"
@@ -229,7 +243,9 @@ export default function RecordDialog({
               field={rendered}
               value={values[field.key] ?? null}
               onChange={setField}
-              error={errors[field.key] ?? null}
+              error={
+                errors[field.key] ?? (failedFor(field) ? "Choices unavailable." : null)
+              }
               disabled={pending}
               options={field.dataType === "dropdown" ? options : null}
               recordOptions={field.dataType === "record_reference" ? options : null}

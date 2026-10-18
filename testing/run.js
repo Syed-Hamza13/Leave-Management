@@ -176,16 +176,6 @@ async function main() {
       await guardBudget();
       recorder.startSuite(suite.name, suite.area);
 
-      if (suite.requires?.includes("limited") && !limitedApi) {
-        for (const test of suite.tests) {
-          recorder.startTest(test.name, { area: suite.area });
-          recorder.skipTest("No limited-role account configured.");
-          recorder.finishTest("skipped", { notes: "requires a limited account" });
-        }
-
-        continue;
-      }
-
       let suiteContext = context;
 
       /*
@@ -214,6 +204,15 @@ async function main() {
           area: test.area || suite.area,
           screen: test.screen || "",
         });
+
+        // A single test can need the second account without taking the suite with it.
+        if (!limitedApi && test.requires?.includes("limited")) {
+          recorder.skipTest("No limited-role account configured.");
+          recorder.finishTest("skipped", { notes: "requires a limited account" });
+          console.log(`  – ${suite.name} › ${test.name} — needs a limited account`);
+
+          continue;
+        }
 
         try {
           await test.fn(suiteContext);

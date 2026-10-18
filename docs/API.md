@@ -199,7 +199,8 @@ A permission failure is `403 { code: "PERMISSION_DENIED" }`. On a fresh installa
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/`, `/:dropdownId`, `/:dropdownId/options` | view \| manage |
+| `GET` | `/`, `/:dropdownId` | view \| manage |
+| `GET` | `/:dropdownId/options` | view \| manage \| records.view \| records.create — an entry picker reads the option set behind its field |
 | `POST` | `/`, `/:dropdownId/options` | `DROPDOWNS_MANAGE` |
 | `PATCH` | `/:dropdownId`, `/:dropdownId/options/:optionId` | `DROPDOWNS_MANAGE` |
 | `PUT` | `/:dropdownId/options/order` | `DROPDOWNS_MANAGE` — full ordered set |
@@ -220,8 +221,10 @@ A permission failure is `403 { code: "PERMISSION_DENIED" }`. On a fresh installa
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/`, `/:tableId`, `/:tableId/usage`, `/:tableId/columns` | view \| manage |
-| `POST` | `/`, `/:tableId/columns` | `TABLES_MANAGE` |
+| `GET` | `/` | view \| manage |
+| `GET` | `/:tableId`, `/:tableId/columns` | view \| manage \| records.view \| records.create — the entry surface reads the table it writes into |
+| `GET` | `/:tableId/usage` | view \| manage |
+| `POST` | `/`, `/:tableId/columns` | `TABLES_MANAGE` — a system table refuses a new column with `SYSTEM_TABLE_LOCKED` |
 | `PATCH` | `/:tableId`, `/:tableId/columns/:columnId` | `TABLES_MANAGE` |
 | `PUT` | `/:tableId/columns/order` | `TABLES_MANAGE` — full ordered set |
 | `DELETE` | `/:tableId`, `/:tableId/columns/:columnId` | `TABLES_MANAGE` — archives; system tables/columns are read-only |
@@ -230,20 +233,20 @@ A permission failure is `403 { code: "PERMISSION_DENIED" }`. On a fresh installa
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/` | view \| manage |
+| `GET` | `/` | view \| manage \| records.view \| records.create — entering a row means reading the mapping it writes through |
 | `GET` | `/compatibility?formId=&tableId=` | view \| manage — compatible field/column pairs |
-| `GET` | `/for/:formId/:tableId` | view \| manage |
-| `PUT` | `/` | `MAPPINGS_MANAGE` — creates or replaces the pair's mapping; rejects missing/incompatible/inactive entries and reports every problem in `details.errors` |
+| `GET` | `/for/:formId/:tableId` | view \| manage \| records.view \| records.create |
+| `PUT` | `/` | `MAPPINGS_MANAGE` — creates or replaces the pair's mapping; rejects missing/incompatible/inactive entries and reports every problem in `details.errors`. Saving over an archived pair reactivates it |
 | `GET` | `/:mappingId` | view \| manage |
-| `PATCH` | `/:mappingId` | `MAPPINGS_MANAGE` |
-| `DELETE` | `/:mappingId` | `MAPPINGS_MANAGE` |
+| `PATCH` | `/:mappingId` | `MAPPINGS_MANAGE` — `status: "archived"` is the recoverable archive; `status: "active"` restores it |
+| `DELETE` | `/:mappingId` | `MAPPINGS_MANAGE` — hard delete, refused with `MAPPING_IN_USE` while an organization configuration points at the pair |
 
 ### Metadata (reference data, session only)
 
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/api/v1/admin/metadata/data-types` | types, storage kind, per-type config, filter operators |
-| `GET` | `/api/v1/admin/metadata/lookups` | active fields, dropdowns, forms, tables and columns for pickers |
+| `GET` | `/api/v1/admin/metadata/lookups` | active dropdowns, forms, tables and entity types for pickers; `entityTypes` is what the sidebar nests under the Organization group |
 
 ### Records (data plane) — `/api/v1/tables`
 
@@ -254,7 +257,7 @@ A permission failure is `403 { code: "PERMISSION_DENIED" }`. On a fresh installa
 | `POST` | `/:tableId/records` | `RECORDS_CREATE` — `{ values, formId?, organizationEntityId? }`; with `formId` the keys are form field keys resolved through the mapping |
 | `GET` | `/:tableId/records/:recordId` | `RECORDS_VIEW` |
 | `PATCH` | `/:tableId/records/:recordId` | `RECORDS_UPDATE` |
-| `DELETE` | `/:tableId/records/:recordId` | `RECORDS_DELETE` — archives the row |
+| `DELETE` | `/:tableId/records/:recordId` | `RECORDS_DELETE` — archives the row; archiving one that is already archived is refused with `RECORD_ARCHIVED` |
 
 A record accepts at most **200** values, revalidated against the live column definitions on every write.
 
@@ -331,7 +334,7 @@ Codes are stable and machine-readable; group them by what the caller should do.
 
 **Lifecycle and archived references (409/422):** `FIELD_ARCHIVED`, `DROPDOWN_ARCHIVED`, `FORM_ARCHIVED`, `TABLE_ARCHIVED`, `MAPPING_ARCHIVED`, `ENTITY_ARCHIVED`, `ENTITY_TYPE_ARCHIVED`, `RECORD_ARCHIVED`, `RELATION_TARGET_ARCHIVED`, `TARGET_TABLE_ARCHIVED`, `MAPPING_STALE`, `MAPPING_DEFINITION_INACTIVE`, `DROPDOWN_UNAVAILABLE`.
 
-**Definition and mapping rules (400/422):** `UNSUPPORTED_DATA_TYPE`, `INVALID_TYPE_CONFIG`, `INVALID_DEFAULT_VALUE`, `REQUIRED_WITHOUT_DEFAULT`, `INVALID_KEY`, `RESERVED_KEY`, `FIELD_TYPE_LOCKED`, `COLUMN_TYPE_LOCKED`, `SYSTEM_COLUMN_LOCKED`, `SYSTEM_TABLE_LOCKED`, `SYSTEM_TABLE_READONLY`, `FIELD_NOT_MAPPED`, `FIELD_MISMATCH`, `COLUMN_MISMATCH`, `OPTION_MISMATCH`, `INVALID_MAPPING`, `MAPPING_PAIR_MISMATCH`, `DUPLICATE_FORM_FIELD`, `INCOMPLETE_FIELD_ORDER`, `INCOMPLETE_COLUMN_ORDER`, `INCOMPLETE_OPTION_ORDER`, `INVALID_DISPLAY_COLUMN`, `SELF_RELATION_BLOCKED`, `RELATION_TYPE_MISMATCH`, `RELATION_TARGET_REQUIRED`.
+**Definition and mapping rules (400/422):** `UNSUPPORTED_DATA_TYPE`, `INVALID_TYPE_CONFIG`, `INVALID_DEFAULT_VALUE`, `INVALID_KEY`, `RESERVED_KEY`, `FIELD_TYPE_LOCKED`, `COLUMN_TYPE_LOCKED`, `SYSTEM_COLUMN_LOCKED`, `SYSTEM_TABLE_LOCKED`, `SYSTEM_TABLE_READONLY`, `FIELD_NOT_MAPPED`, `FIELD_MISMATCH`, `COLUMN_MISMATCH`, `OPTION_MISMATCH`, `INVALID_MAPPING`, `MAPPING_PAIR_MISMATCH`, `DUPLICATE_FORM_FIELD`, `INCOMPLETE_FIELD_ORDER`, `INCOMPLETE_COLUMN_ORDER`, `INCOMPLETE_OPTION_ORDER`, `INVALID_DISPLAY_COLUMN`, `SELF_RELATION_BLOCKED`, `RELATION_TYPE_MISMATCH`, `RELATION_TARGET_REQUIRED`.
 
 **Record values and queries (400/422):** `INVALID_RECORD_VALUES`, `INVALID_RECORD_REFERENCE`, `INVALID_COLUMN`, `INVALID_FILTER_OPERATOR`, `INVALID_FILTER_VALUE`, `INVALID_SORT_KEY`, `INVALID_SORT_DIRECTION`, `SORT_LIMIT_EXCEEDED`, `FILTER_LIMIT_EXCEEDED`, `FILTER_VALUE_LIMIT`, `FACET_UNSUPPORTED`, `SEARCH_TOO_LONG`.
 

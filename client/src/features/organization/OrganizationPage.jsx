@@ -18,12 +18,15 @@ import { organization as organizationApi } from "../../services/resources.js";
 
 import { usePermissions } from "../permissions/PermissionsContext.js";
 
+import { useMetadata } from "../metadata/MetadataContext.js";
+
 import EntityTypeDialog from "./EntityTypeDialog.jsx";
 
 const PAGE_SIZE = 25;
 
 export default function OrganizationPage() {
   const { can } = usePermissions();
+  const { refresh: refreshMetadata } = useMetadata();
   const toast = useToast();
 
   const [search, setSearch] = useState("");
@@ -105,6 +108,7 @@ export default function OrganizationPage() {
     if (outcome.ok) {
       toast.success(`“${target.label}” was archived.`);
       reload();
+      refreshMetadata();
       return;
     }
 
@@ -209,6 +213,9 @@ export default function OrganizationPage() {
                 : `“${saved?.label ?? "Entity type"}” was saved.`
             );
             reload();
+            /* The sidebar lists entity types, so a new or renamed one only
+             * appears there after the shared reference lists are re-read. */
+            refreshMetadata();
           }}
         />
       ) : null}

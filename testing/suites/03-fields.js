@@ -35,15 +35,29 @@ export default {
 
         await createField(session, { label, key });
 
+        // The list is paged at 25 rows and sorted by name, so the new field is searched for.
+        await session.fill("Search fields", label);
         await session.waitRow(label);
 
         await session.reload();
-        assert.ok(await session.rowExists(label), "the field is still there after a reload");
+        await session.fill("Search fields", label);
+
+        assert.ok(await session.waitRow(label), "the field is still there after a reload");
 
         const cells = await session.rowCells(label);
+        const type = await session.columnHeaderIndex("Type");
+        const status = await session.columnHeaderIndex("Status");
 
-        assert.ok(cells.join(" | ").toLowerCase().includes("text"), `type column shows text: ${cells}`);
-        assert.ok(cells.join(" | ").toLowerCase().includes("active"), `status column shows active: ${cells}`);
+        assert.eq(
+          String(cells[type] ?? "").toLowerCase(),
+          "short text",
+          `the type column names the data type: ${JSON.stringify(cells)}`
+        );
+        assert.eq(
+          String(cells[status] ?? "").toLowerCase(),
+          "active",
+          `the status column shows active: ${JSON.stringify(cells)}`
+        );
       },
     },
     {
@@ -108,7 +122,13 @@ export default {
 
         const alert = await session.anyText(By.css('[role="dialog"] [role="alert"], [role="dialog"] .text-danger-soft'));
 
-        assert.includesText(alert || "", "already in use", "duplicate refusal message");
+        /*
+         * A duplicate key is caught by a pre-check in the service, so the answer is
+         * that module's own conflict message; the generic duplicate-entry text from
+         * the error handler is what the pre-check exists to avoid.
+         */
+        assert.includesText(alert || "", "already exists", "duplicate refusal message");
+        assert.includesText(alert || "", key, "the refusal names the key it clashed on");
         assert.ok(
           !/ER_DUP_ENTRY|UNIQUE|mysql|sql/i.test(alert || ""),
           `the message carries no internals: ${alert}`

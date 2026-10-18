@@ -17,6 +17,7 @@ import { errorMessage } from "../../services/errors.js";
 import { mappings as mappingsApi } from "../../services/resources.js";
 
 import { usePermissions } from "../permissions/PermissionsContext.js";
+import { useMetadata } from "../metadata/MetadataContext.js";
 
 import MappingPickerDialog from "./MappingPickerDialog.jsx";
 import { mappingEditorPath } from "./mappingPaths.js";
@@ -25,6 +26,7 @@ const PAGE_SIZE = 25;
 
 export default function MappingsPage() {
   const { can } = usePermissions();
+  const { refresh: refreshMetadata } = useMetadata();
   const toast = useToast();
   const navigate = useNavigate();
 
@@ -34,6 +36,7 @@ export default function MappingsPage() {
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const canManage = can(PERMISSIONS.MAPPINGS_MANAGE);
 
@@ -46,6 +49,17 @@ export default function MappingsPage() {
   const meta = data?.meta ?? null;
 
   const { run: runArchive, pending: archiving } = useMutation();
+
+  /*
+   * The picker offers every active form and table from the session's snapshot of
+   * the server-owned inventory, so a definition created in this browser session
+   * is missing from it. Opening the picker re-reads the inventory instead of
+   * trusting the copy taken when the app first loaded.
+   */
+  function openPicker() {
+    refreshMetadata();
+    setPickerOpen(true);
+  }
 
   const columns = useMemo(
     () => [
@@ -114,6 +128,41 @@ export default function MappingsPage() {
     toast.error(errorMessage(outcome.error, "The mapping could not be archived."));
   }
 
+  /*
+   * An archived mapping stays re-openable: restoring writes the status back, and
+   * re-mapping the same pair reactivates it on the server too. A delete is final,
+   * so it is offered only once the mapping is already archived.
+   */
+  async function restoreMapping(target) {
+    const outcome = await runArchive(() =>
+      mappingsApi.update(target.id, { status: "active" })
+    );
+
+    if (!outcome.ok) {
+      toast.error(errorMessage(outcome.error, "The mapping could not be restored."));
+      return;
+    }
+
+    toast.success(`“${target.label}” is active again.`);
+    reload();
+  }
+
+  async function confirmDelete() {
+    const target = deleteTarget;
+
+    const outcome = await runArchive(() => mappingsApi.remove(target.id));
+
+    setDeleteTarget(null);
+
+    if (outcome.ok) {
+      toast.success(`“${target.label}” was deleted.`);
+      reload();
+      return;
+    }
+
+    toast.error(errorMessage(outcome.error, "The mapping could not be deleted."));
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -145,7 +194,7 @@ export default function MappingsPage() {
           />
         </div>
 
-        {canManage ? <Button onClick={() => setPickerOpen(true)}>New mapping</Button> : null}
+        {canManage ? <Button onClick={openPicker}>New mapping</Button> : null}
       </div>
 
       <DataTable
@@ -166,7 +215,7 @@ export default function MappingsPage() {
             }
             action={
               canManage && !search ? (
-                <Button onClick={() => setPickerOpen(true)}>New mapping</Button>
+                <Button onClick={openPicker}>New mapping</Button>
               ) : null
             }
           />
@@ -183,6 +232,18 @@ export default function MappingsPage() {
               <Button variant="ghost" size="sm" onClick={() => setArchiveTarget(row)}>
                 Archive
               </Button>
+            ) : null}
+
+            {canManage && row.status === "archived" ? (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => restoreMapping(row)}>
+                  Restore
+                </Button>
+
+                <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(row)}>
+                  Delete
+                </Button>
+              </>
             ) : null}
           </>
         )}
@@ -207,6 +268,17 @@ export default function MappingsPage() {
         loading={archiving}
         onCancel={() => setArchiveTarget(null)}
         onConfirm={confirmArchive}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Delete mapping"
+        message={`Delete “${deleteTarget?.label ?? ""}”?`}
+        detail="The field-to-column connections are removed with it. Records already stored in the table stay. An organization section that uses this mapping is refused until it is reconfigured."
+        confirmLabel="Delete mapping"
+        loading={archiving}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
       />
     </div>
   );

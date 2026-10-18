@@ -2,11 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useMatches } from "react-router-dom";
 
 import { useAuth } from "../features/auth/AuthContext.js";
+import { useMetadata } from "../features/metadata/MetadataContext.js";
 import { usePermissions } from "../features/permissions/PermissionsContext.js";
 
 import Button from "../components/ui/Button.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { Skeleton } from "../components/ui/LoadingState.jsx";
+
+import { PERMISSIONS } from "../lib/permissions.js";
 
 import { NAV_GROUPS } from "./navigation.js";
 
@@ -26,6 +29,7 @@ const LINK_CLASS = ({ isActive }) =>
 function AppShell() {
   const { user, logout } = useAuth();
   const { can, loading } = usePermissions();
+  const { lookups } = useMetadata();
   const matches = useMatches();
   const location = useLocation();
 
@@ -55,14 +59,28 @@ function AppShell() {
     return null;
   }, [matches]);
 
-  const groups = useMemo(
-    () =>
-      NAV_GROUPS.map((group) => ({
+  const groups = useMemo(() => {
+    /*
+     * Entity types are defined at runtime, so they are appended to the group that
+     * opts in through `nest`. The extra indent marks them as one level below the
+     * group's own screens.
+     */
+    const entityItems = (lookups.entityTypes ?? []).map((entityType) => ({
+      to: `/organization/${entityType.id}`,
+      label: entityType.label,
+      permission: PERMISSIONS.ORGANIZATION_VIEW,
+      nested: true,
+    }));
+
+    return NAV_GROUPS.map((group) => {
+      const dynamic = group.nest === "entityTypes" ? entityItems : [];
+
+      return {
         ...group,
-        items: group.items.filter((item) => can(item.permission)),
-      })).filter((group) => group.items.length > 0),
-    [can]
-  );
+        items: [...group.items, ...dynamic].filter((item) => can(item.permission)),
+      };
+    }).filter((group) => group.items.length > 0);
+  }, [can, lookups.entityTypes]);
 
   const fullName =
     [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.email;
@@ -127,8 +145,13 @@ function AppShell() {
                   <NavLink
                     key={item.to}
                     to={item.to}
+                    end={item.end}
                     onClick={() => setMenuOpen(false)}
-                    className={LINK_CLASS}
+                    className={({ isActive }) =>
+                      [LINK_CLASS({ isActive }), item.nested ? "ml-3" : ""]
+                        .filter(Boolean)
+                        .join(" ")
+                    }
                   >
                     {item.label}
                   </NavLink>

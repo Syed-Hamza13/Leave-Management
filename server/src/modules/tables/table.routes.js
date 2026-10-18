@@ -19,15 +19,23 @@ import {
 
 const VIEW = [PERMISSIONS.TABLES_VIEW, PERMISSIONS.TABLES_MANAGE];
 
+/*
+ * Entering a record means reading the table it lands in, so an account that may
+ * browse or create records reaches this definition even when it holds no part of
+ * the table builder. Only these two read-only routes widen; listing tables and
+ * every mutation stay behind the administration permissions.
+ */
+const ENTRY = [...VIEW, PERMISSIONS.RECORDS_VIEW, PERMISSIONS.RECORDS_CREATE];
+
 export function createTableRoutes() {
   const router = Router();
 
   router.use(requireAuth);
 
   router.get("/", requirePermission(VIEW), listTablesHandler);
-  router.get("/:tableId", requirePermission(VIEW), getTableHandler);
+  router.get("/:tableId", requirePermission(ENTRY), getTableHandler);
   router.get("/:tableId/usage", requirePermission(VIEW), tableUsageHandler);
-  router.get("/:tableId/columns", requirePermission(VIEW), listColumnsHandler);
+  router.get("/:tableId/columns", requirePermission(ENTRY), listColumnsHandler);
 
   router.post("/", requirePermission(PERMISSIONS.TABLES_MANAGE), createTableHandler);
 

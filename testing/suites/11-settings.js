@@ -30,9 +30,9 @@ export default {
   async setup({ adminApi, isolate, config }) {
     const me = await adminApi.me();
 
-    if (!keys(me.permissions).includes("settings.manage")) {
+    if (!keys(me.permissions).includes("admin.settings.manage")) {
       throw new Error(
-        `The configured E2E admin (${config.admin.email}) has no settings.manage, so the mail card cannot be edited or gated.`
+        `The configured E2E admin (${config.admin.email}) has no admin.settings.manage, so the mail card cannot be edited or gated.`
       );
     }
 
@@ -280,11 +280,11 @@ export default {
         const mine = await viewerApi.me();
 
         assert.ok(
-          keys(mine.permissions).includes("settings.view"),
+          keys(mine.permissions).includes("admin.settings.view"),
           `the administrator really may view settings (${keys(mine.permissions).join(",")})`
         );
         assert.ok(
-          !keys(mine.permissions).includes("settings.manage"),
+          !keys(mine.permissions).includes("admin.settings.manage"),
           "and really may not manage them"
         );
 

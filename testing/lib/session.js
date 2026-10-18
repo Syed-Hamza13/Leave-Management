@@ -187,7 +187,9 @@ export class Session {
    */
   async formSubmissionBlocked() {
     return this.driver.executeScript(`
-      const form = document.querySelector("form");
+      // A dialog carries the form under test; the page behind it may carry one too.
+      const form =
+        document.querySelector('div[role="dialog"] form') || document.querySelector("form");
 
       if (!form) return { form: false, reason: "no form on the screen" };
 
@@ -278,6 +280,26 @@ export class Session {
     );
   }
 
+  /*
+   * The screen area, not the whole page. A permission context that is still
+   * resolving paints "Checking access…" in `main` while the sidebar already
+   * carries every nav label, so a body-wide text wait can settle on content that
+   * has nothing to do with the screen under test.
+   */
+  async waitForMainText(needle, timeout = null) {
+    const limit = timeout || config.timeouts.toast;
+
+    return this.driver.wait(
+      async () => {
+        const texts = await this.textsOf(By.css("main"));
+
+        return texts.some((entry) => entry.includes(needle)) ? true : undefined;
+      },
+      limit,
+      `Never saw "${needle}" in the screen area`
+    );
+  }
+
   button(text, { root = null, partial = false } = {}) {
     const base = root ? ".//button" : "//button";
     const matcher = partial
@@ -364,6 +386,36 @@ export class Session {
     }
   }
 
+  /**
+   * Resolves the control a visible label belongs to through its `for`
+   * attribute. Checkbox and Toggle render the input before the label, so a
+   * following-sibling search walks past them into an unrelated control; `for`
+   * names the right one whatever React generated for the id.
+   */
+  async controlByLabelFor(idOrLabel, { prefix = false } = {}) {
+    const matcher = prefix
+      ? `starts-with(normalize-space(), "${idOrLabel} ")`
+      : `normalize-space()="${idOrLabel}"`;
+
+    const labels = await this.driver.findElements(By.xpath(`//label[@for][${matcher}]`));
+
+    for (const label of labels) {
+      const target = await label.getAttribute("for");
+
+      if (!target) {
+        continue;
+      }
+
+      const found = await this.driver.findElements(By.xpath(`//*[@id="${target}"]`));
+
+      if (found.length) {
+        return found[0];
+      }
+    }
+
+    return null;
+  }
+
   /** Native control by id, with a label lookup fallback for useId-generated ids. */
   async control(idOrLabel, { timeout = null } = {}) {
     const limit = Date.now() + (timeout || config.timeouts.element);
@@ -376,6 +428,12 @@ export class Session {
         if (byId.length) {
           return byId[0];
         }
+      }
+
+      const byFor = await this.controlByLabelFor(idOrLabel);
+
+      if (byFor) {
+        return byFor;
       }
 
       const byLabel = await this.driver.findElements(
@@ -393,6 +451,12 @@ export class Session {
        * text is the label plus " * (required)". Prefix matching keeps a test
        * able to name the field the way a human reads it.
        */
+      const byForPrefix = await this.controlByLabelFor(idOrLabel, { prefix: true });
+
+      if (byForPrefix) {
+        return byForPrefix;
+      }
+
       const byPrefix = await this.driver.findElements(
         By.xpath(
           `//label[starts-with(normalize-space(), "${idOrLabel}")]/following::input[1] | //label[starts-with(normalize-space(), "${idOrLabel}")]/following::select[1] | //label[starts-with(normalize-space(), "${idOrLabel}")]/following::textarea[1]`
@@ -529,8 +593,9 @@ export class Session {
   async optionLabels(idOrLabel) {
     const control = await this.control(idOrLabel);
     const options = await control.findElements(By.css("option"));
+    const labels = await Promise.all(options.map((option) => option.getText()));
 
-    return Promise.all(options.map((option) => escape(option.getText())));
+    return labels.map(escape);
   }
 
   async setCheckbox(idOrLabel, want = true) {
@@ -554,6 +619,16 @@ export class Session {
     const control = await this.control(idOrLabel);
 
     return (await control.getAttribute("disabled")) !== null;
+  }
+
+  /**
+   * A checkbox with no value attribute reports "on" through the DOM `value`
+   * property, which says nothing about its state, so ticks are read separately.
+   */
+  async isChecked(idOrLabel) {
+    const control = await this.control(idOrLabel);
+
+    return control.isSelected();
   }
 
   async fieldError(idOrLabel, { timeout = 5000 } = {}) {
@@ -730,6 +805,26 @@ export class Session {
 
   // ------------------------------------------------------------------- toasts
 
+  /*
+   * Texts of every element matching the locator, read one element at a time.
+   * A toast unmounts itself while a wait predicate is still holding the element,
+   * and a stale reference there is not a test failure — it is the message leaving.
+   */
+  async textsOf(locator) {
+    const found = await this.driver.findElements(locator);
+    const texts = [];
+
+    for (const entry of found) {
+      try {
+        texts.push(await entry.getText());
+      } catch {
+        // Removed between locating and reading.
+      }
+    }
+
+    return texts;
+  }
+
   async expectToast(needle, timeout = null) {
     const limit = timeout || config.timeouts.toast;
     const region = By.css('[role="status"]');
@@ -739,10 +834,14 @@ export class Session {
         const regions = await driver.findElements(region);
 
         for (const entry of regions) {
-          const text = await entry.getText();
+          try {
+            const text = await entry.getText();
 
-          if (text.includes(needle)) {
-            return text;
+            if (text.includes(needle)) {
+              return text;
+            }
+          } catch {
+            // The toast dismissed itself mid-read.
           }
         }
 
@@ -825,10 +924,17 @@ export class Session {
   async columnHeaderIndex(label) {
     const headers = await this.driver.findElements(By.css("table thead th"));
 
-    for (const [index, header] of headers.entries()) {
-      const text = escape(await header.getText());
+    /*
+     * Headers are uppercased by CSS and getText() returns the rendered form, so
+     * the comparison has to ignore case. A header also carries its sort
+     * indicator, hence the prefix match.
+     */
+    const wanted = escape(label).toLowerCase();
 
-      if (text === label || text.startsWith(label)) {
+    for (const [index, header] of headers.entries()) {
+      const text = escape(await header.getText()).toLowerCase();
+
+      if (text === wanted || text.startsWith(wanted)) {
         return index;
       }
     }

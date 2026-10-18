@@ -24,6 +24,9 @@ async function createTable(session, { label, key }) {
   await session.fill("table-key", key);
   await session.submitDialog();
   await session.expectToast("was created");
+
+  // The list is paged at 25 rows and sorted by name, so the new table is searched for.
+  await session.fill("Search tables", label);
   await session.waitRow(label);
 }
 
@@ -37,6 +40,12 @@ async function addColumn(session, { label, key, dataType = "Short text" }) {
   await session.submitDialog();
   await session.expectToast("was added");
   await session.waitItem(label);
+}
+
+/** The edit dialog is titled after the column, so the label is the fragment to wait for. */
+async function editColumn(session, label) {
+  await session.clickInItem(label, "Edit");
+  await session.anyDialogTitle(label);
 }
 
 export default {
@@ -85,19 +94,17 @@ export default {
           dataType: "Date",
         });
 
-        await session.clickInItem(isolate.label("Document type"), "Edit");
-        await session.anyDialogTitle("Editing column");
+        await editColumn(session, isolate.label("Document type"));
 
         await session.setCheckbox("column-is-searchable", true);
         await session.setCheckbox("column-is-filterable", true);
         await session.submitDialog();
         await session.expectToast("was saved");
 
-        await session.clickInItem(isolate.label("Document type"), "Edit");
-        await session.anyDialogTitle("Editing column");
+        await editColumn(session, isolate.label("Document type"));
 
-        assert.eq(await session.controlValue("column-is-searchable"), "true", "the searchable flag persisted");
-        assert.eq(await session.controlValue("column-is-filterable"), "true", "the filterable flag persisted");
+        assert.ok(await session.isChecked("column-is-searchable"), "the searchable flag persisted");
+        assert.ok(await session.isChecked("column-is-filterable"), "the filterable flag persisted");
 
         await session.closeDialog(await session.dialogTitle());
       },
@@ -114,8 +121,7 @@ export default {
           key: isolate.key("file_reference"),
         });
 
-        await session.clickInItem(isolate.label("File reference"), "Edit");
-        await session.anyDialogTitle("Editing column");
+        await editColumn(session, isolate.label("File reference"));
         await session.setCheckbox("column-is-required", true);
         await session.submitDialog();
         await session.expectToast("was saved");
@@ -154,6 +160,9 @@ export default {
         await session.reload();
         await session.waitForApp();
 
+        // The usage summary appears only once the permission context has resolved.
+        await session.waitForMainText("Records");
+
         const usage = await session.text(By.css("main"));
 
         assert.includesText(usage, "Records", "the table reports how many records it holds");
@@ -166,8 +175,7 @@ export default {
       fn: async ({ session, assert, isolate }) => {
         await openTableDetail(session, isolate.label("Employee documents"));
 
-        await session.clickInItem(isolate.label("Document type"), "Edit");
-        await session.anyDialogTitle("Editing column");
+        await editColumn(session, isolate.label("Document type"));
 
         assert.ok(
           await session.isControlDisabled("column-data-type"),

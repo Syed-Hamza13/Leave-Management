@@ -3,6 +3,7 @@ import { describeDataTypes } from "../../lib/dataTypes.js";
 import { listActiveDropdownSummaries } from "../dropdowns/dropdown.service.js";
 import { listActiveTableSummaries } from "../tables/table.service.js";
 import { listActiveFormSummaries } from "../forms/form.service.js";
+import { listActiveEntityTypeSummaries } from "../organization/organization.service.js";
 
 export async function dataTypesHandler(req, res, next) {
   try {
@@ -18,13 +19,14 @@ export async function dataTypesHandler(req, res, next) {
  */
 export async function lookupsHandler(req, res, next) {
   try {
-    const [dropdowns, tables, forms] = await Promise.all([
+    const [dropdowns, tables, forms, entityTypes] = await Promise.all([
       listActiveDropdownSummaries(),
       listActiveTableSummaries(),
       listActiveFormSummaries(),
+      listActiveEntityTypeSummaries(),
     ]);
 
-    return ok(res, { dropdowns, tables, forms });
+    return ok(res, { dropdowns, tables, forms, entityTypes });
   } catch (error) {
     return next(error);
   }

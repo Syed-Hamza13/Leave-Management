@@ -222,7 +222,12 @@ export default {
         await session.clickButton("New account");
         await session.openDialog("New account");
 
-        await fillNewAccount(session, { email, firstName: "Imran", password: "abc123" });
+        /*
+         * Long enough to clear the schema's minimum, so the request reaches the
+         * policy check and the dialog can carry the policy's own message rather
+         * than the generic "Validation failed" a short password would produce.
+         */
+        await fillNewAccount(session, { email, firstName: "Imran", password: "alllowercase" });
 
         await session.submitDialog();
 
@@ -313,7 +318,10 @@ export default {
           "the administrator's own account is filtered out"
         );
 
-        await session.fill("Search accounts", "");
+        // An empty sendKeys("") never reaches the debounced search box, so the
+        // list would stay filtered and the next assertion would fail for the
+        // wrong reason.
+        await session.setReactValue("Search accounts", "");
         await session.driver.sleep(1500);
         await session.waitRow(adminUser.email);
 

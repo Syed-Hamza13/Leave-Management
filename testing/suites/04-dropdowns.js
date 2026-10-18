@@ -60,13 +60,20 @@ export default {
         });
 
         await session.reload();
+        await session.fill("Search option sets", label);
         await session.waitRow(label);
 
         const cells = await session.rowCells(label);
+        const options = await session.columnHeaderIndex("Options");
 
-        assert.ok(
-          cells.join(" ").match(/2/),
-          `the list counts both initial options: ${cells}`
+        /*
+         * The count is read by its header: the row also carries the run tag, whose
+         * digits would satisfy any bare number match on the whole row.
+         */
+        assert.eq(
+          cells[options],
+          "2",
+          `the list counts both initial options: ${JSON.stringify(cells)}`
         );
       },
     },
@@ -150,6 +157,9 @@ export default {
         await session.reload();
         await session.waitForApp();
 
+        // Reading the list before the screen has rendered it sees no rows at all.
+        await session.waitForMainText(second);
+
         const reloaded = await session.orderedItems("//main//ul");
 
         assert.eq(
@@ -206,10 +216,12 @@ export default {
         await session.waitForRows();
 
         const cells = await session.rowCells(setLabel);
+        const usedBy = await session.columnHeaderIndex("Used by");
 
-        assert.ok(
-          cells.join(" ").match(/1/),
-          `the list shows the option set is used: ${cells}`
+        assert.eq(
+          cells[usedBy],
+          "1 field",
+          `the list shows the option set is used: ${JSON.stringify(cells)}`
         );
 
         const attempt = await adminApi.del(`/admin/dropdowns/${dropdownId}`);

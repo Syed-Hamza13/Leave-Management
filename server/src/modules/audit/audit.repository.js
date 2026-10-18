@@ -24,36 +24,38 @@ export async function insertAuditEvent(executor, event) {
 }
 
 function buildAuditFilters(query = {}) {
+  // Every column is qualified: the listing query joins `users`, which carries its
+  // own `created_at`, so a bare name would be answered as an ambiguous column.
   const conditions = [];
   const params = [];
 
   if (query.action) {
-    conditions.push("action = ?");
+    conditions.push("a.action = ?");
     params.push(query.action);
   }
 
   if (query.entityType) {
-    conditions.push("entity_type = ?");
+    conditions.push("a.entity_type = ?");
     params.push(query.entityType);
   }
 
   if (query.entityId) {
-    conditions.push("entity_id = ?");
+    conditions.push("a.entity_id = ?");
     params.push(String(query.entityId));
   }
 
   if (query.actorUserId) {
-    conditions.push("actor_user_id = ?");
+    conditions.push("a.actor_user_id = ?");
     params.push(query.actorUserId);
   }
 
   if (query.from) {
-    conditions.push("created_at >= ?");
+    conditions.push("a.created_at >= ?");
     params.push(query.from);
   }
 
   if (query.to) {
-    conditions.push("created_at <= ?");
+    conditions.push("a.created_at <= ?");
     params.push(query.to);
   }
 
@@ -106,7 +108,7 @@ export async function countAuditEvents(query) {
   const [rows] = await db.execute(
     `
       SELECT COUNT(*) AS total
-      FROM audit_events
+      FROM audit_events a
       ${where}
     `,
     params

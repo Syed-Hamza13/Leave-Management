@@ -81,7 +81,7 @@ async function assertConfigTargets(dataType, config) {
   }
 }
 
-function normalizeDefaultValue({ dataType, config, defaultValue, required, label }) {
+function normalizeDefaultValue({ dataType, config, defaultValue, label }) {
   if (defaultValue === undefined || defaultValue === null || defaultValue === "") {
     return null;
   }
@@ -127,15 +127,14 @@ export async function createField(payload, actor) {
     dataType: dataType.key,
     config,
     defaultValue: payload.defaultValue,
-    required: Boolean(payload.isRequired),
     label: payload.label,
   });
 
-  if (defaultValue === null && payload.isRequired && dataType.storage !== "boolean") {
-    throw badRequest("A required field with no default must be filled in by the user.", {
-      code: "REQUIRED_WITHOUT_DEFAULT",
-    });
-  }
+  /*
+   * A required field with no default is the normal case: the value has to come
+   * from the person filling the form. Requiring a default here would prefill the
+   * answer the requirement exists to ask for.
+   */
 
   const fieldId = await withTransaction(async (connection) => {
     const insertId = await insertField(connection, {

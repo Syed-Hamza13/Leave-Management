@@ -40,9 +40,14 @@ function buildPatch(saved, draft) {
   const base = fromSmtp(saved);
   const payload = {};
 
-  if (draft.host.trim() !== base.host) payload.host = draft.host.trim();
-  if (draft.username.trim() !== base.username) payload.username = draft.username.trim();
-  if (draft.fromAddress.trim() !== base.fromAddress) {
+  /*
+   * Both sides are trimmed before comparing. A stored value that carries
+   * surrounding whitespace would otherwise leave the card permanently dirty,
+   * offering a change that was never made.
+   */
+  if (draft.host.trim() !== base.host.trim()) payload.host = draft.host.trim();
+  if (draft.username.trim() !== base.username.trim()) payload.username = draft.username.trim();
+  if (draft.fromAddress.trim() !== base.fromAddress.trim()) {
     payload.fromAddress = draft.fromAddress.trim();
   }
 
@@ -239,6 +244,7 @@ export default function SettingsPage() {
               onChange={(event) => patch({ username: event.target.value })}
               error={errors.username}
               maxLength={255}
+              autoComplete="off"
             />
 
             <TextInput

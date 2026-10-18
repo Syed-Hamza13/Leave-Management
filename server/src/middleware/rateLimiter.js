@@ -1,4 +1,5 @@
-import rateLimit from "express-rate-limit";
+
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { RedisStore } from "rate-limit-redis";
 
 import { redisClient } from "../config/redis.js";
@@ -16,11 +17,51 @@ function createRedisStore(prefix) {
   });
 }
 
+/*
+ * A browser that abandons a request — navigating away, or a component that
+ * cancels its own fetch — leaves the socket gone by the time this middleware
+ * runs, and `request.ip` is then undefined. The library hashes that key for its
+ * draft-8 `RateLimit-Policy` header and throws, so an already-dead request came
+ * back as a 500 in the log. Every limiter therefore resolves its own key and
+ * guarantees a string: requests that cannot be attributed share one bucket
+ * instead of reaching the hashing code with nothing.
+ */
+function clientKey(request) {
+  return ipKeyGenerator(request.ip ?? "unattributed");
+}
+
+// Read rate-limit settings from environment variables.
+// Existing values remain the defaults if variables are not configured.
+const GLOBAL_RATE_LIMIT_WINDOW_MS = Number(
+  process.env.GLOBAL_RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000
+);
+
+const GLOBAL_RATE_LIMIT_MAX = Number(
+  process.env.GLOBAL_RATE_LIMIT_MAX ?? 300
+);
+
+const LOGIN_RATE_LIMIT_WINDOW_MS = Number(
+  process.env.LOGIN_RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000
+);
+
+const LOGIN_RATE_LIMIT_MAX = Number(
+  process.env.LOGIN_RATE_LIMIT_MAX ?? 100
+);
+
+const SENSITIVE_RATE_LIMIT_WINDOW_MS = Number(
+  process.env.SENSITIVE_RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000
+);
+
+const SENSITIVE_RATE_LIMIT_MAX = Number(
+  process.env.SENSITIVE_RATE_LIMIT_MAX ?? 20
+);
+
 export function createGlobalRateLimiter() {
   return rateLimit({
     store: createRedisStore("leave-ratelimit:global:"),
-    windowMs: 15 * 60 * 1000,
-    limit: 300,
+    keyGenerator: clientKey,
+    windowMs: GLOBAL_RATE_LIMIT_WINDOW_MS,
+    limit: GLOBAL_RATE_LIMIT_MAX,
     standardHeaders: "draft-8",
     legacyHeaders: false,
     message: {
@@ -33,8 +74,9 @@ export function createGlobalRateLimiter() {
 export function createLoginRateLimiter() {
   return rateLimit({
     store: createRedisStore("leave-ratelimit:login:"),
-    windowMs: 15 * 60 * 1000,
-    limit: 100,
+    keyGenerator: clientKey,
+    windowMs: LOGIN_RATE_LIMIT_WINDOW_MS,
+    limit: LOGIN_RATE_LIMIT_MAX,
     standardHeaders: "draft-8",
     legacyHeaders: false,
     message: {
@@ -54,8 +96,9 @@ export function createLoginRateLimiter() {
 export function createSensitiveRateLimiter(name) {
   return rateLimit({
     store: createRedisStore(`leave-ratelimit:sensitive:${name}`),
-    windowMs: 15 * 60 * 1000,
-    limit: 20,
+    keyGenerator: clientKey,
+    windowMs: SENSITIVE_RATE_LIMIT_WINDOW_MS,
+    limit: SENSITIVE_RATE_LIMIT_MAX,
     standardHeaders: "draft-8",
     legacyHeaders: false,
     message: {

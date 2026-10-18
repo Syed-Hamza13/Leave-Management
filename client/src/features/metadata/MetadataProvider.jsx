@@ -12,7 +12,7 @@ import { MetadataContext } from "./MetadataContext.js";
 export default function MetadataProvider({ children }) {
   const [state, setState] = useState({
     dataTypes: [],
-    lookups: { dropdowns: [], tables: [], forms: [] },
+    lookups: { dropdowns: [], tables: [], forms: [], entityTypes: [] },
     loading: true,
     error: null,
   });
@@ -31,6 +31,7 @@ export default function MetadataProvider({ children }) {
             dropdowns: lookups?.data?.dropdowns ?? [],
             tables: lookups?.data?.tables ?? [],
             forms: lookups?.data?.forms ?? [],
+            entityTypes: lookups?.data?.entityTypes ?? [],
           },
           loading: false,
           error: null,

@@ -112,7 +112,10 @@ export const mappings = {
   save: (payload) => put("/admin/mappings", payload),
   get: (mappingId) => api(`/admin/mappings/${mappingId}`),
   update: (mappingId, payload) => patch(`/admin/mappings/${mappingId}`, payload),
-  archive: (mappingId) => api(`/admin/mappings/${mappingId}`, { method: "DELETE" }),
+  // A mapping is a connector, not a row: archiving it stops the writes while
+  // leaving the pair re-openable from the picker, which reactivates it.
+  archive: (mappingId) => patch(`/admin/mappings/${mappingId}`, { status: "archived" }),
+  remove: (mappingId) => api(`/admin/mappings/${mappingId}`, { method: "DELETE" }),
 };
 
 export const records = {

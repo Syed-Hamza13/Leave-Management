@@ -17,7 +17,6 @@ const NAV_ITEMS = [
 export default {
   name: "navigation",
   area: "Application shell and navigation",
-  requires: ["limited"],
   tests: [
     {
       name: "the sidebar lists every shipped screen under its group heading",
@@ -147,6 +146,7 @@ export default {
       name: "a limited account is turned away from an administration screen",
       screen: "/admin/fields",
       area: "Authorization and permissions",
+      requires: ["limited"],
       fn: async ({ session, assert, config, limitedApi }) => {
         await session.login(config.admin);
         await session.logout();
@@ -174,6 +174,7 @@ export default {
       name: "a limited account cannot write through the API either",
       screen: "/admin/fields",
       area: "Authorization and permissions",
+      requires: ["limited"],
       fn: async ({ limitedApi, assert, isolate }) => {
         const attempt = await limitedApi.post("/admin/fields", {
           label: isolate.label("Forbidden field"),

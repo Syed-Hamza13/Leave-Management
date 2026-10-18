@@ -82,11 +82,11 @@ export default function useEntryOptions(items = []) {
       const entries = await Promise.all([
         ...dropdownIds.map(async (id) => [
           `dropdown:${id}`,
-          await loadDropdown(id).catch(() => ({ options: null, total: 0 })),
+          await loadDropdown(id).catch(() => ({ options: null, total: 0, failed: true })),
         ]),
         ...tableIds.map(async (id) => [
           `table:${id}`,
-          await loadTable(id).catch(() => ({ options: null, total: 0 })),
+          await loadTable(id).catch(() => ({ options: null, total: 0, failed: true })),
         ]),
       ]);
 
@@ -94,7 +94,8 @@ export default function useEntryOptions(items = []) {
     }
   );
 
-  const sources = data?.data ?? new Map();
+  // `useAsyncData` hands back the loader's own value, which here is the Map.
+  const sources = data ?? new Map();
 
   function sourceFor(item) {
     if (item?.dataType === "dropdown") {
@@ -113,6 +114,14 @@ export default function useEntryOptions(items = []) {
   }
 
   /*
+   * A source that failed to load leaves its picker asking for options forever,
+   * so the caller can say so instead of showing a permanent loading state.
+   */
+  function failedFor(item) {
+    return Boolean(sourceFor(item)?.failed);
+  }
+
+  /*
    * A relation picker only ever offers the newest candidates, so the form says
    * so instead of implying the list is complete.
    */
@@ -124,5 +133,5 @@ export default function useEntryOptions(items = []) {
     return source.options !== null && source.total > source.options.length;
   }
 
-  return { optionsFor, truncatedFor, loading, error, reload };
+  return { optionsFor, truncatedFor, failedFor, loading, error, reload };
 }

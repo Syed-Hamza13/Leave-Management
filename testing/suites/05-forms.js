@@ -29,6 +29,9 @@ async function createForm(session, { label, key, submitLabel = null }) {
 
   await session.submitDialog();
   await session.expectToast("was created");
+
+  // The list is paged at 25 rows, so the new form is found by searching for it.
+  await session.fill("Search forms", label);
   await session.waitRow(label);
 }
 
@@ -102,8 +105,16 @@ export default {
         await session.clickButton("Add fields");
         await session.openDialog("Add fields");
 
+        /*
+         * The picker lists at most 100 unused fields, so each one is searched for
+         * before it is ticked. The selection is kept across searches.
+         */
+        await session.fill("Search available fields", isolate.label("Reason"));
         await session.setCheckbox(`add-field-${one.id}`, true);
+
+        await session.fill("Search available fields", isolate.label("Days"));
         await session.setCheckbox(`add-field-${two.id}`, true);
+
         await session.submitDialog();
         await session.expectToast("were added");
 
@@ -139,6 +150,10 @@ export default {
         );
 
         await session.reload();
+
+        // The list only exists once the reloaded screen has rendered it.
+        await session.waitForApp();
+        await session.waitForMainText(reason);
 
         const reloaded = await session.orderedItems("//main//ol");
 
@@ -229,7 +244,7 @@ export default {
         await openFormDetail(session, isolate.label("Second leave form"));
 
         assert.ok(
-          (await session.orderedItems("//ul")).some((row) => row.includes(sharedLabel)),
+          (await session.orderedItems("//main//ol")).some((row) => row.includes(sharedLabel)),
           "the other form still shows the definition label"
         );
       },

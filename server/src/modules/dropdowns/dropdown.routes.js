@@ -40,7 +40,19 @@ export function createDropdownRoutes() {
     archiveDropdownHandler
   );
 
-  router.get("/:dropdownId/options", requirePermission(VIEW), listOptionsHandler);
+  router.get(
+    "/:dropdownId/options",
+    requirePermission([
+      ...VIEW,
+      /*
+       * A dropdown-valued field on an entry form is filled from this list, so the
+       * choices are readable by anyone allowed to submit a record.
+       */
+      PERMISSIONS.RECORDS_VIEW,
+      PERMISSIONS.RECORDS_CREATE,
+    ]),
+    listOptionsHandler
+  );
 
   router.post(
     "/:dropdownId/options",

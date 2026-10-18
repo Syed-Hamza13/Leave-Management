@@ -278,6 +278,17 @@ async function resolveRelation({ tableId, dataType, config, relationTableId }) {
 export async function addColumn(tableId, payload, actor) {
   const table = await getTable(tableId, { includeColumns: false });
 
+  /*
+   * System tables carry the columns another service depends on — the accounts
+   * table's authentication columns above all — so their shape is fixed here
+   * rather than left to whatever the browser sends.
+   */
+  if (table.isSystem) {
+    throw conflict("Columns of a system table cannot be added.", {
+      code: "SYSTEM_TABLE_LOCKED",
+    });
+  }
+
   if (table.status !== "active") {
     throw conflict("This table is archived and cannot accept new columns.", {
       code: "TABLE_ARCHIVED",

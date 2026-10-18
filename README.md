@@ -50,12 +50,18 @@ against the running dev servers, so both must be up before it runs.
 cd testing
 npm install
 copy .env.example .env    # then fill in the QA admin account
+npm run setup             # create/reset the two QA accounts the suite owns
 npm test                  # full suite, headed browser
 npm run smoke             # connectivity check only
+npm run headless          # same run, no window
+npm test -- --suite records      # one suite by name substring
+npm run cleanup           # report the rows this suite tagged; changes nothing
+npm run cleanup:apply     # delete exactly those rows (audit events are kept)
 ```
 
 Every run writes a report to `testing/reports/` (`run-*.md`, `run-*.json`,
 `LATEST.*`) with failures grouped by the part of the system they came from, plus
 screenshots and captured console/network errors as evidence. Test data is tagged
 with the run id and accounts use a throwaway domain, so the suite never touches
-your own account.
+your own account. It starts no server of its own: if the API or the web app is not
+already answering, the run says so and stops. Full details in `testing/README.md`.

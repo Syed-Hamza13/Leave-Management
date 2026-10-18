@@ -30,6 +30,7 @@ export default function EntityTypePage() {
   const toast = useToast();
 
   const canManage = can(PERMISSIONS.ORGANIZATION_MANAGE);
+  const canViewRecords = can(PERMISSIONS.RECORDS_VIEW);
 
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("active");
@@ -239,6 +240,29 @@ export default function EntityTypePage() {
                     <span className="ml-2">order {configuration.sortOrder}</span>
                   </p>
                 </div>
+
+                {/*
+                 * A configuration is only worth having once it can be used from
+                 * here: a profile feeds the entity form, a section opens the
+                 * records screen of the table it stores into.
+                 */}
+                {configuration.isActive &&
+                entityType.status === "active" &&
+                (configuration.scope === "profile" || canViewRecords) ? (
+                  configuration.scope === "profile" ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setEntityDialog({ mode: "create" })}
+                    >
+                      New {entityType.label.toLowerCase()}
+                    </Button>
+                  ) : (
+                    <Link to={`/records/${configuration.table.id}`}>
+                      <Button variant="secondary" size="sm">Open records</Button>
+                    </Link>
+                  )
+                ) : null}
 
                 {canManage ? (
                   <div className="flex items-center gap-1">

@@ -15,6 +15,13 @@ import {
 
 const VIEW = [PERMISSIONS.MAPPINGS_VIEW, PERMISSIONS.MAPPINGS_MANAGE];
 
+/*
+ * The entry dialog has to know which form feeds a table before it can render
+ * anything, so an account that may create records reads the connector too. This
+ * exposes definitions only — stored values stay behind the record routes.
+ */
+const ENTRY = [...VIEW, PERMISSIONS.RECORDS_VIEW, PERMISSIONS.RECORDS_CREATE];
+
 export function createMappingRoutes() {
   const router = Router();
 
@@ -24,9 +31,9 @@ export function createMappingRoutes() {
    * Static segments are declared before "/:mappingId" so they are not captured
    * by the parameter route.
    */
-  router.get("/", requirePermission(VIEW), listMappingsHandler);
+  router.get("/", requirePermission(ENTRY), listMappingsHandler);
   router.get("/compatibility", requirePermission(VIEW), compatibilityHandler);
-  router.get("/for/:formId/:tableId", requirePermission(VIEW), getMappingForPairHandler);
+  router.get("/for/:formId/:tableId", requirePermission(ENTRY), getMappingForPairHandler);
 
   router.put("/", requirePermission(PERMISSIONS.MAPPINGS_MANAGE), saveMappingHandler);
 

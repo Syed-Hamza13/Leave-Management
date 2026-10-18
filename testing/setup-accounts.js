@@ -135,7 +135,14 @@ try {
   await main();
 } catch (error) {
   console.error("");
-  console.error(`E2E account setup failed: ${error.message}`);
+  console.error(
+    `E2E account setup failed: ${error.code || error.name || "Error"} — ${error.sqlMessage || error.message || "no further detail"}`
+  );
+
+  if (error.code === "ECONNREFUSED" || error.code === "ETIMEDOUT") {
+    console.error("  The database in server/.env could not be reached.");
+  }
+
   console.error("");
   process.exitCode = 1;
 } finally {

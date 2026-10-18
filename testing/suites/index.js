@@ -12,6 +12,9 @@ import users from "./10-users.js";
 import settings from "./11-settings.js";
 import audit from "./12-audit.js";
 import slice from "./13-vertical-slice.js";
+import dataTypes from "./14-data-types.js";
+import resilience from "./15-resilience.js";
+import security from "./16-security.js";
 
 export const suites = [
   smoke,
@@ -28,4 +31,9 @@ export const suites = [
   settings,
   audit,
   slice,
+  dataTypes,
+  resilience,
+  // Runs last: it sends hostile payloads, so it stays away from the suites that
+  // still need a clean budget and untouched definitions.
+  security,
 ];

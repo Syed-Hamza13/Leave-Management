@@ -171,7 +171,11 @@ export default function TableDetailPage() {
     );
   }
 
-  const editable = canManage && table.status === "active";
+  /*
+   * A system table's columns belong to the service that owns them — the accounts
+   * table among them — so nothing on it is editable, archive included.
+   */
+  const editable = canManage && !table.isSystem && table.status === "active";
 
   return (
     <div className="space-y-5">
