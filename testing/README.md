@@ -68,6 +68,10 @@ could not run at all (server down, `.env` incomplete, browser missing).
 
 ## Reading a run
 
+Last recorded run: **2026-10-18, tag `261018141656` — 138 tests, 110 passed, 28 failed.**
+Each of the 28 was traced to a file and split into a product defect or a harness defect,
+and both kinds were fixed; the next run is the one that proves it.
+
 Reports are written to `testing/reports/` (git-ignored, so a run leaves no trace in
 the repository):
 

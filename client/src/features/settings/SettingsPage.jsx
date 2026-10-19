@@ -204,6 +204,11 @@ export default function SettingsPage() {
               id="smtp-host"
               label="Host"
               disabled={!canManage}
+              /*
+               * Autofill would type a value the administrator never entered and
+               * leave the card dirty, offering a change that was never made.
+               */
+              autoComplete="off"
               value={value.host}
               onChange={(event) => patch({ host: event.target.value })}
               error={errors.host}
@@ -252,6 +257,11 @@ export default function SettingsPage() {
               type="email"
               label="From address"
               disabled={!canManage}
+              /*
+               * A saved address is exactly what a browser offers to autofill on an
+               * email input, which would dirty the card without an edit.
+               */
+              autoComplete="off"
               value={value.fromAddress}
               onChange={(event) => patch({ fromAddress: event.target.value })}
               error={errors.fromAddress}

@@ -247,7 +247,7 @@ export default {
           "read the builder lookups"
         );
 
-        for (const group of ["dropdowns", "tables", "forms"]) {
+        for (const group of ["dropdowns", "tables", "forms", "entityTypes"]) {
           assert.ok(
             Array.isArray(lookups[group]),
             `the lookup payload carries a "${group}" list`
