@@ -27,6 +27,7 @@ export default function RecordDialog({
   table,
   record = null,
   fixedFormId = null,
+  organizationEntityId = null,
   onClose,
   onSaved,
 }) {
@@ -89,6 +90,10 @@ export default function RecordDialog({
     setErrors({});
 
     const payload = { formId: Number(activeFormId), values };
+
+    if (organizationEntityId) {
+      payload.organizationEntityId = organizationEntityId;
+    }
 
     const outcome = await run(() =>
       isEdit

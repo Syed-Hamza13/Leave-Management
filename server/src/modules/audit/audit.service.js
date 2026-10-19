@@ -13,7 +13,7 @@ const SENSITIVE_KEY_PATTERN = /password|secret|token|hash|credential|apikey|api_
 function redactSummary(summary) {
   if (summary === null || summary === undefined) return null;
 
-  if (typeof summary !== "object") return { value: "[redacted]" };
+  if (typeof summary !== "object") return summary;
 
   if (Array.isArray(summary)) {
     return summary.slice(0, 50).map((entry) => redactSummary(entry));

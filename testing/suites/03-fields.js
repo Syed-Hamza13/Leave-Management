@@ -191,6 +191,7 @@ export default {
         }
 
         await session.driver.sleep(700);
+        await session.waitForRows();
 
         await session.clickInRow(label, "Archive");
         await session.openDialog("Archive field");

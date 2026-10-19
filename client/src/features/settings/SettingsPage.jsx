@@ -159,7 +159,7 @@ export default function SettingsPage() {
     );
   }
 
-  const dirty = Object.keys(buildPatch(smtp, value)).length > 0;
+  const dirty = draft !== null && Object.keys(buildPatch(smtp, value)).length > 0;
 
   return (
     <div className="space-y-6">

@@ -133,6 +133,10 @@ async function api(path, options = {}) {
   return data;
 }
 
-export { getCsrfToken };
+function clearCsrfToken() {
+  csrfToken = null;
+}
+
+export { getCsrfToken, clearCsrfToken };
 
 export default api;
