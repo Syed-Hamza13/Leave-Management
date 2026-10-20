@@ -19,6 +19,7 @@ import FormsPage from "../features/forms/FormsPage.jsx";
 import MappingEditorPage from "../features/mappings/MappingEditorPage.jsx";
 import MappingsPage from "../features/mappings/MappingsPage.jsx";
 import EntityDetailPage from "../features/organization/EntityDetailPage.jsx";
+import EntityTypeConfigPage from "../features/organization/EntityTypeConfigPage.jsx";
 import EntityTypePage from "../features/organization/EntityTypePage.jsx";
 import OrganizationPage from "../features/organization/OrganizationPage.jsx";
 import RecordsIndexPage from "../features/records/RecordsIndexPage.jsx";
@@ -265,26 +266,12 @@ const router = createBrowserRouter([
                 path: "organization",
                 ...screen({
                   permission: PERMISSIONS.ORGANIZATION_VIEW,
-                  label: "Viewing the organization structure",
+                  label: "Viewing the organization",
                   element: <OrganizationPage />,
                   handle: {
                     title: "Organization structure",
                     description:
-                      "Entity types describe what the organization contains, such as a department or a branch.",
-                  },
-                }),
-              },
-
-              {
-                path: "organization/entities/:entityId",
-                ...screen({
-                  permission: PERMISSIONS.ORGANIZATION_VIEW,
-                  label: "Viewing the organization structure",
-                  element: <EntityDetailPage />,
-                  handle: {
-                    title: "Entity",
-                    description:
-                      "One entity with its profile values and the records attached to it.",
+                      "Define and manage the entities your organization uses.",
                   },
                 }),
               },
@@ -293,12 +280,30 @@ const router = createBrowserRouter([
                 path: "organization/:entityTypeId",
                 ...screen({
                   permission: PERMISSIONS.ORGANIZATION_VIEW,
-                  label: "Viewing the organization structure",
+                  label: "Viewing entity records",
                   element: <EntityTypePage />,
+                }),
+              },
+
+              {
+                path: "organization/:entityTypeId/configure",
+                ...screen({
+                  permission: PERMISSIONS.ORGANIZATION_MANAGE,
+                  label: "Configuring an entity",
+                  element: <EntityTypeConfigPage />,
+                }),
+              },
+
+              {
+                path: "organization/entities/:entityId",
+                ...screen({
+                  permission: PERMISSIONS.ORGANIZATION_VIEW,
+                  label: "Viewing an entity",
+                  element: <EntityDetailPage />,
                   handle: {
-                    title: "Entity type",
+                    title: "Entity details",
                     description:
-                      "The configurations that give this type a profile and sections, and the entities that exist under it.",
+                      "View and manage entity details through its configured forms and tables.",
                   },
                 }),
               },

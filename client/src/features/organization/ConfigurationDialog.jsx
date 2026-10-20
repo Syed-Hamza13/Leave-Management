@@ -16,11 +16,6 @@ import { useMetadata } from "../metadata/MetadataContext.js";
 
 const FORM_ID = "configuration-dialog-form";
 
-const SCOPES = [
-  { value: "profile", label: "Profile — the entity's own details" },
-  { value: "section", label: "Section — a list of records under the entity" },
-];
-
 function toNumberOrNull(text) {
   const trimmed = String(text).trim();
 
@@ -41,7 +36,6 @@ export default function ConfigurationDialog({
   const { lookups } = useMetadata();
 
   const [draft, setDraft] = useState(() => ({
-    scope: configuration?.scope ?? "section",
     label: configuration?.label ?? "",
     formId: configuration ? String(configuration.form.id) : "",
     tableId: configuration ? String(configuration.table.id) : "",
@@ -75,6 +69,17 @@ export default function ConfigurationDialog({
     setDraft((current) => ({ ...current, ...changes }));
   }
 
+  function handleFormChange(formId) {
+    const nextChanges = { formId };
+    if (!draft.label) {
+      const selectedForm = (lookups.forms ?? []).find((f) => String(f.id) === String(formId));
+      if (selectedForm?.label) {
+        nextChanges.label = selectedForm.label;
+      }
+    }
+    patch(nextChanges);
+  }
+
   function buildPayload() {
     const payload = {
       label: draft.label.trim(),
@@ -90,7 +95,7 @@ export default function ConfigurationDialog({
 
       if (order !== null) payload.sortOrder = order;
     } else {
-      payload.scope = draft.scope;
+      payload.scope = "section";
     }
 
     return payload;
@@ -137,8 +142,8 @@ export default function ConfigurationDialog({
     <Modal
       open
       onClose={pending ? () => {} : onClose}
-      title={isEdit ? `Edit “${configuration.label}”` : "New configuration"}
-      description="A configuration binds a kind of entity to the form, table and mapping it uses."
+      title={isEdit ? `Edit "${configuration.label}"` : "Configure form & table"}
+      description="Map a form and a table to this entity so records can be created and displayed."
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={pending}>
@@ -146,7 +151,7 @@ export default function ConfigurationDialog({
           </Button>
 
           <Button type="submit" form={FORM_ID} loading={pending}>
-            {isEdit ? "Save configuration" : "Create configuration"}
+            {isEdit ? "Save configuration" : "Save configuration"}
           </Button>
         </>
       }
@@ -161,38 +166,16 @@ export default function ConfigurationDialog({
           </p>
         ) : null}
 
-        {isEdit ? (
-          <div>
-            <p className="text-sm font-medium text-ink">Scope</p>
-            <p className="mt-0.5 text-xs text-ink-soft">
-              {configuration.scope === "profile"
-                ? "Profile — one record per entity."
-                : "Section — a list of records under each entity."}{" "}
-              The scope cannot change once the configuration exists.
-            </p>
-          </div>
-        ) : (
-          <Select
-            id="configuration-scope"
-            label="Scope"
-            required
-            value={draft.scope}
-            onChange={(event) => patch({ scope: event.target.value })}
-            error={errors.scope}
-            options={SCOPES}
-          />
-        )}
-
         <TextInput
           id="configuration-label"
-          label="Label"
+          label="Configuration Name"
           required
           data-autofocus
           value={draft.label}
           onChange={(event) => patch({ label: event.target.value })}
           error={errors.label}
           maxLength={160}
-          placeholder={draft.scope === "profile" ? "Details" : "Members"}
+          placeholder="e.g. Employee Records, Department Details"
         />
 
         <Select
@@ -201,7 +184,7 @@ export default function ConfigurationDialog({
           required
           placeholder="Choose a form…"
           value={draft.formId}
-          onChange={(event) => patch({ formId: event.target.value })}
+          onChange={(event) => handleFormChange(event.target.value)}
           error={errors.formId}
           options={(lookups.forms ?? []).map((form) => ({
             value: form.id,

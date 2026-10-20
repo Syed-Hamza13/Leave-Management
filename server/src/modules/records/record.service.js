@@ -277,10 +277,29 @@ export async function listRecords(tableId, query) {
   const descriptors = buildRecordDescriptors(table.columns);
   const resolveColumn = (key) => descriptors.get(key) ?? null;
 
-  const searchable = table.columns
+  let searchable = table.columns
     .filter((column) => !column.isSystem && column.isSearchable)
     .map((column) => descriptors.get(column.key))
-    .filter((descriptor) => descriptor && descriptor.storage === STORAGE_FAMILIES.STRING);
+    .filter(
+      (descriptor) =>
+        descriptor &&
+        (descriptor.storage === STORAGE_FAMILIES.STRING ||
+          descriptor.storage === STORAGE_FAMILIES.DATE ||
+          descriptor.storage === STORAGE_FAMILIES.NUMBER)
+    );
+
+  if (searchable.length === 0) {
+    searchable = table.columns
+      .filter((column) => !column.isSystem && column.isVisible)
+      .map((column) => descriptors.get(column.key))
+      .filter(
+        (descriptor) =>
+          descriptor &&
+          (descriptor.storage === STORAGE_FAMILIES.STRING ||
+            descriptor.storage === STORAGE_FAMILIES.DATE ||
+            descriptor.storage === STORAGE_FAMILIES.NUMBER)
+      );
+  }
 
   const allowedSortKeys = [
     ...table.columns.filter((column) => !column.isSystem).map((column) => column.key),

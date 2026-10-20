@@ -204,7 +204,7 @@ function SectionPanel({ configuration, entityId, entityActive }) {
     return (
       <div className="space-y-2">
         <p className="text-sm font-medium text-danger">
-          {errorMessage(tableError, `“${configuration.label}” could not be loaded.`)}
+          {errorMessage(tableError, `"${configuration.label}" could not be loaded.`)}
         </p>
 
         <Button variant="secondary" size="sm" onClick={reloadTable}>
@@ -312,8 +312,7 @@ export default function EntityDetailPage() {
 
   /*
    * The entity payload only carries a summary of its type. Editing needs the
-   * parent type to decide whether a parent is even selectable, so the full
-   * record is loaded once and reused.
+   * full type record to populate the dialog.
    */
   const { data: typeData } = useAsyncData(`entity-type:${entity?.entityType?.id ?? "none"}`, () =>
     entity ? organizationApi.getEntityType(entity.entityType.id) : Promise.resolve(null)
@@ -336,7 +335,7 @@ export default function EntityDetailPage() {
     setArchiveOpen(false);
 
     if (outcome.ok) {
-      toast.success(`“${target.name}” was archived.`);
+      toast.success(`"${target.name}" was archived.`);
       reload();
       return;
     }
@@ -369,33 +368,14 @@ export default function EntityDetailPage() {
               Organization
             </Link>
             <span aria-hidden="true"> / </span>
-            <Link
-              to={`/organization/${entity.entityType.id}`}
-              className="hover:text-brand hover:underline"
-            >
-              {entity.entityType.label}
-            </Link>
+            <span>{entity.entityType.label}</span>
           </p>
 
           <p className="mt-1 truncate text-sm font-semibold text-ink">{entity.name}</p>
-
-          <p className="mt-1 text-sm text-ink-soft">
-            {entity.parentEntity ? (
-              <>
-                Under <span className="font-medium text-ink">{entity.parentEntity.name}</span>
-              </>
-            ) : (
-              "Top of the tree"
-            )}
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={entity.status === "active" ? "success" : "neutral"}>{entity.status}</Badge>
-
-          <Badge tone="neutral">
-            {entity.childCount} {entity.childCount === 1 ? "child" : "children"}
-          </Badge>
 
           {canManage && entity.status === "active" ? (
             <>
@@ -442,7 +422,7 @@ export default function EntityDetailPage() {
           onClose={() => setEntityDialog(null)}
           onSaved={(saved) => {
             setEntityDialog(null);
-            toast.success(`“${saved?.name ?? entity.name}” was saved.`);
+            toast.success(`"${saved?.name ?? entity.name}" was saved.`);
             reload();
           }}
         />
@@ -451,8 +431,8 @@ export default function EntityDetailPage() {
       <ConfirmDialog
         open={archiveOpen}
         title="Archive entity"
-        message={`Archive “${entity.name}”?`}
-        detail="Entities with children or with a profile record are refused until those are handled first."
+        message={`Archive "${entity.name}"?`}
+        detail="Archived entities can be restored later. Their data is preserved."
         confirmLabel="Archive entity"
         loading={archiving}
         onCancel={() => setArchiveOpen(false)}

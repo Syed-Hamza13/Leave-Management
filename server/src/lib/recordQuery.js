@@ -175,20 +175,24 @@ function comparison(descriptor, operator, values) {
 function textCondition(descriptor, operator, value) {
   const { sql, params } = descriptor.accessor();
 
+  const escaped = escapeLikePattern(value);
   const patterns = {
-    contains: `%${value}%`,
-    startsWith: `${value}%`,
-    endsWith: `%${value}`,
+    contains: `%${escaped}%`,
+    startsWith: `${escaped}%`,
+    endsWith: `%${escaped}`,
     equals: value,
   };
 
   if (operator === "equals") {
-    return { sql: `${sql} = ?`, params: [...params, value] };
+    return {
+      sql: `LOWER(CAST(${sql} AS CHAR)) = LOWER(?)`,
+      params: [...params, value],
+    };
   }
 
   return {
-    sql: `${sql} ${LIKE_CLAUSE}`,
-    params: [...params, patterns[operator]],
+    sql: `LOWER(CAST(${sql} AS CHAR)) ${LIKE_CLAUSE}`,
+    params: [...params, patterns[operator].toLowerCase()],
   };
 }
 
@@ -276,20 +280,25 @@ export function buildSearchClause({ search, descriptors = [] }) {
     return { sql: "", params: [] };
   }
 
-  const searchable = descriptors.filter((descriptor) => descriptor.storage === "string");
+  const searchable = descriptors.filter(
+    (descriptor) =>
+      descriptor.storage === "string" ||
+      descriptor.storage === "date" ||
+      descriptor.storage === "number"
+  );
 
   if (searchable.length === 0) {
     return { sql: "", params: [] };
   }
 
-  const pattern = `%${escapeLikePattern(search)}%`;
+  const pattern = `%${escapeLikePattern(search.toLowerCase())}%`;
   const clauses = [];
   const params = [];
 
   for (const descriptor of searchable) {
     const { sql, params: accessorParams } = descriptor.accessor();
 
-    clauses.push(`${sql} ${LIKE_CLAUSE}`);
+    clauses.push(`LOWER(CAST(${sql} AS CHAR)) ${LIKE_CLAUSE}`);
     params.push(...accessorParams, pattern);
   }
 

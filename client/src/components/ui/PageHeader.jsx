@@ -6,9 +6,9 @@ import { Link } from "react-router-dom";
  */
 export default function PageHeader({ breadcrumb = [], title, description }) {
   return (
-    <header className="border-b border-line bg-surface px-6 py-5">
+    <header className="border-b border-line bg-surface px-6 py-3.5 md:py-4">
       {breadcrumb.length > 0 ? (
-        <nav aria-label="Breadcrumb" className="mb-1.5">
+        <nav aria-label="Breadcrumb" className="mb-1">
           <ol className="flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
             {breadcrumb.map((crumb, index) => {
               const isLast = index === breadcrumb.length - 1;

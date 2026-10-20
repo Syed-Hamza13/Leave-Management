@@ -3,7 +3,6 @@ import { useMemo, useState } from "react";
 import Button from "../../components/ui/Button.jsx";
 import FieldRenderer from "../../components/ui/FieldRenderer.jsx";
 import Modal from "../../components/ui/Modal.jsx";
-import Select from "../../components/ui/Select.jsx";
 import TextInput from "../../components/ui/TextInput.jsx";
 import { useToast } from "../../components/ui/ToastContext.js";
 
@@ -21,20 +20,10 @@ import useEntryOptions from "../records/useEntryOptions.js";
 
 const FORM_ID = "entity-dialog-form";
 
-function toNumberOrNull(text) {
-  const trimmed = String(text).trim();
-
-  if (trimmed === "") return null;
-
-  const parsed = Number(trimmed);
-
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 /*
- * An entity's own name and parent are relational columns, while its details
- * live in the profile record the configured form writes, so the two halves are
- * edited together but validated separately by the server.
+ * An entity's own name is stored relationally, while its details live in the
+ * profile record the configured form writes, so the two halves are edited
+ * together but validated separately by the server.
  */
 export default function EntityDialog({
   entityType,
@@ -46,31 +35,11 @@ export default function EntityDialog({
   const isEdit = Boolean(entity);
   const toast = useToast();
 
-  const [draft, setDraft] = useState(() => ({
-    name: entity?.name ?? "",
-    parentEntityId: entity?.parentEntityId ? String(entity.parentEntityId) : "",
-    sortOrder: entity?.sortOrder != null ? String(entity.sortOrder) : "",
-  }));
+  const [name, setName] = useState(entity?.name ?? "");
   const [draftValues, setDraftValues] = useState(null);
   const [errors, setErrors] = useState({});
 
   const { run, pending, error } = useMutation();
-
-  /*
-   * Nesting is only meaningful when the type declares a parent type, and the
-   * parent must be a record of that other type.
-   */
-  const { data: parentData } = useAsyncData(
-    `entity-parents:${entityType.parentTypeId ?? "none"}`,
-    () =>
-      entityType.parentTypeId
-        ? organizationApi.listEntities({
-            entityTypeId: entityType.parentTypeId,
-            status: "active",
-            pageSize: 100,
-          })
-        : Promise.resolve(null)
-  );
 
   const { data: renderData } = useAsyncData(
     `entity-profile-form:${profileConfiguration?.form.id ?? "none"}`,
@@ -97,14 +66,6 @@ export default function EntityDialog({
 
   const { optionsFor, truncatedFor } = useEntryOptions(fields);
 
-  const parentCandidates = (parentData?.data ?? []).filter(
-    (candidate) => Number(candidate.id) !== Number(entity?.id ?? -1)
-  );
-
-  function patch(changes) {
-    setDraft((current) => ({ ...current, ...changes }));
-  }
-
   function setField(key, value) {
     setDraftValues({ ...values, [key]: value });
   }
@@ -114,17 +75,11 @@ export default function EntityDialog({
     setErrors({});
 
     const payload = {
-      name: draft.name.trim(),
-      parentEntityId: draft.parentEntityId ? Number(draft.parentEntityId) : null,
+      name: name.trim(),
+      parentEntityId: null,
     };
 
     if (fields.length > 0 || !isEdit) payload.values = values;
-
-    if (isEdit) {
-      const order = toNumberOrNull(draft.sortOrder);
-
-      if (order !== null) payload.sortOrder = order;
-    }
 
     const outcome = await run(() =>
       isEdit
@@ -154,11 +109,11 @@ export default function EntityDialog({
     <Modal
       open
       onClose={pending ? () => {} : onClose}
-      title={isEdit ? `Edit “${entity.name}”` : `New ${entityType.label.toLowerCase()}`}
+      title={isEdit ? `Edit "${entity.name}"` : `New ${entityType.label.toLowerCase()}`}
       description={
         profileConfiguration
-          ? `Details are entered through “${profileConfiguration.form.label}”.`
-          : `No profile form is configured for ${entityType.label} yet, so only the name and place in the tree are stored.`
+          ? `Details are entered through "${profileConfiguration.form.label}".`
+          : `No profile form is configured for ${entityType.label} yet, so only the name is stored.`
       }
       size={fields.length > 0 ? "lg" : "sm"}
       footer={
@@ -168,7 +123,7 @@ export default function EntityDialog({
           </Button>
 
           <Button type="submit" form={FORM_ID} loading={pending}>
-            {isEdit ? "Save entity" : "Create entity"}
+            {isEdit ? "Save" : "Create"}
           </Button>
         </>
       }
@@ -189,40 +144,12 @@ export default function EntityDialog({
           required
           autoFocus
           data-autofocus
-          value={draft.name}
-          onChange={(event) => patch({ name: event.target.value })}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
           error={errors.name}
           maxLength={190}
           placeholder="People Operations"
         />
-
-        {entityType.parentTypeId ? (
-          <Select
-            id="entity-parent"
-            label="Parent"
-            hint={`Chosen from the ${entityType.parentType?.label ?? "parent type"} records already created.`}
-            placeholder="Top of the tree"
-            value={draft.parentEntityId}
-            onChange={(event) => patch({ parentEntityId: event.target.value })}
-            error={errors.parentEntityId}
-            options={parentCandidates.map((candidate) => ({
-              value: candidate.id,
-              label: candidate.name,
-            }))}
-          />
-        ) : null}
-
-        {isEdit ? (
-          <TextInput
-            id="entity-sort-order"
-            label="Order"
-            type="number"
-            hint="Lower numbers are listed first among siblings."
-            value={draft.sortOrder}
-            onChange={(event) => patch({ sortOrder: event.target.value })}
-            error={errors.sortOrder}
-          />
-        ) : null}
 
         {fields.length > 0 ? (
           <div className="space-y-4 border-t border-line pt-4">
