@@ -265,6 +265,7 @@ function SectionPanel({ configuration, entityId, entityActive }) {
           table={table}
           record={dialog.record ?? null}
           fixedFormId={configuration.form.id}
+          organizationEntityId={entityId}
           onClose={() => setDialog(null)}
           onSaved={(saved) => {
             setDialog(null);

@@ -173,6 +173,14 @@ async function resolveMappedValues(formId, tableId, values, table) {
   const translated = {};
   const errors = {};
 
+  for (const entry of mapping.entries) {
+    columnsByKey.set(entry.column.key, {
+      ...entry.column,
+      label: entry.field.label || entry.column.label,
+      isRequired: Boolean(entry.column.isRequired || entry.field.isRequired),
+    });
+  }
+
   for (const [fieldKey, value] of Object.entries(values)) {
     const entry = entriesByFieldKey.get(fieldKey);
 
@@ -185,12 +193,6 @@ async function resolveMappedValues(formId, tableId, values, table) {
 
     translated[columnKey] = value;
     keyAliases.set(columnKey, fieldKey);
-
-    columnsByKey.set(columnKey, {
-      ...entry.column,
-      label: entry.field.label || entry.column.label,
-      isRequired: Boolean(entry.column.isRequired || entry.field.isRequired),
-    });
   }
 
   if (Object.keys(errors).length > 0) {

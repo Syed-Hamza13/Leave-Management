@@ -647,6 +647,12 @@ export class Session {
     return this.readFieldErrorOnce(idOrLabel);
   }
 
+  /**
+   * FormField renders the control's hint as a sibling <p> too, and swaps it for
+   * the error only once the server answers. Reading the first sibling therefore
+   * reports the hint as though it were the refusal whenever the round-trip is
+   * slower than the read, so only error-shaped text is accepted here.
+   */
   async readFieldErrorOnce(idOrLabel) {
     const control = await this.control(idOrLabel, { timeout: 4000 }).catch(() => null);
 
@@ -664,21 +670,33 @@ export class Session {
         );
 
         if (formal.length) {
-          return escape(await formal[0].getText());
+          const text = escape(await formal[0].getText());
+
+          if (text) {
+            return text;
+          }
         }
       }
 
       // Screens like the login form render the message as the sibling <p>.
-      const sibling = await control.findElements(By.xpath("following-sibling::p[1]"));
+      const sibling = await control.findElements(
+        By.xpath(
+          'following-sibling::p[1][@role="alert" or contains(@class,"danger") or contains(@class,"red-")]'
+        )
+      );
 
       if (sibling.length) {
-        return escape(await sibling[0].getText());
+        const text = escape(await sibling[0].getText());
+
+        if (text) {
+          return text;
+        }
       }
     }
 
     const byLabel = await this.driver.findElements(
       By.xpath(
-        `//label[normalize-space()="${idOrLabel}"]/following::p[contains(@id,"-error")][1] | //label[normalize-space()="${idOrLabel}"]/following::p[1]`
+        `//label[normalize-space()="${idOrLabel}"]/following::*[@role="alert" or contains(@id,"-error") or contains(@class,"danger") or contains(@class,"red-")][1]`
       )
     );
 
@@ -727,6 +745,27 @@ export class Session {
     }
 
     return messages;
+  }
+
+  /**
+   * A refused save paints its message only after the round-trip, so reading the
+   * dialog straight after the click races the server. This waits for the message
+   * and returns whatever the dialog says, empty when nothing ever arrived.
+   */
+  async waitDialogError(timeout = 8000) {
+    const limit = Date.now() + timeout;
+
+    while (Date.now() < limit) {
+      const messages = await this.dialogHasError();
+
+      if (messages.length) {
+        return messages;
+      }
+
+      await this.driver.sleep(200);
+    }
+
+    return this.dialogHasError();
   }
 
   // ------------------------------------------------------------------ dialogs
@@ -898,23 +937,35 @@ export class Session {
     await this.step("table rows ready");
   }
 
+  /**
+   * Every fetch repaints the table, which invalidates row handles partway through
+   * an iteration and turns a healthy screen into a StaleElementReferenceError.
+   * The rows are therefore read in one synchronous page script: cells per row,
+   * already whitespace-normalised, so no handle outlives the render it came from.
+   */
+  async rowTexts() {
+    return this.driver.executeScript(
+      `return Array.from(document.querySelectorAll("table tbody tr")).map((row) => {
+         const cells = Array.from(row.querySelectorAll("td"));
+         const sources = cells.length ? cells : [row];
+
+         return sources.map((node) => (node.innerText || "").replace(/\\s+/g, " ").trim());
+       });`
+    );
+  }
+
   async rowCells(matchText, { column = null } = {}) {
-    const rows = await this.driver.findElements(By.css("table tbody tr"));
+    const rows = await this.rowTexts();
 
-    for (const row of rows) {
-      const text = escape(await row.getText());
-
-      if (text.includes(matchText)) {
-        const cells = await row.findElements(By.css("td"));
-        const values = await Promise.all(cells.map(async (cell) => escape(await cell.getText())));
-
+    for (const cells of rows) {
+      if (escape(cells.join(" ")).includes(matchText)) {
         if (column === null) {
-          return values;
+          return cells;
         }
 
         const index = await this.columnHeaderIndex(column);
 
-        return index === null ? null : (values[index] ?? null);
+        return index === null ? null : (cells[index] ?? null);
       }
     }
 
@@ -922,17 +973,20 @@ export class Session {
   }
 
   async columnHeaderIndex(label) {
-    const headers = await this.driver.findElements(By.css("table thead th"));
+    const headers = await this.driver.executeScript(
+      `return Array.from(document.querySelectorAll("table thead th"))
+         .map((th) => (th.innerText || "").replace(/\\s+/g, " ").trim());`
+    );
 
     /*
-     * Headers are uppercased by CSS and getText() returns the rendered form, so
+     * Headers are uppercased by CSS and the rendered form is what is read, so
      * the comparison has to ignore case. A header also carries its sort
      * indicator, hence the prefix match.
      */
     const wanted = escape(label).toLowerCase();
 
     for (const [index, header] of headers.entries()) {
-      const text = escape(await header.getText()).toLowerCase();
+      const text = header.toLowerCase();
 
       if (text === wanted || text.startsWith(wanted)) {
         return index;
@@ -943,15 +997,18 @@ export class Session {
   }
 
   async rowExists(matchText) {
-    const rows = await this.driver.findElements(By.css("table tbody tr"));
+    const rows = await this.rowTexts();
 
-    for (const row of rows) {
-      if (escape(await row.getText()).includes(matchText)) {
-        return true;
-      }
-    }
+    return rows.some((cells) => escape(cells.join(" ")).includes(matchText));
+  }
 
-    return false;
+  /**
+   * Lists are paginated, so a row that is not on screen is not a row that does
+   * not exist. Tests that compare a filtered list with the unfiltered one count
+   * rows instead of looking for a particular label.
+   */
+  async countRows() {
+    return (await this.rowTexts()).length;
   }
 
   /**
@@ -972,13 +1029,9 @@ export class Session {
       await this.driver.sleep(250);
     }
 
-    const rows = await this.driver.findElements(By.css("table tbody tr"));
-
-    const seen = [];
-
-    for (const row of rows.slice(0, 8)) {
-      seen.push(escape(await row.getText()));
-    }
+    const seen = (await this.rowTexts())
+      .slice(0, 8)
+      .map((cells) => escape(cells.join(" ")));
 
     throw new AssertionError(
       `No table row carries "${matchText}". Visible rows: ${JSON.stringify(seen)}`
@@ -1063,28 +1116,52 @@ export class Session {
     );
   }
 
-  async clickInRow(matchText, buttonText) {
-    const rows = await this.driver.findElements(By.css("table tbody tr"));
+  /**
+   * A list repaints whenever a fetch lands, which can happen between finding a
+   * row's control and clicking it, so the lookup is retried on a stale reference
+   * rather than failing the test on a repaint. Giving up reports the rows that
+   * were actually on screen, because the usual cause is a row that is not there.
+   */
+  async clickInRow(matchText, buttonText, timeout = null) {
+    const limit = Date.now() + (timeout || config.timeouts.element);
 
-    for (const row of rows) {
-      if (!escape(await row.getText()).includes(matchText)) {
-        continue;
-      }
+    while (Date.now() < limit) {
+      try {
+        const rows = await this.driver.findElements(By.css("table tbody tr"));
 
-      const buttons = await row.findElements(By.xpath(".//button | .//a"));
+        for (const row of rows) {
+          if (!escape(await row.getText()).includes(matchText)) {
+            continue;
+          }
 
-      for (const button of buttons) {
-        if (escape(await button.getText()) === buttonText) {
-          await this.driver.actions({ async: true }).move({ origin: button }).perform();
-          await button.click();
-          await this.step(`${buttonText} on row ${matchText}`);
+          const buttons = await row.findElements(By.xpath(".//button | .//a"));
 
-          return true;
+          for (const button of buttons) {
+            if (escape(await button.getText()) === buttonText) {
+              await this.driver.actions({ async: true }).move({ origin: button }).perform();
+              await button.click();
+              await this.step(`${buttonText} on row ${matchText}`);
+
+              return true;
+            }
+          }
+        }
+      } catch (error) {
+        if (!/stale element reference|not attached/i.test(String(error?.message))) {
+          throw error;
         }
       }
+
+      await this.driver.sleep(250);
     }
 
-    throw new AssertionError(`No "${buttonText}" control found in the row containing "${matchText}"`);
+    const seen = (await this.rowTexts())
+      .slice(0, 8)
+      .map((cells) => escape(cells.join(" ")));
+
+    throw new AssertionError(
+      `No "${buttonText}" control found in the row containing "${matchText}". Visible rows: ${JSON.stringify(seen)}`
+    );
   }
 
   /** Same as clickInRow but for the <li> lists the builder detail screens use. */
@@ -1156,9 +1233,30 @@ export class Session {
     await this.fill("password", account.password);
     await this.clickButton("Sign in", { step: "submit login" });
 
-    await this.waitPath("/", 25000);
+    await this.waitSignedIn(25000);
     await this.settleAuth();
     await this.step("signed in");
+  }
+
+  /**
+   * A sign-in reached from a protected address returns the person to that
+   * address, so the landing path is whatever screen was asked for. What proves
+   * the sign-in worked is that /login is behind us and the shell is standing.
+   */
+  async waitSignedIn(timeout = null) {
+    await this.driver.wait(
+      async (driver) => {
+        if ((await driver.executeScript("return location.pathname;")) === "/login") {
+          return undefined;
+        }
+
+        const nav = await driver.findElements(By.css("#app-navigation"));
+
+        return nav.length ? true : undefined;
+      },
+      timeout || config.timeouts.element,
+      "Signing in never left the login screen"
+    );
   }
 
   async logout() {

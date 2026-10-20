@@ -216,6 +216,7 @@ Copy this list into the release notes and tick it in order.
 - [ ] The new record's action appears in **Audit trail** with the right actor
 - [ ] A manager/employee account is still refused admin mutations (`403 PERMISSION_DENIED`)
 - [ ] `npm run test-api` passes, or the manual CSRF/session path it covers was exercised
+- [ ] The Selenium suite in `testing/` has been run against the release candidate (`npm test` from `testing/`), and `testing/reports/LATEST.md` shows no unexplained failure
 - [ ] Server logs reviewed once for stack traces, and for any leaked session identifier or SQL text
 - [ ] Settings → *Test mail server* only if SMTP is in scope for this release
 
@@ -230,8 +231,8 @@ These are not oversights; each needs a decision from the people who own the prod
 
 | Item | Why it is open |
 |---|---|
-| Automated test suite | `docs/PROJECT-GUIDE.md` §8 allows a test runner only after the design **and the dependency change** are agreed. Today's verification is lint + build + `npm run test-api` against the live dev server |
-| End-to-end test | same decision; also needs an environment policy for disposable data |
+| Automated test suite | **Decided and built** — Selenium WebDriver in `testing/` with its own `package.json` (dev-only dependency). Run twice against the live dev servers: 2026-10-18 (110/138) and 2026-10-19 (136/138); a green confirmation run is what closes this row |
+| End-to-end test | same suite; disposable data is handled by the run tag (`E2E<run-id>`) plus `npm run cleanup`, and the release checklist keeps the manual walk-through until the confirmation run is green |
 | Initial-route bundle | the production bundle is one ~502 kB (gzip ~142 kB) chunk. Route-level code splitting is available in Vite but changes first-paint behaviour, so it is a measured follow-up rather than an unverified blind edit |
 | Multi-tenant boundary | if a deployment ever hosts more than one organization, every unique key, query and permission check needs an organization id. Deciding after real data exists is expensive (`PROJECT-GUIDE.md` §9.12) |
 | Custom user profile attributes | `user_profile_values` exists and is **read** by the dropdown in-use guard, but nothing writes to it — there is no API or UI for custom profile fields. Build that only if admins actually need them (`PROJECT-GUIDE.md` §4.2) |

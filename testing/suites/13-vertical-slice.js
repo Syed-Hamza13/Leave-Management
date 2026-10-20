@@ -21,23 +21,21 @@ const PASSWORD = "E2eSlice!2026";
 
 /** The buttons one row offers, so a permission can be read from the screen itself. */
 async function rowButtons(session, matchText) {
-  const rows = await session.driver.findElements(By.css("table tbody tr"));
+  return session.driver.executeScript(
+    `const needle = arguments[0];
+     const normalise = (text) => (text || "").replace(/\\s+/g, " ").trim();
 
-  for (const row of rows) {
-    const text = (await row.getText()).replace(/\s+/g, " ").trim();
+     for (const row of document.querySelectorAll("table tbody tr")) {
+       if (!normalise(row.innerText).includes(needle)) {
+         continue;
+       }
 
-    if (!text.includes(matchText)) {
-      continue;
-    }
+       return Array.from(row.querySelectorAll("button")).map((button) => normalise(button.innerText));
+     }
 
-    const buttons = await row.findElements(By.css("button"));
-
-    return Promise.all(
-      buttons.map(async (button) => (await button.getText()).replace(/\s+/g, " ").trim())
-    );
-  }
-
-  return null;
+     return null;`,
+    matchText
+  );
 }
 
 async function storedRecord(adminApi, fixture, needle) {

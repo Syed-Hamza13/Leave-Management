@@ -143,6 +143,12 @@ export default {
         assert.ok(!(await session.isLoggedIn()), "the shell is gone without a session");
 
         await session.login(config.admin);
+
+        assert.eq(
+          await session.pathname(),
+          "/admin/users",
+          "signing in again returns to the screen that was asked for"
+        );
       },
     },
     {

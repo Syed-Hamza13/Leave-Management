@@ -120,7 +120,7 @@ export default {
         await session.selectOption("field-data-type", "Short text");
         await session.clickButton("Create field");
 
-        const alert = await session.anyText(By.css('[role="dialog"] [role="alert"], [role="dialog"] .text-danger-soft'));
+        const alert = (await session.waitDialogError()).join(" ");
 
         /*
          * A duplicate key is caught by a pre-check in the service, so the answer is
@@ -180,9 +180,11 @@ export default {
 
         await session.fill("Search fields", label);
         await session.driver.sleep(700);
-        await session.waitForRows();
+        await session.waitRow(label);
 
-        assert.ok(await session.rowExists(label), "the search finds the new field");
+        const searched = await session.countRows();
+
+        assert.ok(searched > 0, "the search finds the new field");
 
         const clear = await session.driver.findElements(By.css('[aria-label="Clear search"]'));
 
@@ -191,6 +193,20 @@ export default {
         }
 
         await session.driver.sleep(700);
+        await session.waitForRows();
+
+        /*
+         * The unfiltered list is sorted by label and paginated, so the field is
+         * only guaranteed to be on screen while the search narrows the list to it.
+         */
+        assert.ok(
+          (await session.countRows()) >= searched,
+          "clearing the search brings the whole list back"
+        );
+
+        await session.fill("Search fields", label);
+        await session.driver.sleep(700);
+        await session.waitRow(label);
 
         await session.clickInRow(label, "Archive");
         await session.openDialog("Archive field");
@@ -199,12 +215,29 @@ export default {
 
         await session.selectOption("fields-status", "Archived");
         await session.driver.sleep(800);
-        await session.waitForRows();
+        await session.waitRow(label);
 
-        assert.ok(await session.rowExists(label), "the archived field is reachable through the status filter");
+        assert.ok(
+          await session.rowExists(label),
+          "the archived field is reachable through the status filter"
+        );
 
         await session.selectOption("fields-status", "Active");
-        await session.driver.sleep(600);
+
+        /*
+         * With the search still applied the active list can legitimately be
+         * empty, so this waits for the row to go rather than for rows to exist.
+         */
+        const goneBy = Date.now() + 8000;
+
+        while (Date.now() < goneBy && (await session.rowExists(label))) {
+          await session.driver.sleep(250);
+        }
+
+        assert.ok(
+          !(await session.rowExists(label)),
+          "the archived field leaves the active list"
+        );
       },
     },
     {
