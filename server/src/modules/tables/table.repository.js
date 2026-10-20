@@ -467,3 +467,27 @@ export async function countEntityConfigurationsForTable(tableId) {
 
   return Number(rows[0]?.total || 0);
 }
+
+export async function countProfileValuesForColumn(columnId) {
+  const [rows] = await db.execute(
+    `
+      SELECT COUNT(*) AS total
+      FROM user_profile_values
+      WHERE column_definition_id = ?
+    `,
+    [columnId]
+  );
+
+  return Number(rows[0]?.total || 0);
+}
+
+export async function countUsersForTable() {
+  const [rows] = await db.execute(
+    `
+      SELECT COUNT(*) AS total
+      FROM users
+    `
+  );
+
+  return Number(rows[0]?.total || 0);
+}

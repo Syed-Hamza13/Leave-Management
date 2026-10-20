@@ -47,11 +47,21 @@ function buildUserFilters(query = {}) {
   }
 
   if (query.search) {
-    conditions.push("(u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)");
+    conditions.push(`(
+      u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?
+      OR EXISTS (
+        SELECT 1
+        FROM user_profile_values upv
+        INNER JOIN column_definitions cd ON cd.id = upv.column_definition_id
+        WHERE upv.user_id = u.id
+          AND cd.is_searchable = 1
+          AND JSON_UNQUOTE(JSON_EXTRACT(upv.value, '$')) LIKE ?
+      )
+    )`);
 
     const pattern = `%${query.search}%`;
 
-    params.push(pattern, pattern, pattern);
+    params.push(pattern, pattern, pattern, pattern);
   }
 
   if (query.role) {
@@ -279,3 +289,66 @@ export async function findActiveAccountByRoleKeys(roleKeys = []) {
 
   return rows.map((row) => Number(row.id));
 }
+
+export async function findProfileValuesByUserIds(userIds = []) {
+  if (userIds.length === 0) return new Map();
+
+  const placeholders = userIds.map(() => "?").join(", ");
+
+  const [rows] = await db.execute(
+    `
+      SELECT upv.user_id, cd.column_key, upv.value
+      FROM user_profile_values upv
+      INNER JOIN column_definitions cd ON cd.id = upv.column_definition_id
+      WHERE upv.user_id IN (${placeholders})
+        AND cd.status = 'active'
+    `,
+    userIds
+  );
+
+  const byUserId = new Map(userIds.map((id) => [Number(id), {}]));
+
+  for (const row of rows) {
+    const userMap = byUserId.get(Number(row.user_id));
+    if (userMap) {
+      let parsed = row.value;
+      if (typeof parsed === "string") {
+        try {
+          parsed = JSON.parse(parsed);
+        } catch {
+          // keep as string
+        }
+      }
+      userMap[row.column_key] = parsed;
+    }
+  }
+
+  return byUserId;
+}
+
+export async function upsertUserProfileValues(executor, userId, valuesMap, customColumnsByKey) {
+  if (!valuesMap || typeof valuesMap !== "object") return;
+
+  for (const [columnKey, rawVal] of Object.entries(valuesMap)) {
+    const col = customColumnsByKey.get(columnKey);
+    if (!col) continue;
+
+    if (rawVal === null || rawVal === undefined || rawVal === "") {
+      await executor.execute(
+        `DELETE FROM user_profile_values WHERE user_id = ? AND column_definition_id = ?`,
+        [userId, col.id]
+      );
+    } else {
+      const jsonVal = JSON.stringify(rawVal);
+      await executor.execute(
+        `
+          INSERT INTO user_profile_values (user_id, column_definition_id, value)
+          VALUES (?, ?, ?)
+          ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = CURRENT_TIMESTAMP
+        `,
+        [userId, col.id, jsonVal]
+      );
+    }
+  }
+}
+

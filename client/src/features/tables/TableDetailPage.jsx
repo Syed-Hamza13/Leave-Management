@@ -172,10 +172,12 @@ export default function TableDetailPage() {
   }
 
   /*
-   * A system table's columns belong to the service that owns them — the accounts
-   * table among them — so nothing on it is editable, archive included.
+   * Custom columns can be added and managed on system_users tables, while core system
+   * columns remain permanently protected. The table itself cannot be archived if it is system.
    */
-  const editable = canManage && !table.isSystem && table.status === "active";
+  const canManageColumns =
+    canManage && table.status === "active" && (!table.isSystem || table.storageKind === "system_users");
+  const canArchiveTable = canManage && !table.isSystem && table.status === "active";
 
   return (
     <div className="space-y-5">
@@ -202,7 +204,7 @@ export default function TableDetailPage() {
             </Button>
           ) : null}
 
-          {canManage && !table.isSystem && table.status === "active" ? (
+          {canArchiveTable ? (
             <Button size="sm" variant="danger" onClick={() => setArchiveTableOpen(true)}>
               Archive
             </Button>
@@ -232,7 +234,7 @@ export default function TableDetailPage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink">Columns</h2>
 
-          {editable ? (
+          {canManageColumns ? (
             <Button size="sm" onClick={() => setDialog({ mode: "column" })}>
               Add column
             </Button>
@@ -244,13 +246,13 @@ export default function TableDetailPage() {
             title="No columns yet"
             description="Add the values this table should store. System columns are listed below."
             action={
-              editable ? <Button onClick={() => setDialog({ mode: "column" })}>Add column</Button> : null
+              canManageColumns ? <Button onClick={() => setDialog({ mode: "column" })}>Add column</Button> : null
             }
           />
         ) : (
           <div className="overflow-hidden rounded-card border border-line bg-surface">
             <p className="border-b border-line bg-surface-sunken px-4 py-2 text-xs text-ink-soft">
-              {editable
+              {canManageColumns
                 ? "Drag a row to reorder it, or use the arrow buttons. Order decides how records are displayed."
                 : "Columns are shown in the order records display them."}
             </p>
@@ -264,7 +266,7 @@ export default function TableDetailPage() {
                 return (
                   <li
                     key={column.id}
-                    draggable={editable}
+                    draggable={canManageColumns}
                     onDragStart={(event) => {
                       event.dataTransfer.effectAllowed = "move";
                       event.dataTransfer.setData("text/plain", String(index));
@@ -286,7 +288,7 @@ export default function TableDetailPage() {
                       isDropTarget ? "border-t-2 border-t-brand" : "",
                     ].join(" ")}
                   >
-                    {editable ? (
+                    {canManageColumns ? (
                       <span
                         aria-hidden="true"
                         className="cursor-grab text-ink-muted active:cursor-grabbing"
@@ -325,7 +327,7 @@ export default function TableDetailPage() {
                       Position {index + 1} of {manageable.length}
                     </span>
 
-                    {editable ? (
+                    {canManageColumns ? (
                       <div className="flex items-center gap-1">
                         <Button
                           variant="quiet"

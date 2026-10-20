@@ -2,16 +2,20 @@ import { useMemo, useState } from "react";
 
 import Button from "../../components/ui/Button.jsx";
 import Checkbox from "../../components/ui/Checkbox.jsx";
+import FieldRenderer from "../../components/ui/FieldRenderer.jsx";
 import Modal from "../../components/ui/Modal.jsx";
 import Select from "../../components/ui/Select.jsx";
 import TextInput from "../../components/ui/TextInput.jsx";
 
+import useAsyncData from "../../hooks/useAsyncData.js";
 import useMutation from "../../hooks/useMutation.js";
 import { errorMessage, fieldErrors } from "../../services/errors.js";
 import {
   authorization as authorizationApi,
+  tables as tablesApi,
   users as usersApi,
 } from "../../services/resources.js";
+import useEntryOptions from "../records/useEntryOptions.js";
 
 const FORM_ID = "user-dialog-form";
 
@@ -22,6 +26,7 @@ const EMPTY = {
   password: "",
   confirmPassword: "",
   status: "active",
+  values: {},
 };
 
 function fromUser(user) {
@@ -31,6 +36,7 @@ function fromUser(user) {
     firstName: user.firstName ?? "",
     lastName: user.lastName ?? "",
     status: user.status ?? "active",
+    values: { ...(user.values ?? {}) },
   };
 }
 
@@ -39,8 +45,28 @@ function fromUser(user) {
  * patch, because that is where the server's lockout guard lives. The two writes
  * run in sequence and the dialog reports which one failed.
  */
-export default function UserDialog({ user = null, roles = [], onClose, onSaved }) {
+export default function UserDialog({
+  user = null,
+  roles = [],
+  customColumns: passedCustomColumns = null,
+  onClose,
+  onSaved,
+}) {
   const isEdit = Boolean(user);
+
+  const { data: tableData } = useAsyncData(
+    "table-users-definition",
+    () => (passedCustomColumns ? Promise.resolve(null) : tablesApi.get("users"))
+  );
+
+  const customColumns = useMemo(() => {
+    if (passedCustomColumns) return passedCustomColumns;
+    return (tableData?.data?.columns ?? []).filter(
+      (col) => !col.isSystem && col.status === "active"
+    );
+  }, [passedCustomColumns, tableData]);
+
+  const { optionsFor } = useEntryOptions(customColumns);
 
   const [draft, setDraft] = useState(() => (isEdit ? fromUser(user) : EMPTY));
   const [roleKeys, setRoleKeys] = useState(() =>
@@ -70,6 +96,7 @@ export default function UserDialog({ user = null, roles = [], onClose, onSaved }
         lastName: draft.lastName.trim() || null,
         password: draft.password,
         roleKeys,
+        values: draft.values,
       };
     }
 
@@ -82,6 +109,18 @@ export default function UserDialog({ user = null, roles = [], onClose, onSaved }
     }
 
     if (draft.status !== user.status) payload.status = draft.status;
+
+    const originalValues = user.values ?? {};
+    let valuesChanged = false;
+    for (const col of customColumns) {
+      if ((draft.values?.[col.key] ?? null) !== (originalValues[col.key] ?? null)) {
+        valuesChanged = true;
+        break;
+      }
+    }
+    if (valuesChanged) {
+      payload.values = draft.values;
+    }
 
     return payload;
   }
@@ -98,6 +137,15 @@ export default function UserDialog({ user = null, roles = [], onClose, onSaved }
       }
     } else if (!draft.firstName.trim()) {
       found.firstName = "First name is required.";
+    }
+
+    for (const col of customColumns) {
+      if (col.isRequired) {
+        const val = draft.values?.[col.key];
+        if (val === null || val === undefined || val === "") {
+          found[col.key] = `${col.label} is required.`;
+        }
+      }
     }
 
     return found;
@@ -259,6 +307,30 @@ export default function UserDialog({ user = null, roles = [], onClose, onSaved }
               { value: "disabled", label: "Deactivated" },
             ]}
           />
+        ) : null}
+
+        {customColumns.length > 0 ? (
+          <fieldset className="space-y-3 border-t border-line pt-4">
+            <legend className="text-sm font-medium text-ink">Custom Profile Fields</legend>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {customColumns.map((col) => (
+                <FieldRenderer
+                  key={col.key}
+                  field={col}
+                  value={draft.values?.[col.key]}
+                  onChange={(key, next) =>
+                    setDraft((curr) => ({
+                      ...curr,
+                      values: { ...curr.values, [key]: next },
+                    }))
+                  }
+                  error={errors[col.key]}
+                  options={optionsFor(col)}
+                  recordOptions={optionsFor(col)}
+                />
+              ))}
+            </div>
+          </fieldset>
         ) : null}
 
         <fieldset className="space-y-2 border-t border-line pt-4">

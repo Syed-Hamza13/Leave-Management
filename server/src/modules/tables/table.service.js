@@ -28,6 +28,8 @@ import {
   countRecordsForTable,
   countColumnsUsingRelation,
   countEntityConfigurationsForTable,
+  countProfileValuesForColumn,
+  countUsersForTable,
 } from "./table.repository.js";
 
 export async function listTables(query) {
@@ -53,7 +55,13 @@ export async function listActiveTableSummaries() {
 }
 
 export async function getTable(tableId, { includeColumns = true } = {}) {
-  const table = await findTableById(tableId);
+  const isNumeric =
+    typeof tableId === "number" ||
+    (typeof tableId === "string" && /^\d+$/.test(tableId.trim()));
+
+  const table = isNumeric
+    ? await findTableById(Number(tableId))
+    : await findTableByKey(String(tableId));
 
   if (!table) {
     throw notFound("Table not found.", { code: "TABLE_NOT_FOUND" });
@@ -61,7 +69,7 @@ export async function getTable(tableId, { includeColumns = true } = {}) {
 
   if (!includeColumns) return table;
 
-  const columns = await findColumnsByTableId(tableId);
+  const columns = await findColumnsByTableId(table.id);
 
   return { ...table, columns };
 }
@@ -277,13 +285,14 @@ async function resolveRelation({ tableId, dataType, config, relationTableId }) {
 
 export async function addColumn(tableId, payload, actor) {
   const table = await getTable(tableId, { includeColumns: false });
+  const resolvedTableId = table.id;
 
   /*
    * System tables carry the columns another service depends on — the accounts
-   * table's authentication columns above all — so their shape is fixed here
-   * rather than left to whatever the browser sends.
+   * table above all — so their shape is fixed here rather than left to whatever
+   * the browser sends. For system_users, custom non-system columns are permitted.
    */
-  if (table.isSystem) {
+  if (table.isSystem && table.storageKind !== "system_users") {
     throw conflict("Columns of a system table cannot be added.", {
       code: "SYSTEM_TABLE_LOCKED",
     });
@@ -304,7 +313,7 @@ export async function addColumn(tableId, payload, actor) {
 
   assertKeyNotReserved(key, "Column key");
 
-  if (await findColumnByKey(tableId, key)) {
+  if (await findColumnByKey(resolvedTableId, key)) {
     throw conflict(`This table already has a column with key "${key}".`, {
       code: "COLUMN_KEY_TAKEN",
     });
@@ -317,7 +326,7 @@ export async function addColumn(tableId, payload, actor) {
 
   if (dataType.key === "record_reference") {
     const relation = await resolveRelation({
-      tableId,
+      tableId: resolvedTableId,
       dataType: dataType.key,
       config: { ...config, targetTableId: payload.relationTableId ?? config.targetTableId },
       relationTableId: payload.relationTableId,
@@ -347,10 +356,10 @@ export async function addColumn(tableId, payload, actor) {
   }
 
   const columnId = await withTransaction(async (connection) => {
-    const sortOrder = await nextColumnSortOrder(connection, tableId);
+    const sortOrder = await nextColumnSortOrder(connection, resolvedTableId);
 
     const insertId = await insertColumn(connection, {
-      tableId,
+      tableId: resolvedTableId,
       key,
       label: payload.label,
       description: payload.description ?? null,
@@ -365,7 +374,7 @@ export async function addColumn(tableId, payload, actor) {
       relationPolicy,
     });
 
-    await bumpSchemaVersion(connection, tableId);
+    await bumpSchemaVersion(connection, resolvedTableId);
 
     await recordAudit({
       connection,
@@ -373,7 +382,7 @@ export async function addColumn(tableId, payload, actor) {
       action: "table.column.create",
       entityType: "column",
       entityId: insertId,
-      summary: { tableId, key, dataType: dataType.key, relationTableId },
+      summary: { tableId: resolvedTableId, key, dataType: dataType.key, relationTableId },
       ipAddress: actor?.ipAddress ?? null,
       userAgent: actor?.userAgent ?? null,
     });
@@ -385,9 +394,10 @@ export async function addColumn(tableId, payload, actor) {
 }
 
 async function assertColumnEditable(tableId, columnId) {
+  const table = await getTable(tableId, { includeColumns: false });
   const column = await findColumnById(columnId);
 
-  if (!column || Number(column.tableId) !== Number(tableId)) {
+  if (!column || Number(column.tableId) !== Number(table.id)) {
     throw notFound("Column not found.", { code: "COLUMN_NOT_FOUND" });
   }
 
@@ -413,7 +423,11 @@ export async function updateColumnDefinition(tableId, columnId, patch, actor) {
   if (patch.dataType && patch.dataType !== column.dataType) {
     assertDataType(patch.dataType);
 
-    const recordCount = await countRecordsForTable(tableId);
+    const table = await getTable(tableId, { includeColumns: false });
+    const recordCount =
+      table.storageKind === "system_users"
+        ? await countProfileValuesForColumn(columnId)
+        : await countRecordsForTable(tableId);
 
     if (recordCount > 0) {
       throw conflict(
@@ -490,7 +504,9 @@ export async function archiveColumn(tableId, columnId, actor) {
 }
 
 export async function reorderTableColumns(tableId, columnIds, actor) {
-  const columns = await findColumnsByTableId(tableId, { includeArchived: false });
+  const table = await getTable(tableId, { includeColumns: false });
+  const resolvedTableId = table.id;
+  const columns = await findColumnsByTableId(resolvedTableId, { includeArchived: false });
 
   /*
    * System columns keep their migration-defined position; only user-managed
@@ -514,29 +530,34 @@ export async function reorderTableColumns(tableId, columnIds, actor) {
   }
 
   await withTransaction(async (connection) => {
-    await applyColumnOrder(connection, tableId, columnIds.map(Number));
+    await applyColumnOrder(connection, resolvedTableId, columnIds.map(Number));
 
     await recordAudit({
       connection,
       actorUserId: actor?.userId ?? null,
       action: "table.column.reorder",
       entityType: "table",
-      entityId: tableId,
+      entityId: resolvedTableId,
       summary: { columnCount: columnIds.length },
       ipAddress: actor?.ipAddress ?? null,
       userAgent: actor?.userAgent ?? null,
     });
   });
 
-  return findColumnsByTableId(tableId);
+  return findColumnsByTableId(resolvedTableId);
 }
 
 export async function getTableUsage(tableId) {
-  await getTable(tableId, { includeColumns: false });
+  const table = await getTable(tableId, { includeColumns: false });
+
+  const recordCountPromise =
+    table.storageKind === "system_users"
+      ? countUsersForTable()
+      : countRecordsForTable(tableId);
 
   const [mappingCount, recordCount, relationCount, entityConfigCount] = await Promise.all([
     countMappingsForTable(tableId),
-    countRecordsForTable(tableId),
+    recordCountPromise,
     countColumnsUsingRelation(tableId),
     countEntityConfigurationsForTable(tableId),
   ]);

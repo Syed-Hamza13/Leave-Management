@@ -7,10 +7,14 @@ import { getRoleIdsByKeys } from "../authorization/permission.service.js";
 import { replaceUserRoles } from "../authorization/permission.repository.js";
 import { recordAudit } from "../audit/audit.service.js";
 
+import { coerceValue } from "../../lib/dataTypes.js";
+import { findTableByKey, findColumnsByTableId } from "../tables/table.repository.js";
+
 import {
   countUsers,
   findActiveAccountByRoleKeys,
   findRolesForUserIds,
+  findProfileValuesByUserIds,
   findUserRowById,
   findUserRowByEmail,
   findUsers,
@@ -18,6 +22,7 @@ import {
   updateUserPassword,
   updateUserProfile,
   updateUserStatus,
+  upsertUserProfileValues,
 } from "./user.repository.js";
 
 /*
@@ -27,7 +32,7 @@ import {
  */
 const ELEVATED_ROLE_KEYS = [ROLES.SUPER_ADMIN, ROLES.ADMIN];
 
-function mapUser(row, roles = []) {
+function mapUser(row, roles = [], values = {}) {
   return {
     id: Number(row.id),
     email: row.email,
@@ -35,6 +40,7 @@ function mapUser(row, roles = []) {
     lastName: row.last_name,
     status: row.status,
     roles,
+    values,
     lastLoginAt: row.last_login_at,
     passwordChangedAt: row.password_changed_at,
     createdAt: row.created_at,
@@ -69,13 +75,23 @@ export async function listUsers(query = {}) {
   const rows = await findUsers(query);
   const total = await countUsers(query);
 
-  const rolesByUserId = groupRoles(
-    await findRolesForUserIds(rows.map((row) => row.id)),
-    rows.map((row) => row.id)
-  );
+  const userIds = rows.map((row) => row.id);
+
+  const [rolesRows, profileValuesByUserId] = await Promise.all([
+    findRolesForUserIds(userIds),
+    findProfileValuesByUserIds(userIds),
+  ]);
+
+  const rolesByUserId = groupRoles(rolesRows, userIds);
 
   return {
-    users: rows.map((row) => mapUser(row, rolesByUserId.get(Number(row.id)) ?? [])),
+    users: rows.map((row) =>
+      mapUser(
+        row,
+        rolesByUserId.get(Number(row.id)) ?? [],
+        profileValuesByUserId.get(Number(row.id)) ?? {}
+      )
+    ),
     total,
   };
 }
@@ -87,12 +103,18 @@ export async function getUser(userId) {
     throw notFound("This user does not exist.", { code: "USER_NOT_FOUND" });
   }
 
-  const rolesByUserId = groupRoles(
-    await findRolesForUserIds([row.id]),
-    [row.id]
-  );
+  const [rolesRows, profileValuesByUserId] = await Promise.all([
+    findRolesForUserIds([row.id]),
+    findProfileValuesByUserIds([row.id]),
+  ]);
 
-  return mapUser(row, rolesByUserId.get(Number(row.id)) ?? []);
+  const rolesByUserId = groupRoles(rolesRows, [row.id]);
+
+  return mapUser(
+    row,
+    rolesByUserId.get(Number(row.id)) ?? [],
+    profileValuesByUserId.get(Number(row.id)) ?? {}
+  );
 }
 
 export async function createUser(payload, actor) {
@@ -113,6 +135,48 @@ export async function createUser(payload, actor) {
 
   const roleIds = await getRoleIdsByKeys(roleKeys);
 
+  const usersTable = await findTableByKey("users");
+  const allColumns = usersTable ? await findColumnsByTableId(usersTable.id, { includeArchived: false }) : [];
+  const customColumns = allColumns.filter((col) => !col.isSystem);
+  const customColumnsByKey = new Map(customColumns.map((col) => [col.key, col]));
+
+  const validatedValues = {};
+  const validationErrors = {};
+
+  if (payload.values && typeof payload.values === "object") {
+    for (const [key, rawValue] of Object.entries(payload.values)) {
+      const col = customColumnsByKey.get(key);
+      if (!col) continue;
+
+      const result = coerceValue({
+        typeKey: col.dataType,
+        config: col.config,
+        value: rawValue,
+        required: col.isRequired,
+        label: col.label,
+      });
+
+      if (!result.ok) {
+        validationErrors[key] = result.message;
+      } else {
+        validatedValues[key] = result.value;
+      }
+    }
+  }
+
+  for (const col of customColumns) {
+    if (col.isRequired && (validatedValues[col.key] === null || validatedValues[col.key] === undefined || validatedValues[col.key] === "")) {
+      validationErrors[col.key] = `${col.label} is required.`;
+    }
+  }
+
+  if (Object.keys(validationErrors).length > 0) {
+    throw badRequest("Some custom fields are invalid.", {
+      code: "INVALID_FIELD_VALUES",
+      errors: validationErrors,
+    });
+  }
+
   const userId = await withTransaction(async (connection) => {
     const insertedId = await insertUser(connection, {
       email: payload.email,
@@ -126,13 +190,17 @@ export async function createUser(payload, actor) {
       await replaceUserRoles(connection, insertedId, roleIds, actor?.userId ?? null);
     }
 
+    if (Object.keys(validatedValues).length > 0) {
+      await upsertUserProfileValues(connection, insertedId, validatedValues, customColumnsByKey);
+    }
+
     await recordAudit({
       connection,
       actorUserId: actor?.userId ?? null,
       action: "users.create",
       entityType: "user",
       entityId: insertedId,
-      summary: { email: payload.email, status, roleKeys },
+      summary: { email: payload.email, status, roleKeys, valueKeys: Object.keys(validatedValues) },
       ipAddress: actor?.ipAddress ?? null,
       userAgent: actor?.userAgent ?? null,
     });
@@ -173,6 +241,47 @@ export async function updateUser(userId, patch, actor) {
     }
   }
 
+    let validatedValues = null;
+  let customColumnsByKey = null;
+
+  if (patch.values !== undefined && patch.values !== null) {
+    const usersTable = await findTableByKey("users");
+    const allColumns = usersTable ? await findColumnsByTableId(usersTable.id, { includeArchived: false }) : [];
+    const customColumns = allColumns.filter((col) => !col.isSystem);
+    customColumnsByKey = new Map(customColumns.map((col) => [col.key, col]));
+
+    validatedValues = {};
+    const validationErrors = {};
+
+    for (const [key, rawValue] of Object.entries(patch.values)) {
+      const col = customColumnsByKey.get(key);
+      if (!col) continue;
+
+      const result = coerceValue({
+        typeKey: col.dataType,
+        config: col.config,
+        value: rawValue,
+        required: false,
+        label: col.label,
+      });
+
+      if (!result.ok) {
+        validationErrors[key] = result.message;
+      } else if (col.isRequired && (result.value === null || result.value === undefined || result.value === "")) {
+        validationErrors[key] = `${col.label} is required and cannot be cleared.`;
+      } else {
+        validatedValues[key] = result.value;
+      }
+    }
+
+    if (Object.keys(validationErrors).length > 0) {
+      throw badRequest("Some custom fields are invalid.", {
+        code: "INVALID_FIELD_VALUES",
+        errors: validationErrors,
+      });
+    }
+  }
+
   await withTransaction(async (connection) => {
     if (patch.firstName !== undefined || patch.lastName !== undefined) {
       await updateUserProfile(connection, userId, {
@@ -183,6 +292,10 @@ export async function updateUser(userId, patch, actor) {
 
     if (wantsStatus) {
       await updateUserStatus(connection, userId, patch.status);
+    }
+
+    if (validatedValues && customColumnsByKey) {
+      await upsertUserProfileValues(connection, userId, validatedValues, customColumnsByKey);
     }
 
     await recordAudit({
@@ -196,6 +309,7 @@ export async function updateUser(userId, patch, actor) {
         firstName: patch.firstName,
         lastName: patch.lastName,
         status: wantsStatus ? patch.status : undefined,
+        valueKeys: validatedValues ? Object.keys(validatedValues) : undefined,
       },
       ipAddress: actor?.ipAddress ?? null,
       userAgent: actor?.userAgent ?? null,

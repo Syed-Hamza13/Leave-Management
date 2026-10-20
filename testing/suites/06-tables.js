@@ -195,7 +195,7 @@ export default {
       name: "the users table is protected from the table builder",
       screen: "/admin/tables",
       area: "Authentication data protection",
-      fn: async ({ session, assert }) => {
+      fn: async ({ session, assert, adminApi, isolate }) => {
         await session.goto("/admin/tables");
         await session.selectOption("tables-storage", "System");
         await session.driver.sleep(800);
@@ -240,11 +240,47 @@ export default {
           By.xpath('//button[normalize-space()="Add column"]')
         );
 
-        assert.eq(
-          addColumn.length,
-          0,
-          "no column can be added to the authentication table"
+        assert.ok(
+          addColumn.length > 0,
+          "custom columns can be added to the users table"
         );
+
+        // Verify system columns cannot be edited or deleted via API
+        const usersTable = await adminApi.expectOk(adminApi.get("/admin/tables/users"));
+        const emailCol = usersTable.columns.find((c) => c.key === "email");
+        assert.ok(emailCol?.isSystem, "email column is marked as system");
+
+        const patchFail = await adminApi.patch(`/admin/tables/${usersTable.id}/columns/${emailCol.id}`, {
+          label: "Hacked Email",
+        });
+        assert.eq(patchFail.status, 409, "system column cannot be patched");
+
+        const deleteFail = await adminApi.del(`/admin/tables/${usersTable.id}/columns/${emailCol.id}`);
+        assert.eq(deleteFail.status, 409, "system column cannot be deleted");
+
+        // Verify a custom column can be added, updated, and deleted
+        const customColKey = isolate.key("dept");
+        const addedCol = await adminApi.expectOk(
+          adminApi.post(`/admin/tables/${usersTable.id}/columns`, {
+            label: "Department",
+            key: customColKey,
+            dataType: "text",
+          })
+        );
+        assert.eq(addedCol.key, customColKey, "custom column key matches");
+        assert.eq(addedCol.isSystem, false, "custom column is not a system column");
+
+        const updatedCol = await adminApi.expectOk(
+          adminApi.patch(`/admin/tables/${usersTable.id}/columns/${addedCol.id}`, {
+            label: "Department Name",
+          })
+        );
+        assert.eq(updatedCol.label, "Department Name", "custom column can be updated");
+
+        const archivedCol = await adminApi.expectOk(
+          adminApi.del(`/admin/tables/${usersTable.id}/columns/${addedCol.id}`)
+        );
+        assert.eq(archivedCol.status, "archived", "custom column can be archived");
       },
     },
     {

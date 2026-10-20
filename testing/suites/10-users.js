@@ -578,5 +578,62 @@ export default {
         );
       },
     },
+    {
+      name: "users table supports dynamic custom columns and persists profile values",
+      fn: async ({ adminApi, assert, isolate }) => {
+        const usersTable = await adminApi.expectOk(adminApi.get("/admin/tables/users"));
+        const customColKey = isolate.key("empid");
+
+        // 1. Add a custom column to users table
+        const addedCol = await adminApi.expectOk(
+          adminApi.post(`/admin/tables/${usersTable.id}/columns`, {
+            label: "Employee Code",
+            key: customColKey,
+            dataType: "text",
+            isSearchable: true,
+          })
+        );
+        assert.eq(addedCol.key, customColKey, "custom column added to users table");
+        assert.eq(addedCol.isSystem, false, "custom column is not system");
+
+        // 2. Create user with custom value
+        const userEmail = isolate.email("profile");
+        const createdUser = await adminApi.expectOk(
+          adminApi.post("/admin/users", {
+            email: userEmail,
+            firstName: "Profile",
+            lastName: "Tester",
+            password: "Password123!",
+            roleKeys: ["employee"],
+            values: { [customColKey]: "EMP-7777" },
+          })
+        );
+        assert.eq(createdUser.values?.[customColKey], "EMP-7777", "custom field value returned on create");
+
+        // 3. Fetch user by ID
+        const fetchedUser = await adminApi.expectOk(adminApi.get(`/admin/users/${createdUser.id}`));
+        assert.eq(fetchedUser.values?.[customColKey], "EMP-7777", "custom field value returned on get");
+
+        // 4. Update user with new custom value
+        const updatedUser = await adminApi.expectOk(
+          adminApi.patch(`/admin/users/${createdUser.id}`, {
+            values: { [customColKey]: "EMP-8888" },
+          })
+        );
+        assert.eq(updatedUser.values?.[customColKey], "EMP-8888", "custom field value updated");
+
+        // 5. Search matches custom column value
+        const searchRes = await adminApi.expectOk(
+          adminApi.get("/admin/users?search=EMP-8888")
+        );
+        const match = (searchRes || []).find((u) => u.id === createdUser.id);
+        assert.ok(match, "user found via searchable custom profile value");
+
+        // 6. Clean up: archive custom column
+        await adminApi.expectOk(
+          adminApi.del(`/admin/tables/${usersTable.id}/columns/${addedCol.id}`)
+        );
+      },
+    },
   ],
 };

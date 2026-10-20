@@ -46,6 +46,7 @@ export const createUserSchema = z.object({
     .transform((keys) => (keys ? Array.from(new Set(keys)) : undefined)),
 
   status: z.enum(["active", "disabled"]).optional(),
+  values: z.record(z.any()).optional().default({}),
 });
 
 export const updateUserSchema = z
@@ -53,6 +54,7 @@ export const updateUserSchema = z
     firstName: z.string().trim().min(1).max(100).optional(),
     lastName: z.string().trim().max(100).nullish(),
     status: z.enum(["active", "disabled"]).optional(),
+    values: z.record(z.any()).optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field must be provided.",

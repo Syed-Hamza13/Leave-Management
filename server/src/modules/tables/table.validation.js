@@ -3,11 +3,17 @@ import { z } from "zod";
 import { DATA_TYPE_KEYS } from "../../lib/dataTypes.js";
 
 export const tableIdParamSchema = z.object({
-  tableId: z.coerce.number().int().positive(),
+  tableId: z.union([
+    z.coerce.number().int().positive(),
+    z.string().trim().min(1).max(64),
+  ]),
 });
 
 export const columnIdParamSchema = z.object({
-  tableId: z.coerce.number().int().positive(),
+  tableId: z.union([
+    z.coerce.number().int().positive(),
+    z.string().trim().min(1).max(64),
+  ]),
   columnId: z.coerce.number().int().positive(),
 });
 

@@ -10,9 +10,16 @@ import { useToast } from "../../components/ui/ToastContext.js";
 
 import useAsyncData from "../../hooks/useAsyncData.js";
 import { PERMISSIONS } from "../../lib/permissions.js";
-import { authorization as authorizationApi, users as usersApi } from "../../services/resources.js";
+import {
+  authorization as authorizationApi,
+  tables as tablesApi,
+  users as usersApi,
+} from "../../services/resources.js";
 
+import { useMetadata } from "../metadata/MetadataContext.js";
 import { usePermissions } from "../permissions/PermissionsContext.js";
+import useEntryOptions from "../records/useEntryOptions.js";
+import { formatRecordValue } from "../records/recordValues.js";
 
 import ResetPasswordDialog from "./ResetPasswordDialog.jsx";
 import UserDialog from "./UserDialog.jsx";
@@ -38,10 +45,24 @@ export default function UsersPage() {
   const [dialog, setDialog] = useState(null);
 
   const canManage = can(PERMISSIONS.USERS_MANAGE);
+  const { getDataType } = useMetadata();
 
   const { data: rolesData } = useAsyncData("authorization-roles", () => authorizationApi.roles());
-
   const roles = useMemo(() => rolesData?.data ?? [], [rolesData]);
+
+  const { data: tableData } = useAsyncData("table-users-meta", () =>
+    tablesApi.get("users")
+  );
+
+  const customColumns = useMemo(
+    () =>
+      (tableData?.data?.columns ?? []).filter(
+        (col) => !col.isSystem && col.status === "active" && col.isVisible
+      ),
+    [tableData]
+  );
+
+  const { optionsFor } = useEntryOptions(customColumns);
 
   const { data, loading, error, reload } = useAsyncData(
     `users:${page}:${search}:${status}:${role}:${sort?.key ?? "none"}:${sort?.direction ?? "none"}`,
@@ -98,6 +119,21 @@ export default function UsersPage() {
           <Badge tone={row.status === "active" ? "success" : "warning"}>{row.status}</Badge>
         ),
       },
+      ...customColumns.map((col) => ({
+        key: `custom_${col.key}`,
+        header: col.label,
+        render: (row) => {
+          const val = row.values?.[col.key];
+          return (
+            <span className="text-ink">
+              {formatRecordValue(val, {
+                storage: getDataType(col.dataType)?.storage,
+                options: optionsFor(col),
+              })}
+            </span>
+          );
+        },
+      })),
       {
         key: "lastLoginAt",
         header: "Last sign-in",
@@ -115,7 +151,7 @@ export default function UsersPage() {
         render: (row) => <span className="text-ink-soft">{formatDate(row.createdAt)}</span>,
       },
     ],
-    []
+    [customColumns, getDataType, optionsFor]
   );
 
   return (
@@ -232,6 +268,7 @@ export default function UsersPage() {
         <UserDialog
           user={dialog.user ?? null}
           roles={roles}
+          customColumns={customColumns}
           onClose={() => setDialog(null)}
           onSaved={(saved) => {
             setDialog(null);
