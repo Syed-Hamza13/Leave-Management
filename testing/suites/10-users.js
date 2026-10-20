@@ -231,7 +231,7 @@ export default {
 
         await session.submitDialog();
 
-        const alert = await session.anyText(By.xpath('//div[@role="dialog"]//p[@role="alert"]'));
+        const alert = (await session.waitDialogError()).join(" ");
 
         assert.includesText(
           alert || "",
@@ -276,7 +276,7 @@ export default {
 
         await session.submitDialog();
 
-        const alert = await session.anyText(By.xpath('//div[@role="dialog"]//p[@role="alert"]'));
+        const alert = (await session.waitDialogError()).join(" ");
 
         assert.includesText(
           alert || "",

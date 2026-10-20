@@ -173,8 +173,8 @@ export default {
 
         assert.eq(await session.ariaSort(notesColumn), "ascending", "the header reports ascending");
 
-        const first = await session.driver.findElements(By.css("table tbody tr"));
-        const firstText = (await first[0].getText()).replace(/\s+/g, " ");
+        const first = (await session.rowTexts())[0] ?? [];
+        const firstText = first.join(" ");
 
         assert.ok(
           firstText.includes("aaa other note"),

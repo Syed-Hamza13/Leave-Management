@@ -26,6 +26,9 @@ async function readBudget() {
  * The API grants 300 requests per 15 minutes per address and a full browser pass
  * spends them quickly. Waiting for the window is slower but honest; the alternative
  * is a run that fails on 429s that have nothing to do with the product.
+ *
+ * Reading the budget is itself a request against the same limiter, so the wait is
+ * one uninterrupted sleep for the rest of the window rather than a poll.
  */
 async function guardBudget(floor = 60) {
   let budget = await readBudget();
@@ -34,23 +37,31 @@ async function guardBudget(floor = 60) {
     return;
   }
 
-  let waited = 0;
+  let windows = 0;
 
-  while (budget && budget.remaining < floor && waited < 16 * 60) {
-    const pause = Math.min((budget.reset || 30) + 2, 60);
+  while (budget.remaining < floor) {
+    if (windows >= 6) {
+      throw new Error(
+        `The API never returned its request budget (${budget.remaining} left after ${windows} windows); stopping rather than reporting 429s as failures.`
+      );
+    }
+
+    const pause = Math.max(budget.reset || 30, 5) + 3;
 
     console.log(
-      `  ! rate-limit budget is ${budget.remaining} requests; waiting ${pause}s for the window to reset`
+      `  ! rate-limit budget is ${budget.remaining} requests; sleeping ${pause}s for the window to reset`
     );
 
     await new Promise((resolve) => setTimeout(resolve, pause * 1000));
-    waited += pause;
+    windows += 1;
     budget = await readBudget();
+
+    if (!budget) {
+      return;
+    }
   }
 
-  if (budget) {
-    console.log(`  ✓ api budget: ${budget.remaining} requests left in the current window`);
-  }
+  console.log(`  ✓ api budget: ${budget.remaining} requests left in the current window`);
 }
 
 function banner() {
@@ -68,7 +79,11 @@ async function precondition() {
     throw new Error(`API is not reachable at ${config.apiBaseUrl}: ${error.message}`);
   });
 
-  if (health.status !== 200) {
+  /*
+   * A 429 here means the server answered: the shared window is simply spent, and
+   * the budget guard below waits it out. Only silence or a real error is fatal.
+   */
+  if (health.status !== 200 && health.status !== 429) {
     throw new Error(`API health returned ${health.status}; start the server first.`);
   }
 
@@ -111,6 +126,9 @@ function selectSuites() {
 async function main() {
   banner();
   await precondition();
+
+  // The sign-in phase spends its own requests; start it on a window with room.
+  await guardBudget(150);
 
   const recorder = new RunRecorder();
   const adminApi = new ApiClient();
@@ -173,7 +191,13 @@ async function main() {
     ok(me.user?.id === adminUser.id, "Browser session and API session describe the same account");
 
     for (const suite of chosen) {
-      await guardBudget();
+      try {
+        await guardBudget();
+      } catch (error) {
+        console.log(`  ! ${error.message}`);
+        break;
+      }
+
       recorder.startSuite(suite.name, suite.area);
 
       let suiteContext = context;
@@ -210,6 +234,22 @@ async function main() {
           recorder.skipTest("No limited-role account configured.");
           recorder.finishTest("skipped", { notes: "requires a limited account" });
           console.log(`  – ${suite.name} › ${test.name} — needs a limited account`);
+
+          continue;
+        }
+
+        /*
+         * A suite can start healthy and run dry halfway through, so the window is
+         * checked per test as well. The check itself costs one request. The floor
+         * is high because a hard navigation re-boots the app: a single 429 on that
+         * boot's session check strands the browser on the login screen.
+         */
+        try {
+          await guardBudget(90);
+        } catch (error) {
+          recorder.skipTest(error.message);
+          recorder.finishTest("skipped", { notes: "api budget never recovered" });
+          console.log(`  – ${suite.name} › ${test.name} — ${error.message}`);
 
           continue;
         }

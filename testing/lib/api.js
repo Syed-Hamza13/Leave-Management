@@ -1,5 +1,16 @@
 import { config } from "../config.js";
 
+/** Seconds until the shared rate-limit window refills, read from the refusal itself. */
+function windowPause(response) {
+  const header = response.headers.get("ratelimit") || "";
+  const retryAfter = Number(response.headers.get("retry-after"));
+  const reset = Number((header.match(/t=(\d+)/) || [])[1]);
+
+  const seconds = retryAfter > 0 ? retryAfter : reset;
+
+  return Math.min(Math.max(seconds > 0 ? seconds : 30, 5) + 3, 16 * 60);
+}
+
 /**
  * A thin cookie-jar REST client used for test setup and for asserting server
  * state that the browser cannot see (audit rows, list totals, cleanup).
@@ -28,7 +39,7 @@ export class ApiClient {
     }
   }
 
-  async raw(method, path, body, retry = true) {
+  async raw(method, path, body, retry = true, budgetRetries = 2) {
     if (method !== "GET" && !this.csrfToken) {
       await this.csrf();
     }
@@ -48,6 +59,21 @@ export class ApiClient {
     });
 
     this.storeCookies(response);
+
+    /*
+     * A 429 says the shared 15-minute window ran out, which is a property of the
+     * harness's own traffic rather than of the product. Waiting the window out and
+     * replaying the request keeps a fixture or an assertion from failing on it.
+     */
+    if (response.status === 429 && budgetRetries > 0) {
+      const pause = windowPause(response);
+
+      console.log(`  ! api budget exhausted on ${method} ${path}; sleeping ${pause}s`);
+
+      await new Promise((resolve) => setTimeout(resolve, pause * 1000));
+
+      return this.raw(method, path, body, retry, budgetRetries - 1);
+    }
 
     const payload = await response.json().catch(() => null);
 

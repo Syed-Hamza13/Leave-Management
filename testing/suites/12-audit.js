@@ -23,17 +23,9 @@ async function columnValues(session, column) {
     return [];
   }
 
-  const rows = await session.driver.findElements(By.css("table tbody tr"));
-  const values = [];
+  const rows = await session.rowTexts();
 
-  for (const row of rows) {
-    const cells = await row.findElements(By.css("td"));
-    const cell = cells[index];
-
-    values.push(cell ? (await cell.getText()).replace(/\s+/g, " ").trim() : "");
-  }
-
-  return values;
+  return rows.map((cells) => cells[index] ?? "");
 }
 
 function walk(object, visit, path = "") {
