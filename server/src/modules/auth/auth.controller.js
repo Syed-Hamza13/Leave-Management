@@ -109,21 +109,9 @@ export async function login(req, res, next) {
       path: "/",
     });
 
-    /*
-     * Capture the incoming session before replacing req.session.
-     *
-     * This is important because the incoming session may belong
-     * to another legitimate browser.
-     */
     const previousSessionId = req.sessionID;
     const previousSessionUserId = req.session?.user?.id || null;
 
-    /*
-     * If an authenticated session already exists, inspect it.
-     *
-     * This is only informational/security logic.
-     * We NEVER destroy it here.
-     */
     if (previousSessionId && previousSessionUserId) {
       const existingSession = await getSession(previousSessionId);
 
@@ -147,13 +135,9 @@ export async function login(req, res, next) {
       }
     }
 
-    /*
-     * Create a completely NEW Express/Redis session.
-     *
-     * Unlike req.session.regenerate(), this does NOT destroy
-     * the previous session.
-     */
-    await generateFreshSession(req);
+    if (previousSessionUserId) {
+      await generateFreshSession(req);
+    }
 
     /*
      * The browser will now receive the new session ID.
