@@ -48,14 +48,32 @@ export class ApiClient {
     // whenever it differs from the one this client last read.
     const token = this.cookies.get("csrf-token") || this.csrfToken;
 
+    let requestBody = body;
+    if (
+      path === "/auth/login" &&
+      typeof body === "object" &&
+      body !== null &&
+      body["cf-turnstile-response"] === undefined &&
+      !body.__withoutTurnstile
+    ) {
+      requestBody = {
+        ...body,
+        "cf-turnstile-response": "cf-turnstile-test-token",
+      };
+    } else if (body && body.__withoutTurnstile) {
+      const { __withoutTurnstile, ...rest } = body;
+      requestBody = rest;
+    }
+
     const response = await fetch(`${this.base}${path}`, {
       method,
       headers: {
         "content-type": "application/json",
+        "x-e2e-run": "true",
         ...(this.cookieHeader() ? { cookie: this.cookieHeader() } : {}),
         ...(method === "GET" || !token ? {} : { "x-csrf-token": token }),
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: requestBody === undefined ? undefined : JSON.stringify(requestBody),
     });
 
     this.storeCookies(response);
@@ -123,10 +141,16 @@ export class ApiClient {
     return this.raw("DELETE", path, body);
   }
 
-  async login({ email, password }) {
+  async login({ email, password, turnstileToken }) {
     await this.csrf();
 
-    const result = await this.raw("POST", "/auth/login", { email, password });
+    const payload = {
+      email,
+      password,
+      "cf-turnstile-response": turnstileToken || "cf-turnstile-test-token",
+    };
+
+    const result = await this.raw("POST", "/auth/login", payload);
 
     if (result.status !== 200) {
       throw new Error(

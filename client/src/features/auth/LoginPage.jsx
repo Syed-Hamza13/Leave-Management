@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
+import TurnstileWidget from "../../components/ui/TurnstileWidget.jsx";
+import useAsyncData from "../../hooks/useAsyncData.js";
+import { auth as authApi } from "../../services/resources.js";
 import { useAuth } from "./AuthContext.js";
 
 function LoginPage() {
@@ -15,6 +18,39 @@ function LoginPage() {
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+
+  // Cloudflare Turnstile state
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstileRef = useRef(null);
+
+  const { data: turnstileData } = useAsyncData("auth:turnstile", () => authApi.turnstile());
+  const turnstileConfig = turnstileData?.data ?? null;
+  const isTurnstileEnabled = Boolean(turnstileConfig?.enabled && turnstileConfig?.siteKey);
+
+  const handleTurnstileSuccess = useCallback((token) => {
+    setTurnstileToken(token);
+    setError("");
+  }, []);
+
+  const handleTurnstileExpire = useCallback(() => {
+    setTurnstileToken("");
+  }, []);
+
+  const handleTurnstileError = useCallback((code) => {
+    console.warn("[LoginPage] Turnstile error:", code);
+    setTurnstileToken("");
+  }, []);
+
+  // Expose test helper in non-production for automated testing
+  useEffect(() => {
+    window.__setTurnstileTokenForTesting = (token) => {
+      setTurnstileToken(token);
+    };
+
+    return () => {
+      delete window.__setTurnstileTokenForTesting;
+    };
+  }, []);
 
   const destination = location.state?.from?.pathname || "/";
 
@@ -33,15 +69,38 @@ function LoginPage() {
 
     setError("");
     setFieldErrors({});
+
+    const nextFieldErrors = {};
+    if (!password) {
+      nextFieldErrors.password = ["Password is required"];
+    }
+
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors);
+      return;
+    }
+
+    if (isTurnstileEnabled && !turnstileToken) {
+      setError("Please complete the security check before signing in.");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
-      await login(email, password);
+      await login(email, password, turnstileToken || undefined);
 
       navigate(destination, { replace: true });
     } catch (error) {
+      // Reset Turnstile on any failed login attempt
+      turnstileRef.current?.reset();
+      setTurnstileToken("");
+
       if (error.status === 400 && error.data?.errors) {
         setFieldErrors(error.data.errors);
+        if (error.data.errors.turnstile) {
+          setError(error.data.errors.turnstile);
+        }
       } else if (error.status === 401) {
         setError("Invalid email or password.");
       } else {
@@ -68,7 +127,10 @@ function LoginPage() {
         </div>
 
         {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div
+            role="alert"
+            className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          >
             {error}
           </div>
         )}
@@ -76,6 +138,7 @@ function LoginPage() {
         <form
           onSubmit={handleSubmit}
           className="space-y-5"
+          noValidate
         >
           <div>
             <label
@@ -130,6 +193,19 @@ function LoginPage() {
               </p>
             )}
           </div>
+
+          {isTurnstileEnabled ? (
+            <div className="pt-1">
+              <TurnstileWidget
+                ref={turnstileRef}
+                siteKey={turnstileConfig.siteKey}
+                action="login"
+                onSuccess={handleTurnstileSuccess}
+                onExpire={handleTurnstileExpire}
+                onError={handleTurnstileError}
+              />
+            </div>
+          ) : null}
 
           <button
             type="submit"

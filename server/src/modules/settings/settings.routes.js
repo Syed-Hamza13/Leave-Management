@@ -7,9 +7,11 @@ import { PERMISSIONS } from "../../lib/permissions.js";
 
 import {
   getSmtpHandler,
+  getTurnstileHandler,
   listSettingsHandler,
   testSmtpHandler,
   updateSmtpHandler,
+  updateTurnstileHandler,
 } from "./settings.controller.js";
 
 export function createSettingsRoutes() {
@@ -27,6 +29,13 @@ export function createSettingsRoutes() {
   router.get("/smtp", requirePermission(PERMISSIONS.SETTINGS_VIEW), getSmtpHandler);
 
   router.patch("/smtp", requirePermission(PERMISSIONS.SETTINGS_MANAGE), updateSmtpHandler);
+
+  /*
+   * Turnstile security settings.
+   */
+  router.get("/turnstile", requirePermission(PERMISSIONS.SETTINGS_VIEW), getTurnstileHandler);
+
+  router.patch("/turnstile", requirePermission(PERMISSIONS.SETTINGS_MANAGE), updateTurnstileHandler);
 
   /*
    * The test route opens a socket to an administrator-supplied host, which is

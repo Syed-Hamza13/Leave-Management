@@ -171,6 +171,12 @@ export const settings = {
   smtp: () => api("/admin/settings/smtp"),
   updateSmtp: (payload) => patch("/admin/settings/smtp", payload),
   testSmtp: () => post("/admin/settings/smtp/test", {}),
+  turnstile: () => api("/admin/settings/turnstile"),
+  updateTurnstile: (payload) => patch("/admin/settings/turnstile", payload),
+};
+
+export const auth = {
+  turnstile: () => api("/auth/turnstile"),
 };
 
 export const audit = {

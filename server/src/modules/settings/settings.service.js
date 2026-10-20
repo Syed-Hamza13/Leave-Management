@@ -47,6 +47,13 @@ function sanitize({ envelope, ...value }) {
   };
 }
 
+import {
+  getTurnstileSettings,
+  updateTurnstileSettings,
+} from "../security/turnstile.service.js";
+
+export { getTurnstileSettings, updateTurnstileSettings };
+
 export async function getSmtpSettings() {
   return sanitize(readStored(await findSettingRow(SMTP_SETTING_KEY)));
 }
@@ -54,6 +61,7 @@ export async function getSmtpSettings() {
 export async function listSettings() {
   return {
     smtp: await getSmtpSettings(),
+    turnstile: await getTurnstileSettings(),
     secretStorageConfigured: isEncryptionConfigured(),
   };
 }

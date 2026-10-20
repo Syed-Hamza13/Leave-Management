@@ -12,7 +12,12 @@ import {
   getDeviceByToken,
   registerDevice,
 } from "./device.service.js";
+import { badRequest } from "../../lib/appError.js";
 import { ensureBootstrapAdministrator } from "../authorization/permission.service.js";
+import {
+  getPublicTurnstileConfig,
+  verifyTurnstileToken,
+} from "../security/turnstile.service.js";
 
 const SESSION_MAX_AGE = 1000 * 60 * 60 * 8;
 
@@ -53,6 +58,25 @@ function generateFreshSession(req) {
 export async function login(req, res, next) {
   try {
     const data = loginSchema.parse(req.body);
+
+    const turnstileToken =
+      req.body["cf-turnstile-response"] || req.body.turnstileToken || null;
+
+    const turnstileResult = await verifyTurnstileToken({
+      token: turnstileToken,
+      ip: req.ip,
+      action: "login",
+      headers: req.headers,
+    });
+
+    if (!turnstileResult.success) {
+      throw badRequest(turnstileResult.error || "Security verification failed.", {
+        code: "TURNSTILE_FAILED",
+        errors: {
+          turnstile: turnstileResult.error || "Security verification failed.",
+        },
+      });
+    }
 
     const userAgent = req.get("user-agent") || null;
 
@@ -282,3 +306,16 @@ export async function me(req, res, next) {
     next(error);
   }
 }
+
+export async function getTurnstilePublicConfigHandler(req, res, next) {
+  try {
+    const config = await getPublicTurnstileConfig();
+
+    res.json({
+      success: true,
+      data: config,
+    });
+  } catch (error) {
+    next(error);
+  }
+}

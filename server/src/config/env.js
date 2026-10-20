@@ -29,6 +29,12 @@ const envSchema = z.object({
    * Optional at startup so existing environments keep working.
    */
   ENCRYPTION_KEY: z.string().min(32).optional(),
+
+  SITE_KEY: z.string().optional(),
+  SECRET_KEY: z.string().optional(),
+  TURNSTILE_SITE_KEY: z.string().optional(),
+  TURNSTILE_SECRET_KEY: z.string().optional(),
+  TURNSTILE_HOSTNAMES: z.string().optional(),
 });
 
 const result = envSchema.safeParse(process.env);

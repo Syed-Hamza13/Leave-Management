@@ -105,15 +105,22 @@ export function AuthProvider({ children }) {
     void Promise.resolve().then(loadCurrentUser);
   }, []);
 
-  async function login(email, password) {
+  async function login(email, password, turnstileToken = null) {
     clearCsrfToken();
+
+    const payload = {
+      email,
+      password,
+    };
+
+    if (turnstileToken) {
+      payload["cf-turnstile-response"] = turnstileToken;
+      payload.turnstileToken = turnstileToken;
+    }
 
     const data = await api("/auth/login", {
       method: "POST",
-      body: JSON.stringify({
-        email,
-        password,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (data?.success && data?.user) {

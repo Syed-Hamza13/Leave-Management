@@ -1,7 +1,14 @@
 import { ok, okMessage } from "../../lib/responses.js";
 
-import { updateSmtpSchema } from "./settings.validation.js";
-import { getSmtpSettings, listSettings, testSmtpSettings, updateSmtpSettings } from "./settings.service.js";
+import { updateSmtpSchema, updateTurnstileSchema } from "./settings.validation.js";
+import {
+  getSmtpSettings,
+  getTurnstileSettings,
+  listSettings,
+  testSmtpSettings,
+  updateSmtpSettings,
+  updateTurnstileSettings,
+} from "./settings.service.js";
 
 function actorFrom(req) {
   return {
@@ -57,3 +64,27 @@ export async function testSmtpHandler(req, res, next) {
     return next(error);
   }
 }
+
+export async function getTurnstileHandler(req, res, next) {
+  try {
+    return ok(res, await getTurnstileSettings());
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function updateTurnstileHandler(req, res, next) {
+  try {
+    const payload = updateTurnstileSchema.parse(req.body);
+
+    return ok(
+      res,
+      await updateTurnstileSettings(payload, {
+        ...actorFrom(req),
+      })
+    );
+  } catch (error) {
+    return next(error);
+  }
+}
+

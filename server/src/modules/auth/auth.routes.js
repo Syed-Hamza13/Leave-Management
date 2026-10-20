@@ -1,11 +1,13 @@
 import { Router } from "express";
-import { login, logout, me } from "./auth.controller.js";
+import { login, logout, me, getTurnstilePublicConfigHandler } from "./auth.controller.js";
 import { createLoginRateLimiter } from "../../middleware/rateLimiter.js";
 import { requireAuth } from "../../middleware/requireAuth.js";
 import { doubleCsrfProtection } from "../../middleware/csrf.js";
 
 export function createAuthRoutes() {
   const router = Router();
+
+  router.get("/turnstile", getTurnstilePublicConfigHandler);
 
   router.post(
     "/login",

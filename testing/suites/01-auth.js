@@ -210,5 +210,54 @@ export default {
         );
       },
     },
+    {
+      name: "the public turnstile configuration endpoint is available to visitors",
+      fn: async ({ adminApi, assert }) => {
+        const res = await adminApi.get("/auth/turnstile");
+
+        assert.eq(res.status, 200, "turnstile public config answers 200");
+        assert.ok(typeof res.body?.data?.enabled === "boolean", "enabled status is a boolean");
+      },
+    },
+    {
+      name: "when Turnstile is enabled, requests without a token are refused",
+      fn: async ({ adminApi, assert, config }) => {
+        // Read original turnstile state
+        const initial = await adminApi.get("/admin/settings/turnstile");
+        const originalEnabled = Boolean(initial.body?.data?.enabled);
+
+        try {
+          // Enable Turnstile
+          const enabledRes = await adminApi.patch("/admin/settings/turnstile", { enabled: true });
+          assert.eq(enabledRes.status, 200, "enabled turnstile");
+
+          // 1. Missing token must be refused
+          const noToken = await adminApi.raw("POST", "/auth/login", {
+            email: config.admin.email,
+            password: config.admin.password,
+            __withoutTurnstile: true,
+          });
+
+          assert.eq(noToken.status, 400, "missing turnstile token refused");
+          assert.includesText(
+            JSON.stringify(noToken.body),
+            "security check",
+            "refusal explains security check is required"
+          );
+
+          // 2. Valid test token succeeds
+          const withToken = await adminApi.raw("POST", "/auth/login", {
+            email: config.admin.email,
+            password: config.admin.password,
+            "cf-turnstile-response": "cf-turnstile-test-token",
+          });
+
+          assert.eq(withToken.status, 200, "login with valid test token succeeds");
+        } finally {
+          // Restore original state
+          await adminApi.patch("/admin/settings/turnstile", { enabled: originalEnabled });
+        }
+      },
+    },
   ],
 };

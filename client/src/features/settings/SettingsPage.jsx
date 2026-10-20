@@ -119,6 +119,63 @@ export default function SettingsPage() {
     setErrors(fieldErrors(outcome.error));
   }
 
+  const turnstile = saved?.turnstile ?? {
+    enabled: false,
+    siteKey: "",
+    secretConfigured: false,
+    configuredInEnv: false,
+  };
+
+  const [turnstileDraft, setTurnstileDraft] = useState(null);
+  const [turnstileErrors, setTurnstileErrors] = useState({});
+  const {
+    run: runSaveTurnstile,
+    pending: savingTurnstile,
+    error: turnstileSaveError,
+  } = useMutation();
+
+  const turnstileValue = useMemo(
+    () => (turnstileDraft === null ? turnstile : { ...turnstile, ...turnstileDraft }),
+    [turnstileDraft, turnstile]
+  );
+
+  const turnstileDirty =
+    turnstileDraft !== null &&
+    (turnstileDraft.enabled !== turnstile.enabled ||
+      (turnstileDraft.siteKey !== undefined && turnstileDraft.siteKey !== turnstile.siteKey) ||
+      Boolean(turnstileDraft.secretKey));
+
+  async function handleSaveTurnstile(event) {
+    event.preventDefault();
+    setTurnstileErrors({});
+
+    const payload = {
+      enabled: Boolean(turnstileValue.enabled),
+    };
+
+    if (
+      turnstileDraft?.siteKey !== undefined &&
+      turnstileDraft.siteKey.trim() !== turnstile.siteKey
+    ) {
+      payload.siteKey = turnstileDraft.siteKey.trim();
+    }
+
+    if (turnstileDraft?.secretKey) {
+      payload.secretKey = turnstileDraft.secretKey.trim();
+    }
+
+    const outcome = await runSaveTurnstile(() => settingsApi.updateTurnstile(payload));
+
+    if (outcome.ok) {
+      setTurnstileDraft(null);
+      toast.success("Turnstile settings were saved.");
+      reload();
+      return;
+    }
+
+    setTurnstileErrors(fieldErrors(outcome.error));
+  }
+
   async function handleTest() {
     setTestResult(null);
 
@@ -367,6 +424,125 @@ export default function SettingsPage() {
             ) : null}
           </div>
         ) : null}
+      </section>
+
+      {/* Cloudflare Turnstile Security Card */}
+      <section className="space-y-4 rounded-card border border-line bg-surface p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-ink">Sign-in security (Cloudflare Turnstile)</h2>
+
+            <p className="mt-1 text-sm text-ink-soft">
+              Require a human verification challenge on the sign-in form to prevent automated brute-force and credential stuffing attacks.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={turnstileValue.enabled ? "success" : "neutral"}>
+              {turnstileValue.enabled ? "Active" : "Disabled"}
+            </Badge>
+
+            <Badge tone={turnstile.secretConfigured ? "success" : "warning"}>
+              {turnstile.secretConfigured ? "Secret configured" : "No secret configured"}
+            </Badge>
+
+            {turnstile.configuredInEnv ? (
+              <Badge tone="neutral">From environment</Badge>
+            ) : null}
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveTurnstile} className="space-y-4" noValidate>
+          {turnstileSaveError ? (
+            <p
+              role="alert"
+              className="rounded-control border border-danger bg-danger-soft px-3 py-2 text-sm font-medium text-danger"
+            >
+              {errorMessage(turnstileSaveError, "Turnstile settings could not be saved.")}
+            </p>
+          ) : null}
+
+          <div className="rounded-control border border-line/60 bg-surface-muted/30 p-3.5">
+            <Toggle
+              id="turnstile-enabled"
+              label="Enable Cloudflare Turnstile challenge on sign-in"
+              hint="When enabled, visitors must complete the Turnstile challenge before they can submit credentials."
+              checked={Boolean(turnstileValue.enabled)}
+              disabled={!canManage}
+              onChange={(event) =>
+                setTurnstileDraft((cur) => ({
+                  ...(cur ?? turnstile),
+                  enabled: event.target.checked,
+                }))
+              }
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextInput
+              id="turnstile-sitekey"
+              label="Site Key"
+              disabled={!canManage}
+              autoComplete="off"
+              value={turnstileValue.siteKey ?? ""}
+              onChange={(event) =>
+                setTurnstileDraft((cur) => ({
+                  ...(cur ?? turnstile),
+                  siteKey: event.target.value,
+                }))
+              }
+              error={turnstileErrors.siteKey}
+              placeholder="0x4AAAAAAFd4ompD4TuKdB-I"
+              hint="The public site key rendered on the login form."
+            />
+
+            <TextInput
+              id="turnstile-secretkey"
+              type="password"
+              label="Secret Key"
+              disabled={!canManage}
+              autoComplete="new-password"
+              value={turnstileDraft?.secretKey ?? ""}
+              onChange={(event) =>
+                setTurnstileDraft((cur) => ({
+                  ...(cur ?? turnstile),
+                  secretKey: event.target.value,
+                }))
+              }
+              error={turnstileErrors.secretKey}
+              placeholder={
+                turnstile.secretConfigured
+                  ? "Configured (leave blank to keep current)"
+                  : "Enter secret key"
+              }
+              hint="Private secret key used server-side to verify tokens against Cloudflare."
+            />
+          </div>
+
+          {canManage ? (
+            <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
+              <Button type="submit" loading={savingTurnstile} disabled={!turnstileDirty}>
+                Save Turnstile settings
+              </Button>
+
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => {
+                  setTurnstileDraft(null);
+                  setTurnstileErrors({});
+                }}
+                disabled={!turnstileDirty || savingTurnstile}
+              >
+                Reset Turnstile changes
+              </Button>
+            </div>
+          ) : (
+            <p className="border-t border-line pt-4 text-sm text-ink-soft">
+              You can review these settings but changing them requires the settings permission.
+            </p>
+          )}
+        </form>
       </section>
     </div>
   );

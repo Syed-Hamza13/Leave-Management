@@ -344,6 +344,16 @@ export class Session {
   }
 
   async clickButton(text, options = {}) {
+    if (text === "Sign in") {
+      await this.driver
+        .executeScript(`
+          if (window.__setTurnstileTokenForTesting) {
+            window.__setTurnstileTokenForTesting("cf-turnstile-test-token");
+          }
+        `)
+        .catch(() => {});
+    }
+
     const limit = Date.now() + (options.timeout || config.timeouts.element);
     let lastError = null;
 
@@ -1231,6 +1241,14 @@ export class Session {
 
     await this.fill("email", account.email);
     await this.fill("password", account.password);
+
+    // If Turnstile is rendered on the login page, provide test token so automated test can sign in
+    await this.driver.executeScript(`
+      if (window.__setTurnstileTokenForTesting) {
+        window.__setTurnstileTokenForTesting("cf-turnstile-test-token");
+      }
+    `).catch(() => {});
+
     await this.clickButton("Sign in", { step: "submit login" });
 
     await this.waitSignedIn(25000);
