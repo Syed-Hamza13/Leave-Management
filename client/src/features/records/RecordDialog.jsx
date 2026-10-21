@@ -253,7 +253,11 @@ export default function RecordDialog({
               }
               disabled={pending}
               options={field.dataType === "dropdown" ? options : null}
-              recordOptions={field.dataType === "record_reference" ? options : null}
+              recordOptions={
+                ["record_reference", "entity_reference", "user_reference"].includes(field.dataType)
+                  ? options
+                  : null
+              }
             />
           );
         })}

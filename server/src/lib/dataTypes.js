@@ -86,6 +86,15 @@ const referenceConfigSchema = z.object({
   allowMultiple: z.boolean().optional(),
 });
 
+const entityReferenceConfigSchema = z.object({
+  entityTypeId: z.number().int().positive().optional(),
+  allowMultiple: z.boolean().optional(),
+});
+
+const userReferenceConfigSchema = z.object({
+  allowMultiple: z.boolean().optional(),
+});
+
 function coerceString(value, config, label) {
   const text = typeof value === "number" ? String(value) : value;
 
@@ -397,6 +406,33 @@ export const DATA_TYPES = [
     coerce: coerceReference,
     defaultConfig: { allowMultiple: false },
   },
+  {
+    key: "entity_reference",
+    label: "Organization entity",
+    description: "Relation to an organization entity (e.g. Department, Team, Council).",
+    storage: STORAGE.REFERENCE,
+    input: "entity-picker",
+    configSchema: entityReferenceConfigSchema,
+    configFields: [
+      { key: "entityTypeId", label: "Entity type", type: "entity-type-ref" },
+      { key: "allowMultiple", label: "Allow multiple selections", type: "toggle" },
+    ],
+    coerce: coerceReference,
+    defaultConfig: { allowMultiple: false },
+  },
+  {
+    key: "user_reference",
+    label: "User reference",
+    description: "Relation to an employee or administrator account.",
+    storage: STORAGE.REFERENCE,
+    input: "user-picker",
+    configSchema: userReferenceConfigSchema,
+    configFields: [
+      { key: "allowMultiple", label: "Allow multiple selections", type: "toggle" },
+    ],
+    coerce: coerceReference,
+    defaultConfig: { allowMultiple: false },
+  },
 ];
 
 const DATA_TYPE_MAP = new Map(DATA_TYPES.map((type) => [type.key, type]));
@@ -524,11 +560,33 @@ export function isMappingCompatible(source, target) {
   }
 
   if (sourceType.storage === STORAGE.REFERENCE) {
-    if (source.config?.targetTableId !== target.config?.targetTableId) {
+    if (sourceType.key !== targetType.key) {
       return {
         compatible: false,
-        reason: "Both sides must reference the same table.",
+        reason: `${sourceType.label} cannot be mapped to a ${targetType.label}.`,
       };
+    }
+
+    if (sourceType.key === "record_reference") {
+      if (source.config?.targetTableId !== target.config?.targetTableId) {
+        return {
+          compatible: false,
+          reason: "Both sides must reference the same table.",
+        };
+      }
+    }
+
+    if (sourceType.key === "entity_reference") {
+      if (
+        source.config?.entityTypeId &&
+        target.config?.entityTypeId &&
+        source.config.entityTypeId !== target.config.entityTypeId
+      ) {
+        return {
+          compatible: false,
+          reason: "Both sides must reference the same entity type.",
+        };
+      }
     }
 
     if (Boolean(source.config?.allowMultiple) !== Boolean(target.config?.allowMultiple)) {

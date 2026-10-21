@@ -15,12 +15,16 @@ import useAsyncData from "../../hooks/useAsyncData.js";
 import useMutation from "../../hooks/useMutation.js";
 import { PERMISSIONS } from "../../lib/permissions.js";
 import { errorMessage } from "../../services/errors.js";
-import { organization as organizationApi } from "../../services/resources.js";
+import { organization as organizationApi, tables as tablesApi } from "../../services/resources.js";
 
+import { useMetadata } from "../metadata/MetadataContext.js";
 import { usePermissions } from "../permissions/PermissionsContext.js";
+import { formatRecordValue } from "../records/recordValues.js";
+import useEntryOptions from "../records/useEntryOptions.js";
 
 import ConfigurationDialog from "./ConfigurationDialog.jsx";
 import EntityDialog from "./EntityDialog.jsx";
+import EntityMembersModal from "./EntityMembersModal.jsx";
 
 const PAGE_SIZE = 25;
 
@@ -30,16 +34,15 @@ export default function EntityTypePage() {
   const toast = useToast();
 
   const canManage = can(PERMISSIONS.ORGANIZATION_MANAGE);
-  const canViewRecords = can(PERMISSIONS.RECORDS_VIEW);
 
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("active");
   const [page, setPage] = useState(1);
 
-  const [configDialog, setConfigDialog] = useState(null);
+  const [configOpen, setConfigOpen] = useState(false);
   const [entityDialog, setEntityDialog] = useState(null);
+  const [memberEntityTarget, setMemberEntityTarget] = useState(null);
   const [entityArchiveTarget, setEntityArchiveTarget] = useState(null);
-  const [configDeleteTarget, setConfigDeleteTarget] = useState(null);
 
   const {
     data: typeData,
@@ -49,6 +52,49 @@ export default function EntityTypePage() {
   } = useAsyncData(`entity-type:${entityTypeId}`, () =>
     organizationApi.getEntityType(entityTypeId)
   );
+
+  const entityType = typeData?.data ?? null;
+  const configurations = useMemo(() => entityType?.configurations ?? [], [entityType]);
+
+  const primaryConfiguration = useMemo(
+    () => configurations.find((entry) => entry.scope === "profile") ?? configurations[0] ?? null,
+    [configurations]
+  );
+
+  const { data: profileTableData } = useAsyncData(
+    `profile-table-def:${primaryConfiguration?.table?.id ?? "none"}`,
+    () =>
+      primaryConfiguration?.table?.id
+        ? tablesApi.get(primaryConfiguration.table.id)
+        : Promise.resolve(null)
+  );
+
+  const profileTable = profileTableData?.data ?? null;
+
+  const profileColumns = useMemo(() => {
+    const active = (profileTable?.columns ?? []).filter(
+      (col) => !col.isSystem && col.isVisible && col.status === "active"
+    );
+
+    const seenKeys = new Set();
+    const seenLabels = new Set();
+
+    return active.filter((col) => {
+      const keyLower = col.key?.toLowerCase();
+      const labelLower = col.label?.trim().toLowerCase();
+
+      if (seenKeys.has(keyLower) || seenLabels.has(labelLower)) {
+        return false;
+      }
+
+      seenKeys.add(keyLower);
+      seenLabels.add(labelLower);
+      return true;
+    });
+  }, [profileTable]);
+
+  const { optionsFor } = useEntryOptions(profileColumns);
+  const { getDataType } = useMetadata();
 
   const { data, loading, error, reload } = useAsyncData(
     `entities:${entityTypeId}:${page}:${search}:${status}`,
@@ -62,56 +108,55 @@ export default function EntityTypePage() {
       })
   );
 
-  const entityType = typeData?.data ?? null;
-  const configurations = useMemo(() => entityType?.configurations ?? [], [entityType]);
-
-  const profileConfiguration = configurations.find((entry) => entry.scope === "profile") ?? null;
-
   const rows = data?.data ?? [];
   const meta = data?.meta ?? null;
 
   const { run: runDelete, pending: deleting } = useMutation();
 
-  const columns = useMemo(
-    () => [
-      {
+  const columns = useMemo(() => {
+    const list = [];
+
+    if (profileColumns.length > 0) {
+      // Use the actual columns defined in the configured table
+      profileColumns.forEach((col, index) => {
+        const type = getDataType(col.dataType);
+        list.push({
+          key: `col_${col.key}`,
+          header: col.label,
+          render: (row) => {
+            const rawVal = row.profile?.values?.[col.key] ?? (index === 0 ? row.name : null);
+            const formatted = formatRecordValue(rawVal, {
+              storage: type?.storage ?? "string",
+              options: optionsFor(col),
+            });
+
+            return index === 0 ? (
+              <span className="font-semibold text-ink">{formatted}</span>
+            ) : (
+              <span className="text-ink-soft">{formatted}</span>
+            );
+          },
+        });
+      });
+    } else {
+      // Fallback only if no table or columns are configured
+      list.push({
         key: "name",
-        header: "Entity",
-        render: (row) => (
-          <Link
-            to={`/organization/entities/${row.id}`}
-            className="font-medium text-ink hover:text-brand hover:underline"
-          >
-            {row.name}
-          </Link>
-        ),
-      },
-      {
-        key: "parentEntity",
-        header: "Parent",
-        render: (row) =>
-          row.parentEntity ? (
-            <span className="text-sm text-ink-soft">{row.parentEntity.name}</span>
-          ) : (
-            <span className="text-xs text-ink-muted">Top of the tree</span>
-          ),
-      },
-      {
-        key: "childCount",
-        header: "Children",
-        align: "right",
-        render: (row) => <span className="text-ink-soft">{row.childCount}</span>,
-      },
-      {
-        key: "status",
-        header: "Status",
-        render: (row) => (
-          <Badge tone={row.status === "active" ? "success" : "neutral"}>{row.status}</Badge>
-        ),
-      },
-    ],
-    []
-  );
+        header: `${entityType?.label || "Entity"} Name`,
+        render: (row) => <span className="font-semibold text-ink">{row.name}</span>,
+      });
+    }
+
+    list.push({
+      key: "status",
+      header: "Status",
+      render: (row) => (
+        <Badge tone={row.status === "active" ? "success" : "neutral"}>{row.status}</Badge>
+      ),
+    });
+
+    return list;
+  }, [profileColumns, optionsFor, getDataType, entityType]);
 
   async function confirmEntityArchive() {
     const target = entityArchiveTarget;
@@ -130,29 +175,13 @@ export default function EntityTypePage() {
     toast.error(errorMessage(outcome.error, "The entity could not be archived."));
   }
 
-  async function confirmConfigurationDelete() {
-    const target = configDeleteTarget;
-
-    const outcome = await runDelete(() => organizationApi.deleteConfiguration(target.id));
-
-    setConfigDeleteTarget(null);
-
-    if (outcome.ok) {
-      toast.success(`“${target.label}” was removed.`);
-      reloadType();
-      return;
-    }
-
-    toast.error(errorMessage(outcome.error, "The configuration could not be removed."));
-  }
-
-  if (typeLoading) return <LoadingState label="Loading entity type…" />;
+  if (typeLoading) return <LoadingState label="Loading entity…" />;
 
   if (typeError || !entityType) {
     return (
       <div className="space-y-3">
         <p className="text-sm font-medium text-danger">
-          {errorMessage(typeError, "This entity type could not be loaded.")}
+          {errorMessage(typeError, "This entity could not be loaded.")}
         </p>
 
         <Button variant="secondary" size="sm" onClick={reloadType}>
@@ -164,200 +193,152 @@ export default function EntityTypePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs text-ink-muted">
-            <Link to="/organization" className="hover:text-brand hover:underline">
-              Organization
-            </Link>
-          </p>
+      {/* Top Header Card - Direct, clean and professional */}
+      <div className="rounded-card border border-line bg-surface p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0 space-y-2">
+            <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs text-ink-muted">
+              <Link to="/organization" className="hover:text-brand hover:underline">
+                Organization
+              </Link>
+              <span aria-hidden="true">/</span>
+              <span className="font-medium text-ink-soft">{entityType.label}</span>
+            </nav>
 
-          <p className="truncate text-sm font-semibold text-ink">{entityType.label}</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-bold tracking-tight text-ink">{entityType.label}</h1>
 
-          <code className="font-mono text-xs text-ink-muted">{entityType.key}</code>
+              {entityType.key && entityType.key !== entityType.label?.toLowerCase() ? (
+                <code className="rounded bg-surface-sunken px-2 py-0.5 font-mono text-xs text-ink-muted">
+                  {entityType.key}
+                </code>
+              ) : null}
 
-          {entityType.description ? (
-            <p className="mt-1 text-sm text-ink-soft">{entityType.description}</p>
-          ) : null}
-        </div>
+              <Badge tone={entityType.status === "active" ? "success" : "neutral"}>
+                {entityType.status}
+              </Badge>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={entityType.status === "active" ? "success" : "neutral"}>
-            {entityType.status}
-          </Badge>
+              <Badge tone="neutral">
+                {meta?.total ?? rows.length} {((meta?.total ?? rows.length) === 1) ? "entry" : "entries"}
+              </Badge>
 
-          <Badge tone="neutral">
-            {entityType.entityCount} {entityType.entityCount === 1 ? "entity" : "entities"}
-          </Badge>
+              {primaryConfiguration ? (
+                <Badge tone="brand">
+                  {primaryConfiguration.form.label} → {primaryConfiguration.table.label}
+                </Badge>
+              ) : (
+                <Badge tone="warning">Not Configured</Badge>
+              )}
+            </div>
 
-          {canManage ? (
-            <Button size="sm" onClick={() => setConfigDialog({ mode: "create" })}>
-              New configuration
-            </Button>
-          ) : null}
-        </div>
-      </div>
+            {entityType.description ? (
+              <p className="text-sm text-ink-soft">{entityType.description}</p>
+            ) : null}
+          </div>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-ink">Configurations</h2>
+          <div className="flex flex-wrap items-center gap-2.5">
+            {canManage ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setConfigOpen(true)}
+              >
+                Configure
+              </Button>
+            ) : null}
 
-        <p className="text-xs text-ink-soft">
-          Each configuration names the form, table and mapping this kind of entity uses. A profile
-          holds one record per entity; a section holds a list.
-        </p>
-
-        {configurations.length === 0 ? (
-          <EmptyState
-            title="Nothing is configured yet"
-            description="Give this type a profile configuration so entities can carry their own details."
-            action={
-              canManage ? (
-                <Button onClick={() => setConfigDialog({ mode: "create" })}>
-                  New configuration
-                </Button>
-              ) : null
-            }
-          />
-        ) : (
-          <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-            {configurations.map((configuration) => (
-              <li key={configuration.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-sm font-medium text-ink">
-                      {configuration.label}
-                    </span>
-
-                    <Badge tone={configuration.scope === "profile" ? "brand" : "neutral"}>
-                      {configuration.scope}
-                    </Badge>
-
-                    {!configuration.isActive ? <Badge tone="warning">Inactive</Badge> : null}
-                  </p>
-
-                  <p className="mt-0.5 text-xs text-ink-muted">
-                    {configuration.form.label} → {configuration.table.label}
-                    <span className="ml-2">order {configuration.sortOrder}</span>
-                  </p>
-                </div>
-
-                {/*
-                 * A configuration is only worth having once it can be used from
-                 * here: a profile feeds the entity form, a section opens the
-                 * records screen of the table it stores into.
-                 */}
-                {configuration.isActive &&
-                entityType.status === "active" &&
-                (configuration.scope === "profile" || canViewRecords) ? (
-                  configuration.scope === "profile" ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setEntityDialog({ mode: "create" })}
-                    >
-                      New {entityType.label.toLowerCase()}
-                    </Button>
-                  ) : (
-                    <Link to={`/records/${configuration.table.id}`}>
-                      <Button variant="secondary" size="sm">Open records</Button>
-                    </Link>
-                  )
-                ) : null}
-
-                {canManage ? (
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setConfigDialog({ mode: "edit", configuration })}
-                    >
-                      Edit
-                    </Button>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setConfigDeleteTarget(configuration)}
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <h2 className="text-sm font-semibold text-ink">
-            {entityType.label} records
-          </h2>
-
-          <div className="flex flex-1 flex-wrap items-end justify-end gap-3">
-            <SearchInput
-              className="w-full sm:max-w-xs"
-              value={search}
-              onChange={(next) => {
-                setSearch(next);
-                setPage(1);
-              }}
-              label="Search entities"
-              placeholder="Search by name…"
-            />
-
-            <Select
-              id="entities-status"
-              label="Status"
-              className="w-40"
-              value={status}
-              onChange={(event) => {
-                setStatus(event.target.value);
-                setPage(1);
-              }}
-              options={[
-                { value: "active", label: "Active" },
-                { value: "archived", label: "Archived" },
-              ]}
-            />
-
-            {canManage && entityType.status === "active" ? (
-              <Button onClick={() => setEntityDialog({ mode: "create" })}>
-                New {entityType.label.toLowerCase()}
+            {entityType.status === "active" ? (
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (!primaryConfiguration) {
+                    toast.info("Please configure a form and table first.");
+                    setConfigOpen(true);
+                    return;
+                  }
+                  setEntityDialog({ mode: "create" });
+                }}
+              >
+                + Add {entityType.label}
               </Button>
             ) : null}
           </div>
         </div>
+      </div>
 
-        <DataTable
-          columns={columns}
-          rows={rows}
-          loading={loading}
-          error={error}
-          onRetry={reload}
-          pagination={meta}
-          onPageChange={setPage}
-          empty={
-            <EmptyState
-              title={search ? "No entities match your search" : "No entities yet"}
-              description={
-                search
-                  ? "Try a different name, or clear the search."
-                  : `Create the first ${entityType.label.toLowerCase()} record.`
-              }
-            />
+      {/* Main Records Table Section */}
+      {!primaryConfiguration ? (
+        <EmptyState
+          title={`No Form & Table configured for "${entityType.label}"`}
+          description={`To add and view entries, configure a form and table using the Configure button.`}
+          action={
+            canManage ? (
+              <Button onClick={() => setConfigOpen(true)}>
+                Configure Form & Table
+              </Button>
+            ) : null
           }
-          actions={(row) => (
-            <>
-              <Link to={`/organization/entities/${row.id}`}>
-                <Button variant="ghost" size="sm">
-                  Open
-                </Button>
-              </Link>
+        />
+      ) : (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="flex flex-1 flex-wrap items-end gap-3">
+              <SearchInput
+                className="w-full sm:max-w-xs"
+                value={search}
+                onChange={(next) => {
+                  setSearch(next);
+                  setPage(1);
+                }}
+                label={`Search ${entityType.label.toLowerCase()} entries`}
+                placeholder="Search entries…"
+              />
 
-              {canManage && row.status === "active" ? (
-                <>
+              <Select
+                id="entities-status"
+                label="Status"
+                className="w-40"
+                value={status}
+                onChange={(event) => {
+                  setStatus(event.target.value);
+                  setPage(1);
+                }}
+                options={[
+                  { value: "active", label: "Active" },
+                  { value: "archived", label: "Archived" },
+                ]}
+              />
+            </div>
+          </div>
+
+          <DataTable
+            columns={columns}
+            rows={rows}
+            loading={loading}
+            error={error}
+            onRetry={reload}
+            pagination={meta}
+            onPageChange={setPage}
+            empty={
+              <EmptyState
+                title={search ? "No entries match your search" : `No ${entityType.label.toLowerCase()} entries yet`}
+                description={
+                  search
+                    ? "Try a different search term, or clear the search filter."
+                    : `Click "+ Add ${entityType.label}" to record the first entry.`
+                }
+                action={
+                  canManage && !search && entityType.status === "active" ? (
+                    <Button onClick={() => setEntityDialog({ mode: "create" })}>
+                      + Add {entityType.label}
+                    </Button>
+                  ) : null
+                }
+              />
+            }
+            actions={(row) => (
+              <>
+                {canManage && row.status === "active" ? (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -365,38 +346,52 @@ export default function EntityTypePage() {
                   >
                     Edit
                   </Button>
+                ) : null}
 
-                  <Button variant="ghost" size="sm" onClick={() => setEntityArchiveTarget(row)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setMemberEntityTarget(row)}
+                >
+                  Members
+                </Button>
+
+                {canManage && row.status === "active" ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEntityArchiveTarget(row)}
+                  >
                     Archive
                   </Button>
-                </>
-              ) : null}
-            </>
-          )}
-        />
-      </section>
+                ) : null}
+              </>
+            )}
+          />
+        </section>
+      )}
 
-      {configDialog ? (
+      {/* Overlay: Configuration Dialog */}
+      {configOpen ? (
         <ConfigurationDialog
           entityTypeId={entityType.id}
-          configuration={configDialog.configuration ?? null}
-          onClose={() => setConfigDialog(null)}
+          entityType={entityType}
+          configuration={primaryConfiguration}
+          onClose={() => setConfigOpen(false)}
           onSaved={(saved) => {
-            setConfigDialog(null);
-            toast.success(
-              configDialog.mode === "create"
-                ? `“${saved?.label ?? "Configuration"}” was created.`
-                : `“${saved?.label ?? "Configuration"}” was saved.`
-            );
+            setConfigOpen(false);
+            toast.success(`"${saved?.label ?? entityType.label}" configuration saved.`);
             reloadType();
+            reload();
           }}
         />
       ) : null}
 
+      {/* Overlay: Form Record Dialog */}
       {entityDialog ? (
         <EntityDialog
           entityType={entityType}
-          profileConfiguration={profileConfiguration}
+          profileConfiguration={primaryConfiguration}
           entity={entityDialog.entity ?? null}
           onClose={() => setEntityDialog(null)}
           onSaved={(saved) => {
@@ -412,26 +407,25 @@ export default function EntityTypePage() {
         />
       ) : null}
 
+      {/* Overlay: Entity Members Modal */}
+      {memberEntityTarget ? (
+        <EntityMembersModal
+          entity={memberEntityTarget}
+          canManage={canManage}
+          onClose={() => setMemberEntityTarget(null)}
+        />
+      ) : null}
+
+      {/* Confirmation Dialog: Archive */}
       <ConfirmDialog
         open={Boolean(entityArchiveTarget)}
-        title="Archive entity"
+        title="Archive record"
         message={`Archive “${entityArchiveTarget?.name ?? ""}”?`}
-        detail="Entities with children or with a profile record are refused until those are handled first."
-        confirmLabel="Archive entity"
+        detail="The record will be archived. You can restore it later if needed."
+        confirmLabel="Archive"
         loading={deleting}
         onCancel={() => setEntityArchiveTarget(null)}
         onConfirm={confirmEntityArchive}
-      />
-
-      <ConfirmDialog
-        open={Boolean(configDeleteTarget)}
-        title="Remove configuration"
-        message={`Remove “${configDeleteTarget?.label ?? ""}”?`}
-        detail="Only the configuration is removed. The table and its records stay, so nothing already entered is lost."
-        confirmLabel="Remove configuration"
-        loading={deleting}
-        onCancel={() => setConfigDeleteTarget(null)}
-        onConfirm={confirmConfigurationDelete}
       />
     </div>
   );

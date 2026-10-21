@@ -12,6 +12,10 @@ import {
   listEntitiesQuerySchema,
   createEntitySchema,
   updateEntitySchema,
+  memberUserIdParamSchema,
+  userIdParamSchema,
+  addEntityMemberSchema,
+  updateEntityMemberSchema,
 } from "./organization.validation.js";
 import {
   listEntityTypes,
@@ -28,6 +32,11 @@ import {
   createEntity,
   updateEntity,
   archiveEntity,
+  listEntityMembers,
+  addEntityMember,
+  updateEntityMember,
+  removeEntityMember,
+  listUserMemberships,
 } from "./organization.service.js";
 
 function actorFrom(req) {
@@ -209,3 +218,56 @@ export async function archiveEntityHandler(req, res, next) {
     return next(error);
   }
 }
+
+export async function listEntityMembersHandler(req, res, next) {
+  try {
+    const { entityId } = entityIdParamSchema.parse(req.params);
+
+    return ok(res, await listEntityMembers(entityId));
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function addEntityMemberHandler(req, res, next) {
+  try {
+    const { entityId } = entityIdParamSchema.parse(req.params);
+    const payload = addEntityMemberSchema.parse(req.body);
+
+    return created(res, await addEntityMember(entityId, payload, actorFrom(req)));
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function updateEntityMemberHandler(req, res, next) {
+  try {
+    const { entityId, userId } = memberUserIdParamSchema.parse(req.params);
+    const payload = updateEntityMemberSchema.parse(req.body);
+
+    return ok(res, await updateEntityMember(entityId, userId, payload, actorFrom(req)));
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function removeEntityMemberHandler(req, res, next) {
+  try {
+    const { entityId, userId } = memberUserIdParamSchema.parse(req.params);
+
+    return ok(res, await removeEntityMember(entityId, userId, actorFrom(req)));
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function listUserMembershipsHandler(req, res, next) {
+  try {
+    const { userId } = userIdParamSchema.parse(req.params);
+
+    return ok(res, await listUserMemberships(userId));
+  } catch (error) {
+    return next(error);
+  }
+}
+

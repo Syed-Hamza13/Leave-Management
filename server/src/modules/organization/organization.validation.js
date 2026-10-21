@@ -89,7 +89,7 @@ const profileValuesSchema = z.record(z.string().trim().regex(KEY_PATTERN), z.unk
 export const createEntitySchema = z
   .object({
     entityTypeId: z.coerce.number().int().positive(),
-    name: z.string().trim().min(1, "Entity name is required").max(190),
+    name: z.string().trim().max(190).optional(),
     parentEntityId: z.coerce.number().int().positive().nullish(),
     sortOrder: z.coerce.number().int().min(0).max(MAX_SORT_ORDER).optional(),
     values: profileValuesSchema.optional(),
@@ -113,3 +113,27 @@ export const updateEntitySchema = z
     message: `A profile accepts a maximum of ${MAX_PROFILE_VALUES} values.`,
     path: ["values"],
   });
+
+export const memberUserIdParamSchema = z.object({
+  entityId: z.coerce.number().int().positive(),
+  userId: z.coerce.number().int().positive(),
+});
+
+export const userIdParamSchema = z.object({
+  userId: z.coerce.number().int().positive(),
+});
+
+export const addEntityMemberSchema = z.object({
+  userId: z.coerce.number().int().positive(),
+  role: z.enum(["member", "lead", "manager"]).default("member"),
+});
+
+export const updateEntityMemberSchema = z
+  .object({
+    role: z.enum(["member", "lead", "manager"]).optional(),
+    status: z.enum(["active", "inactive"]).optional(),
+  })
+  .refine((payload) => Object.keys(payload).length > 0, {
+    message: "At least one field must be provided.",
+  });
+

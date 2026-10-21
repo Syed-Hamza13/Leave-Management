@@ -316,6 +316,20 @@ export default function TableDetailPage() {
                             {column.relationPolicy === "multiple" ? " (many)" : ""}
                           </span>
                         ) : null}
+
+                        {column.dataType === "entity_reference" ? (
+                          <span>
+                            → Organization entity
+                            {column.config?.allowMultiple ? " (many)" : ""}
+                          </span>
+                        ) : null}
+
+                        {column.dataType === "user_reference" ? (
+                          <span>
+                            → User
+                            {column.config?.allowMultiple ? " (many)" : ""}
+                          </span>
+                        ) : null}
                       </p>
                     </div>
 

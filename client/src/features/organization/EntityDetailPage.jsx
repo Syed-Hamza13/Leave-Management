@@ -28,6 +28,7 @@ import useEntryOptions from "../records/useEntryOptions.js";
 import RecordDialog from "../records/RecordDialog.jsx";
 
 import EntityDialog from "./EntityDialog.jsx";
+import MemberDialog from "./MemberDialog.jsx";
 
 const SECTION_PAGE_SIZE = 50;
 
@@ -293,6 +294,168 @@ function SectionPanel({ configuration, entityId, entityActive }) {
   );
 }
 
+function MembersPanel({ entity, canManage, entityActive }) {
+  const toast = useToast();
+  const [memberDialog, setMemberDialog] = useState(null);
+  const [removeTarget, setRemoveTarget] = useState(null);
+
+  const { data: membersData, loading, reload } = useAsyncData(
+    `entity-members:${entity.id}`,
+    () => organizationApi.listMembers(entity.id)
+  );
+
+  const members = membersData?.data ?? [];
+  const { run: runRemove, pending: removing } = useMutation();
+
+  async function confirmRemove() {
+    const outcome = await runRemove(() =>
+      organizationApi.removeMember(entity.id, removeTarget.userId)
+    );
+
+    setRemoveTarget(null);
+
+    if (outcome.ok) {
+      toast.success(`${removeTarget.fullName} was removed.`);
+      reload();
+      return;
+    }
+
+    toast.error(errorMessage(outcome.error, "Could not remove member."));
+  }
+
+  const existingUserIds = members.map((m) => m.userId);
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-ink">
+            Members
+            <span className="ml-2 rounded-full bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-muted">
+              {members.length}
+            </span>
+          </h2>
+          <p className="text-xs text-ink-soft">
+            Users assigned to this {entity.name}.
+          </p>
+        </div>
+
+        {canManage && entityActive ? (
+          <Button size="sm" onClick={() => setMemberDialog({ mode: "add" })}>
+            Add member
+          </Button>
+        ) : null}
+      </div>
+
+      {loading ? (
+        <LoadingState label="Loading members…" />
+      ) : members.length === 0 ? (
+        <EmptyState
+          title="No members yet"
+          description={`Add users to this ${entity.name} to establish organizational relationships and workflow assignments.`}
+          action={
+            canManage && entityActive ? (
+              <Button size="sm" onClick={() => setMemberDialog({ mode: "add" })}>
+                Add member
+              </Button>
+            ) : null
+          }
+        />
+      ) : (
+        <div className="overflow-hidden rounded-card border border-line bg-surface">
+          <ul className="divide-y divide-line">
+            {members.map((member) => (
+              <li
+                key={member.id}
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-surface-sunken/40"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-medium text-ink">
+                      {member.fullName}
+                    </p>
+
+                    <Badge
+                      tone={
+                        member.role === "lead"
+                          ? "brand"
+                          : member.role === "manager"
+                            ? "accent"
+                            : "neutral"
+                      }
+                    >
+                      {member.role === "lead"
+                        ? "Lead"
+                        : member.role === "manager"
+                          ? "Manager"
+                          : "Member"}
+                    </Badge>
+
+                    {member.userStatus !== "active" ? (
+                      <Badge tone="warning">Deactivated</Badge>
+                    ) : null}
+                  </div>
+
+                  <p className="truncate text-xs text-ink-muted">{member.email}</p>
+                </div>
+
+                {canManage && entityActive ? (
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setMemberDialog({ mode: "edit", member })}
+                    >
+                      Change role
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setRemoveTarget(member)}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {memberDialog ? (
+        <MemberDialog
+          entity={entity}
+          member={memberDialog.member ?? null}
+          existingUserIds={existingUserIds}
+          onClose={() => setMemberDialog(null)}
+          onSaved={(saved) => {
+            setMemberDialog(null);
+            toast.success(
+              memberDialog.mode === "add"
+                ? `${saved?.fullName ?? "User"} was added as ${saved?.role ?? "member"}.`
+                : `Role updated for ${saved?.fullName ?? "member"}.`
+            );
+            reload();
+          }}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        open={Boolean(removeTarget)}
+        title="Remove member"
+        message={`Remove "${removeTarget?.fullName}" from "${entity.name}"?`}
+        detail="Removing a member does not delete their user account or records."
+        confirmLabel="Remove member"
+        loading={removing}
+        onCancel={() => setRemoveTarget(null)}
+        onConfirm={confirmRemove}
+      />
+    </section>
+  );
+}
+
 export default function EntityDetailPage() {
   const { entityId } = useParams();
   const { can } = usePermissions();
@@ -361,33 +524,42 @@ export default function EntityDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs text-ink-muted">
-            <Link to="/organization" className="hover:text-brand hover:underline">
-              Organization
-            </Link>
-            <span aria-hidden="true"> / </span>
-            <span>{entity.entityType.label}</span>
-          </p>
+      <div className="rounded-card border border-line bg-surface p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs text-ink-muted">
+              <Link to="/organization" className="hover:text-brand hover:underline">
+                Organization
+              </Link>
+              <span aria-hidden="true"> / </span>
+              <Link to={`/organization/${entity.entityType.id}`} className="hover:text-brand hover:underline">
+                {entity.entityType.label}
+              </Link>
+            </p>
 
-          <p className="mt-1 truncate text-sm font-semibold text-ink">{entity.name}</p>
-        </div>
+            <div className="mt-1 flex flex-wrap items-center gap-2.5">
+              <h2 className="text-lg font-bold text-ink">{entity.name}</h2>
+              <Badge tone={entity.status === "active" ? "success" : "neutral"}>{entity.status}</Badge>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={entity.status === "active" ? "success" : "neutral"}>{entity.status}</Badge>
+              <Badge tone="neutral">
+                {entity.childCount} {entity.childCount === 1 ? "child" : "children"}
+              </Badge>
+            </div>
+          </div>
 
-          {canManage && entity.status === "active" ? (
-            <>
-              <Button size="sm" variant="secondary" onClick={() => setEntityDialog({ mode: "edit" })}>
-                Edit
-              </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {canManage && entity.status === "active" ? (
+              <>
+                <Button size="sm" variant="secondary" onClick={() => setEntityDialog({ mode: "edit" })}>
+                  Edit
+                </Button>
 
-              <Button size="sm" variant="danger" onClick={() => setArchiveOpen(true)}>
-                Archive
-              </Button>
-            </>
-          ) : null}
+                <Button size="sm" variant="danger" onClick={() => setArchiveOpen(true)}>
+                  Archive
+                </Button>
+              </>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -404,6 +576,12 @@ export default function EntityDetailPage() {
           This entity type has no profile configuration, so its details are not stored yet.
         </p>
       )}
+
+      <MembersPanel
+        entity={entity}
+        canManage={canManage}
+        entityActive={entity.status === "active"}
+      />
 
       {sectionConfigurations.map((configuration) => (
         <SectionPanel

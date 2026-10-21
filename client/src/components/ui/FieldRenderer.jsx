@@ -246,6 +246,8 @@ export default function FieldRenderer({
       );
 
     case "record_reference":
+    case "entity_reference":
+    case "user_reference":
       return (
         <ReferencePicker
           id={fieldId}
@@ -254,7 +256,14 @@ export default function FieldRenderer({
           error={error}
           required={required}
           disabled={disabled}
-          options={recordOptions}
+          options={recordOptions || options}
+          placeholder={
+            field.dataType === "user_reference"
+              ? "Select a user…"
+              : field.dataType === "entity_reference"
+                ? "Select an entity…"
+                : "Select a record…"
+          }
           multiple={Boolean(config.allowMultiple)}
           value={value}
           onChange={emit}

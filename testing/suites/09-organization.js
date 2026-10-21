@@ -288,6 +288,7 @@ export default {
 
         await session.reload();
         await session.waitForApp();
+        await session.waitItem(label);
 
         assert.ok(
           (await session.orderedItems("//main//ul")).some((row) => row.includes(label)),
@@ -538,6 +539,111 @@ export default {
           `a type with no parent type cannot nest (${JSON.stringify(flat.body).slice(0, 200)})`
         );
         assert.includesText(JSON.stringify(flat.body), "cannot be nested", "and says why");
+      },
+    },
+    {
+      name: "an entity manages user memberships through the UI and API",
+      screen: "/organization/entities/:entityId",
+      area: "Organization — user memberships",
+      fn: async ({ session, assert, isolate, adminApi }) => {
+        const entityName = isolate.label("North campus");
+        const entities = await adminApi.expectOk(
+          adminApi.get(`/organization/entities?search=${encodeURIComponent(entityName)}`),
+          "find the entity"
+        );
+        const entityId = entities?.[0]?.id;
+        assert.ok(entityId, `the campus entity exists (${entityId})`);
+
+        const userList = await adminApi.expectOk(
+          adminApi.get(`/admin/users?search=${encodeURIComponent("e2e.employee@leave.test")}`),
+          "fetch employee user"
+        );
+        const candidate = (userList || []).find((u) => u.email === "e2e.employee@leave.test") || userList[0];
+        assert.ok(candidate, "found an active user candidate for membership");
+        const candidateOption = [candidate.firstName, candidate.lastName].filter(Boolean).join(" ") + ` (${candidate.email})`;
+
+        await session.goto(`/organization/entities/${entityId}`);
+        await session.waitForApp();
+
+        await session.clickButton("Add member");
+        await session.anyDialogTitle("Add Member");
+
+        await session.selectOption("member-user-id", candidateOption);
+        await session.selectOption("member-role", "Lead / Head");
+        await session.submitDialog();
+        await session.expectToast("was added as");
+
+        await session.driver.wait(
+          async (driver) => {
+            const items = await driver.findElements(
+              By.xpath(`//main//li[contains(., "${candidate.email}")]`)
+            );
+            return items.length > 0 ? items[0] : undefined;
+          },
+          8000,
+          "the member never appeared in the members panel"
+        );
+
+        let memberItem = await session.driver.findElement(
+          By.xpath(`//main//li[contains(., "${candidate.email}")]`)
+        );
+        let itemText = await memberItem.getText();
+        assert.includesText(itemText, "Lead", "the member has the Lead badge");
+
+        const duplicate = await adminApi.post(`/organization/entities/${entityId}/members`, {
+          userId: candidate.id,
+          role: "member",
+        });
+        assert.eq(duplicate.status, 409, "duplicate member assignment is refused with 409");
+        assert.includesText(JSON.stringify(duplicate.body), "already a member", "refusal reason explains duplicate");
+
+        const changeRoleButton = await memberItem.findElement(
+          By.xpath('.//button[normalize-space()="Change role"]')
+        );
+        await changeRoleButton.click();
+        await session.anyDialogTitle("Edit Role");
+        await session.selectOption("member-role", "Manager");
+        await session.submitDialog();
+        await session.expectToast("Role updated");
+
+        await session.driver.wait(
+          async () => {
+            const text = await (await session.driver.findElement(
+              By.xpath(`//main//li[contains(., "${candidate.email}")]`)
+            )).getText();
+            return text.includes("Manager") ? true : undefined;
+          },
+          8000,
+          "the member badge never updated to Manager"
+        );
+
+        const memberships = await adminApi.expectOk(
+          adminApi.get(`/organization/users/${candidate.id}/memberships`),
+          "read user memberships"
+        );
+        const match = memberships.find((m) => Number(m.organizationEntityId) === Number(entityId));
+        assert.ok(match, "user memberships endpoint lists the entity membership");
+        assert.eq(match.role, "manager", "user membership role is manager");
+
+        memberItem = await session.driver.findElement(
+          By.xpath(`//main//li[contains(., "${candidate.email}")]`)
+        );
+        const removeButton = await memberItem.findElement(
+          By.xpath('.//button[normalize-space()="Remove"]')
+        );
+        await removeButton.click();
+        await session.openDialog("Remove member");
+        await session.clickButton("Remove member");
+        await session.expectToast("was removed");
+
+        const afterMemberships = await adminApi.expectOk(
+          adminApi.get(`/organization/users/${candidate.id}/memberships`),
+          "read user memberships after removal"
+        );
+        assert.ok(
+          !afterMemberships.some((m) => Number(m.organizationEntityId) === Number(entityId)),
+          "user is no longer a member of the entity"
+        );
       },
     },
   ],

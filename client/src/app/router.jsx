@@ -277,10 +277,24 @@ const router = createBrowserRouter([
               },
 
               {
+                path: "organization/entities/:entityId",
+                ...screen({
+                  permission: PERMISSIONS.ORGANIZATION_VIEW,
+                  label: "Viewing the organization structure",
+                  element: <EntityDetailPage />,
+                  handle: {
+                    title: "Entity",
+                    description:
+                      "One entity with its profile values and the records attached to it.",
+                  },
+                }),
+              },
+
+              {
                 path: "organization/:entityTypeId",
                 ...screen({
                   permission: PERMISSIONS.ORGANIZATION_VIEW,
-                  label: "Viewing entity records",
+                  label: "Viewing the organization structure",
                   element: <EntityTypePage />,
                 }),
               },
@@ -291,20 +305,6 @@ const router = createBrowserRouter([
                   permission: PERMISSIONS.ORGANIZATION_MANAGE,
                   label: "Configuring an entity",
                   element: <EntityTypeConfigPage />,
-                }),
-              },
-
-              {
-                path: "organization/entities/:entityId",
-                ...screen({
-                  permission: PERMISSIONS.ORGANIZATION_VIEW,
-                  label: "Viewing an entity",
-                  element: <EntityDetailPage />,
-                  handle: {
-                    title: "Entity details",
-                    description:
-                      "View and manage entity details through its configured forms and tables.",
-                  },
                 }),
               },
 

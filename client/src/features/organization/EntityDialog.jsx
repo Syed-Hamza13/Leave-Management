@@ -20,11 +20,6 @@ import useEntryOptions from "../records/useEntryOptions.js";
 
 const FORM_ID = "entity-dialog-form";
 
-/*
- * An entity's own name is stored relationally, while its details live in the
- * profile record the configured form writes, so the two halves are edited
- * together but validated separately by the server.
- */
 export default function EntityDialog({
   entityType,
   profileConfiguration = null,
@@ -35,7 +30,7 @@ export default function EntityDialog({
   const isEdit = Boolean(entity);
   const toast = useToast();
 
-  const [name, setName] = useState(entity?.name ?? "");
+  const [fallbackName, setFallbackName] = useState(entity?.name ?? "");
   const [draftValues, setDraftValues] = useState(null);
   const [errors, setErrors] = useState({});
 
@@ -57,10 +52,17 @@ export default function EntityDialog({
   const fields = useMemo(() => renderData?.data?.fields ?? [], [renderData]);
   const entries = pairData?.data?.entries ?? null;
 
-  const initialValues = useMemo(
-    () => initialValuesFromFields(fields, entries, entity?.profile?.values ?? null),
-    [fields, entries, entity]
-  );
+  const initialValues = useMemo(() => {
+    const raw = initialValuesFromFields(fields, entries, entity?.profile?.values ?? null);
+    // If editing and first string field is empty, fallback to entity.name
+    if (entity?.name && fields.length > 0) {
+      const firstField = fields[0];
+      if (firstField && !raw[firstField.key]) {
+        raw[firstField.key] = entity.name;
+      }
+    }
+    return raw;
+  }, [fields, entries, entity]);
 
   const values = draftValues ?? initialValues;
 
@@ -75,11 +77,22 @@ export default function EntityDialog({
     setErrors({});
 
     const payload = {
-      name: name.trim(),
       parentEntityId: null,
     };
 
-    if (fields.length > 0 || !isEdit) payload.values = values;
+    if (fields.length > 0) {
+      payload.values = { ...values };
+      const firstStr = Object.values(values).find(
+        (v) => typeof v === "string" && v.trim().length > 0
+      );
+      if (firstStr) {
+        payload.name = String(firstStr).trim();
+      } else if (entity?.name) {
+        payload.name = entity.name;
+      }
+    } else {
+      payload.name = fallbackName.trim();
+    }
 
     const outcome = await run(() =>
       isEdit
@@ -92,7 +105,6 @@ export default function EntityDialog({
 
     if (!outcome.ok) {
       setErrors(fieldErrors(outcome.error));
-
       return;
     }
 
@@ -109,11 +121,11 @@ export default function EntityDialog({
     <Modal
       open
       onClose={pending ? () => {} : onClose}
-      title={isEdit ? `Edit "${entity.name}"` : `New ${entityType.label.toLowerCase()}`}
+      title={isEdit ? `Edit ${entity.name}` : `New ${entityType?.label || "Entry"}`}
       description={
         profileConfiguration
-          ? `Details are entered through "${profileConfiguration.form.label}".`
-          : `No profile form is configured for ${entityType.label} yet, so only the name is stored.`
+          ? `Enter details through "${profileConfiguration.form.label}".`
+          : `Details for ${entityType?.label || "this entity"}.`
       }
       size={fields.length > 0 ? "lg" : "sm"}
       footer={
@@ -123,7 +135,7 @@ export default function EntityDialog({
           </Button>
 
           <Button type="submit" form={FORM_ID} loading={pending}>
-            {isEdit ? "Save" : "Create"}
+            {isEdit ? "Save changes" : `Add ${entityType?.label || "entry"}`}
           </Button>
         </>
       }
@@ -134,25 +146,12 @@ export default function EntityDialog({
             role="alert"
             className="rounded-control border border-danger bg-danger-soft px-3 py-2 text-sm font-medium text-danger"
           >
-            {errorMessage(error, "The entity could not be saved.")}
+            {errorMessage(error, "The entry could not be saved.")}
           </p>
         ) : null}
 
-        <TextInput
-          id="entity-name"
-          label="Name"
-          required
-          autoFocus
-          data-autofocus
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          error={errors.name}
-          maxLength={190}
-          placeholder="People Operations"
-        />
-
         {fields.length > 0 ? (
-          <div className="space-y-4 border-t border-line pt-4">
+          <div className="space-y-4">
             {fields.map((field) => {
               const options = optionsFor(field);
 
@@ -171,15 +170,32 @@ export default function EntityDialog({
                   field={rendered}
                   value={values[field.key] ?? null}
                   onChange={setField}
-                  error={errors[field.key] ?? null}
+                  error={errors[field.key] ?? (field === fields[0] ? errors.name : null)}
                   disabled={pending}
                   options={field.dataType === "dropdown" ? options : null}
-                  recordOptions={field.dataType === "record_reference" ? options : null}
+                  recordOptions={
+                    ["record_reference", "entity_reference", "user_reference"].includes(field.dataType)
+                      ? options
+                      : null
+                  }
                 />
               );
             })}
           </div>
-        ) : null}
+        ) : (
+          <TextInput
+            id="entity-name"
+            label={`${entityType?.label || "Entity"} Name`}
+            required
+            autoFocus
+            data-autofocus
+            value={fallbackName}
+            onChange={(event) => setFallbackName(event.target.value)}
+            error={errors.name}
+            maxLength={190}
+            placeholder={`Enter ${entityType?.label?.toLowerCase() || "entity"} name…`}
+          />
+        )}
       </form>
     </Modal>
   );

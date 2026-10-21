@@ -718,3 +718,159 @@ export async function countEntitiesWithProfile(entityTypeId) {
 
   return Number(rows[0]?.total || 0);
 }
+
+const SELECT_MEMBERS = `
+  SELECT
+    m.id,
+    m.organization_entity_id AS entity_id,
+    m.user_id,
+    m.role,
+    m.status,
+    m.created_by,
+    m.updated_by,
+    m.created_at,
+    m.updated_at,
+    u.email,
+    u.first_name,
+    u.last_name,
+    u.status AS user_status
+  FROM organization_entity_members m
+  JOIN users u ON u.id = m.user_id
+`;
+
+function mapMember(row) {
+  return {
+    id: row.id,
+    entityId: row.entity_id,
+    userId: row.user_id,
+    email: row.email,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    fullName: [row.first_name, row.last_name].filter(Boolean).join(" ") || row.email,
+    role: row.role,
+    status: row.status,
+    userStatus: row.user_status,
+    createdBy: row.created_by,
+    updatedBy: row.updated_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function findEntityMembers(entityId) {
+  const [rows] = await db.execute(
+    `
+      ${SELECT_MEMBERS}
+      WHERE m.organization_entity_id = ?
+      ORDER BY FIELD(m.role, 'lead', 'manager', 'member'), u.first_name ASC, u.last_name ASC
+    `,
+    [entityId]
+  );
+
+  return rows.map(mapMember);
+}
+
+export async function findEntityMember(entityId, userId) {
+  const [rows] = await db.execute(
+    `
+      ${SELECT_MEMBERS}
+      WHERE m.organization_entity_id = ? AND m.user_id = ?
+      LIMIT 1
+    `,
+    [entityId, userId]
+  );
+
+  return rows[0] ? mapMember(rows[0]) : null;
+}
+
+export async function insertEntityMember(connection, { entityId, userId, role = "member", status = "active", actorUserId }) {
+  const [result] = await connection.execute(
+    `
+      INSERT INTO organization_entity_members
+        (organization_entity_id, user_id, role, status, created_by, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    [entityId, userId, role, status, actorUserId ?? null, actorUserId ?? null]
+  );
+
+  return result.insertId;
+}
+
+export async function updateEntityMember(connection, entityId, userId, patch, actorUserId) {
+  const assignments = [];
+  const params = [];
+
+  if (patch.role !== undefined) {
+    assignments.push("role = ?");
+    params.push(patch.role);
+  }
+
+  if (patch.status !== undefined) {
+    assignments.push("status = ?");
+    params.push(patch.status);
+  }
+
+  if (assignments.length === 0) return false;
+
+  assignments.push("updated_by = ?");
+  params.push(actorUserId ?? null, entityId, userId);
+
+  await connection.execute(
+    `
+      UPDATE organization_entity_members
+      SET ${assignments.join(", ")}
+      WHERE organization_entity_id = ? AND user_id = ?
+    `,
+    params
+  );
+
+  return true;
+}
+
+export async function deleteEntityMember(connection, entityId, userId) {
+  const [result] = await connection.execute(
+    `
+      DELETE FROM organization_entity_members
+      WHERE organization_entity_id = ? AND user_id = ?
+    `,
+    [entityId, userId]
+  );
+
+  return result.affectedRows > 0;
+}
+
+export async function findUserMemberships(userId) {
+  const [rows] = await db.execute(
+    `
+      SELECT
+        m.id,
+        m.organization_entity_id AS entity_id,
+        m.role,
+        m.status,
+        m.created_at,
+        e.name AS entity_name,
+        e.entity_type_id,
+        t.label AS entity_type_label,
+        t.type_key AS entity_type_key
+      FROM organization_entity_members m
+      JOIN organization_entities e ON e.id = m.organization_entity_id
+      JOIN organization_entity_types t ON t.id = e.entity_type_id
+      WHERE m.user_id = ? AND e.status = 'active'
+      ORDER BY t.label ASC, e.name ASC
+    `,
+    [userId]
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    entityId: row.entity_id,
+    organizationEntityId: row.entity_id,
+    role: row.role,
+    status: row.status,
+    createdAt: row.created_at,
+    entityName: row.entity_name,
+    entityTypeId: row.entity_type_id,
+    entityTypeLabel: row.entity_type_label,
+    entityTypeKey: row.entity_type_key,
+  }));
+}

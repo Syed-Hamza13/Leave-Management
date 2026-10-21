@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import Badge from "../../components/ui/Badge.jsx";
 import Button from "../../components/ui/Button.jsx";
 import ConfirmDialog from "../../components/ui/ConfirmDialog.jsx";
+import DataTable from "../../components/ui/DataTable.jsx";
 import EmptyState from "../../components/ui/EmptyState.jsx";
-import { LoadingState } from "../../components/ui/LoadingState.jsx";
 import SearchInput from "../../components/ui/SearchInput.jsx";
+import Select from "../../components/ui/Select.jsx";
 import { useToast } from "../../components/ui/ToastContext.js";
 
 import useAsyncData from "../../hooks/useAsyncData.js";
@@ -20,28 +21,74 @@ import { useMetadata } from "../metadata/MetadataContext.js";
 
 import EntityTypeDialog from "./EntityTypeDialog.jsx";
 
+const PAGE_SIZE = 25;
+
 export default function OrganizationPage() {
   const { can } = usePermissions();
   const { refresh: refreshMetadata } = useMetadata();
   const toast = useToast();
 
   const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("active");
+  const [page, setPage] = useState(1);
+
   const [dialog, setDialog] = useState(null);
   const [archiveTarget, setArchiveTarget] = useState(null);
 
   const canManage = can(PERMISSIONS.ORGANIZATION_MANAGE);
 
   const { data, loading, error, reload } = useAsyncData(
-    "entity-types:all:active",
-    () => organizationApi.listEntityTypes({ pageSize: 100, status: "active" })
+    `entity-types:${page}:${search}:${status}`,
+    () => organizationApi.listEntityTypes({ page, pageSize: PAGE_SIZE, search, status })
   );
 
   const rows = data?.data ?? [];
-  const filteredRows = rows.filter((row) =>
-    search ? row.label.toLowerCase().includes(search.toLowerCase()) : true
-  );
+  const meta = data?.meta ?? null;
 
   const { run: runArchive, pending: archiving } = useMutation();
+
+  const columns = useMemo(
+    () => [
+      {
+        key: "label",
+        header: "Entity",
+        render: (row) => (
+          <div className="min-w-0">
+            <Link
+              to={`/organization/${row.id}`}
+              className="truncate font-medium text-ink hover:text-brand hover:underline"
+            >
+              {row.label}
+            </Link>
+            <code className="ml-2 font-mono text-xs text-ink-muted">{row.key}</code>
+          </div>
+        ),
+      },
+      {
+        key: "description",
+        header: "Description",
+        render: (row) => (
+          <span className="truncate max-w-xs block text-sm text-ink-soft">
+            {row.description || "—"}
+          </span>
+        ),
+      },
+      {
+        key: "entityCount",
+        header: "Entries",
+        align: "right",
+        render: (row) => <span className="font-medium text-ink-soft">{row.entityCount}</span>,
+      },
+      {
+        key: "status",
+        header: "Status",
+        render: (row) => (
+          <Badge tone={row.status === "active" ? "success" : "neutral"}>{row.status}</Badge>
+        ),
+      },
+    ],
+    []
+  );
 
   async function confirmArchive() {
     const target = archiveTarget;
@@ -57,118 +104,96 @@ export default function OrganizationPage() {
       return;
     }
 
-    toast.error(errorMessage(outcome.error, "The entity type could not be archived."));
-  }
-
-  if (loading) return <LoadingState label="Loading organization…" />;
-
-  if (error) {
-    return (
-      <div className="space-y-3">
-        <p className="text-sm font-medium text-danger">
-          {errorMessage(error, "Organization could not be loaded.")}
-        </p>
-
-        <Button variant="secondary" size="sm" onClick={reload}>
-          Try again
-        </Button>
-      </div>
-    );
+    toast.error(errorMessage(outcome.error, "The entity could not be archived."));
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-1 flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-1 flex-wrap items-end gap-3">
           <SearchInput
             className="w-full sm:max-w-xs"
             value={search}
-            onChange={(next) => setSearch(next)}
+            onChange={(next) => {
+              setSearch(next);
+              setPage(1);
+            }}
             label="Search entities"
-            placeholder="Search entities by name…"
+            placeholder="Search by name or key…"
+          />
+
+          <Select
+            id="entity-types-status"
+            label="Status"
+            className="w-40"
+            value={status}
+            onChange={(event) => {
+              setStatus(event.target.value);
+              setPage(1);
+            }}
+            options={[
+              { value: "active", label: "Active" },
+              { value: "archived", label: "Archived" },
+            ]}
           />
         </div>
 
         {canManage ? (
-          <Button onClick={() => setDialog({ mode: "create" })}>Define Entity</Button>
+          <Button onClick={() => setDialog({ mode: "create" })}>+ New entity</Button>
         ) : null}
       </div>
 
-      {rows.length === 0 ? (
-        <EmptyState
-          title="No entities defined yet"
-          description="Start by defining an entity type like Department, Branch, or Team."
-          action={
-            canManage ? (
-              <Button onClick={() => setDialog({ mode: "create" })}>Define Entity</Button>
-            ) : null
-          }
-        />
-      ) : filteredRows.length === 0 ? (
-        <EmptyState
-          title="No entities match your search"
-          description={`No entities found matching "${search}". Try a different name, or clear the search.`}
-        />
-      ) : (
-        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredRows.map((row) => (
-            <li
-              key={row.id}
-              className="group flex flex-col justify-between rounded-card border border-line bg-surface p-4 shadow-sm transition-all hover:border-brand/40 hover:shadow-md"
-            >
-              <div className="mb-3">
-                <div className="flex items-start justify-between gap-2">
-                  <Link
-                    to={`/organization/${row.id}`}
-                    className="text-base font-semibold text-ink transition-colors group-hover:text-brand"
-                  >
-                    {row.label}
-                  </Link>
+      <DataTable
+        columns={columns}
+        rows={rows}
+        loading={loading}
+        error={error}
+        onRetry={reload}
+        pagination={meta}
+        onPageChange={setPage}
+        empty={
+          <EmptyState
+            title={search ? "No entities match your search" : "No entities defined yet"}
+            description={
+              search
+                ? "Try a different name or key, or clear the search."
+                : "Define entities such as Team, Department, or Council for your organization."
+            }
+            action={
+              canManage && !search ? (
+                <Button onClick={() => setDialog({ mode: "create" })}>+ New entity</Button>
+              ) : null
+            }
+          />
+        }
+        actions={(row) => (
+          <>
+            <Link to={`/organization/${row.id}`}>
+              <Button variant="ghost" size="sm">
+                Open
+              </Button>
+            </Link>
 
-                  <Badge tone={row.configurationCount > 0 ? "success" : "warning"}>
-                    {row.configurationCount}{" "}
-                    {row.configurationCount === 1 ? "config" : "configs"}
-                  </Badge>
-                </div>
-              </div>
+            {canManage ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setDialog({ mode: "edit", entityType: row })}
+                >
+                  Edit
+                </Button>
 
-              <div className="flex flex-wrap items-center gap-1.5 border-t border-line/80 pt-3">
-                <Link to={`/organization/${row.id}`}>
-                  <Button variant="secondary" size="sm">
-                    Open
+                {row.status === "active" ? (
+                  <Button variant="ghost" size="sm" onClick={() => setArchiveTarget(row)}>
+                    Archive
                   </Button>
-                </Link>
-
-                <Link to={`/organization/${row.id}/configure`}>
-                  <Button variant="ghost" size="sm">
-                    Configure
-                  </Button>
-                </Link>
-
-                {canManage ? (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setDialog({ mode: "edit", entityType: row })}
-                    >
-                      Edit
-                    </Button>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setArchiveTarget(row)}
-                    >
-                      Archive
-                    </Button>
-                  </>
                 ) : null}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+              </>
+            ) : null}
+          </>
+        )}
+      />
 
       {dialog ? (
         <EntityTypeDialog
@@ -189,10 +214,10 @@ export default function OrganizationPage() {
 
       <ConfirmDialog
         open={Boolean(archiveTarget)}
-        title="Archive entity type"
+        title="Archive entity"
         message={`Archive "${archiveTarget?.label ?? ""}"?`}
-        detail="Existing records are never deleted by archiving. The type can be reactivated later."
-        confirmLabel="Archive"
+        detail="Existing records are preserved. You can restore this entity later if needed."
+        confirmLabel="Archive entity"
         loading={archiving}
         onCancel={() => setArchiveTarget(null)}
         onConfirm={confirmArchive}

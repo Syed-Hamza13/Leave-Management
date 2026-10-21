@@ -137,6 +137,27 @@ export default function TypeConfigEditor({
           );
         }
 
+        if (entry.type === "entity-type-ref") {
+          return (
+            <Select
+              key={entry.key}
+              id={id}
+              label={entry.label}
+              hint={entry.hint || "Optional. Leave blank to allow any organization entity."}
+              error={error}
+              placeholder="Any entity type…"
+              value={value === undefined || value === null ? "" : String(value)}
+              onChange={(event) =>
+                write(entry.key, event.target.value === "" ? undefined : Number(event.target.value))
+              }
+              options={(lookups.entityTypes ?? []).map((entityType) => ({
+                value: String(entityType.id),
+                label: entityType.label,
+              }))}
+            />
+          );
+        }
+
         if (entry.type === "number") {
           return (
             <NumberInput

@@ -152,6 +152,14 @@ export const organization = {
   createEntity: (payload) => post("/organization/entities", payload),
   updateEntity: (entityId, payload) => patch(`/organization/entities/${entityId}`, payload),
   archiveEntity: (entityId) => api(`/organization/entities/${entityId}`, { method: "DELETE" }),
+
+  listMembers: (entityId) => api(`/organization/entities/${entityId}/members`),
+  addMember: (entityId, payload) => post(`/organization/entities/${entityId}/members`, payload),
+  updateMember: (entityId, userId, payload) =>
+    patch(`/organization/entities/${entityId}/members/${userId}`, payload),
+  removeMember: (entityId, userId) =>
+    api(`/organization/entities/${entityId}/members/${userId}`, { method: "DELETE" }),
+  userMemberships: (userId) => api(`/organization/users/${userId}/memberships`),
 };
 
 /*

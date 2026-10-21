@@ -36,7 +36,14 @@ import {
   updateEntity as updateEntityRow,
   countActiveChildEntities,
   countEntitiesWithProfile,
+  findEntityMembers,
+  findEntityMember,
+  insertEntityMember,
+  updateEntityMember as updateEntityMemberRow,
+  deleteEntityMember as deleteEntityMemberRow,
+  findUserMemberships,
 } from "./organization.repository.js";
+import { findUserRowById } from "../users/user.repository.js";
 
 /*
  * Bound on parent-chain walks. A cycle cannot be created through this service,
@@ -600,14 +607,23 @@ export async function createEntity(payload, actor) {
     payload.parentEntityId ?? null
   );
 
+  let entityName = payload.name?.trim();
+  if (!entityName && payload.values) {
+    const firstStr = Object.values(payload.values).find((v) => typeof v === "string" && v.trim().length > 0);
+    entityName = firstStr ? String(firstStr).trim() : null;
+  }
+  if (!entityName) {
+    entityName = `${entityType.label} #${Math.floor(1000 + Math.random() * 9000)}`;
+  }
+
   const duplicate = await findEntityByTypeIdAndName(
     payload.entityTypeId,
-    payload.name,
+    entityName,
     parentEntityId
   );
 
   if (duplicate) {
-    throw conflict(`"${payload.name}" already exists under this parent.`, {
+    throw conflict(`"${entityName}" already exists.`, {
       code: "ENTITY_NAME_TAKEN",
     });
   }
@@ -623,7 +639,7 @@ export async function createEntity(payload, actor) {
 
     const insertId = await insertEntity(connection, {
       entityTypeId: payload.entityTypeId,
-      name: payload.name,
+      name: entityName,
       parentEntityId,
       sortOrder,
       actorUserId: actor?.userId ?? null,
@@ -702,15 +718,24 @@ export async function updateEntity(entityId, patch, actor) {
     );
   }
 
-  if (patch.name !== undefined && patch.name !== current.name) {
+  let nextName = patch.name !== undefined ? patch.name?.trim() : undefined;
+  if (!nextName && patch.values) {
+    const firstStr = Object.values(patch.values).find((v) => typeof v === "string" && v.trim().length > 0);
+    if (firstStr) nextName = String(firstStr).trim();
+  }
+  if (nextName === undefined) {
+    nextName = current.name;
+  }
+
+  if (nextName !== current.name) {
     const duplicate = await findEntityByTypeIdAndName(
       current.entityTypeId,
-      patch.name,
+      nextName,
       parentEntityId !== undefined ? parentEntityId : current.parentEntityId
     );
 
     if (duplicate && Number(duplicate.id) !== Number(entityId)) {
-      throw conflict(`"${patch.name}" already exists under this parent.`, {
+      throw conflict(`"${nextName}" already exists.`, {
         code: "ENTITY_NAME_TAKEN",
       });
     }
@@ -726,7 +751,7 @@ export async function updateEntity(entityId, patch, actor) {
       connection,
       entityId,
       {
-        name: patch.name,
+        name: nextName,
         parentEntityId,
         sortOrder: patch.sortOrder,
       },
@@ -847,3 +872,160 @@ export async function archiveEntity(entityId, actor) {
 
   return getEntity(entityId, { includeConfigurations: true });
 }
+
+/* ---------------------------------------------------------------- members */
+
+export async function listEntityMembers(entityId) {
+  const entity = await findEntityById(entityId);
+
+  if (!entity) {
+    throw notFound("Entity not found.", { code: "ENTITY_NOT_FOUND" });
+  }
+
+  return findEntityMembers(entityId);
+}
+
+export async function addEntityMember(entityId, payload, actor) {
+  const entity = await findEntityById(entityId);
+
+  if (!entity) {
+    throw notFound("Entity not found.", { code: "ENTITY_NOT_FOUND" });
+  }
+
+  if (entity.status !== "active") {
+    throw badRequest("Cannot add members to an archived entity.", { code: "ENTITY_ARCHIVED" });
+  }
+
+  const user = await findUserRowById(payload.userId);
+
+  if (!user) {
+    throw notFound("User not found.", { code: "USER_NOT_FOUND" });
+  }
+
+  if (user.status !== "active") {
+    throw badRequest("Cannot add an inactive user as a member.", { code: "USER_INACTIVE" });
+  }
+
+  const existing = await findEntityMember(entityId, payload.userId);
+
+  if (existing) {
+    throw conflict("This user is already a member of this entity.", {
+      code: "MEMBER_ALREADY_EXISTS",
+    });
+  }
+
+  const role = payload.role || "member";
+
+  const memberId = await withTransaction(async (connection) => {
+    const insertedId = await insertEntityMember(connection, {
+      entityId,
+      userId: payload.userId,
+      role,
+      status: "active",
+      actorUserId: actor?.userId,
+    });
+
+    await recordAudit({
+      connection,
+      actorUserId: actor?.userId,
+      action: "organization.member.add",
+      entityType: "organization_entity_member",
+      entityId: insertedId,
+      summary: {
+        entityId,
+        entityName: entity.name,
+        userId: payload.userId,
+        userEmail: user.email,
+        role,
+      },
+      ipAddress: actor?.ipAddress,
+      userAgent: actor?.userAgent,
+    });
+
+    return insertedId;
+  });
+
+  return findEntityMember(entityId, payload.userId);
+}
+
+export async function updateEntityMember(entityId, userId, patch, actor) {
+  const entity = await findEntityById(entityId);
+
+  if (!entity) {
+    throw notFound("Entity not found.", { code: "ENTITY_NOT_FOUND" });
+  }
+
+  const current = await findEntityMember(entityId, userId);
+
+  if (!current) {
+    throw notFound("Membership record not found.", { code: "MEMBER_NOT_FOUND" });
+  }
+
+  await withTransaction(async (connection) => {
+    await updateEntityMemberRow(connection, entityId, userId, patch, actor?.userId);
+
+    await recordAudit({
+      connection,
+      actorUserId: actor?.userId,
+      action: "organization.member.update",
+      entityType: "organization_entity_member",
+      entityId: current.id,
+      summary: {
+        entityId,
+        userId,
+        patch,
+      },
+      ipAddress: actor?.ipAddress,
+      userAgent: actor?.userAgent,
+    });
+  });
+
+  return findEntityMember(entityId, userId);
+}
+
+export async function removeEntityMember(entityId, userId, actor) {
+  const entity = await findEntityById(entityId);
+
+  if (!entity) {
+    throw notFound("Entity not found.", { code: "ENTITY_NOT_FOUND" });
+  }
+
+  const current = await findEntityMember(entityId, userId);
+
+  if (!current) {
+    throw notFound("Membership record not found.", { code: "MEMBER_NOT_FOUND" });
+  }
+
+  await withTransaction(async (connection) => {
+    await deleteEntityMemberRow(connection, entityId, userId);
+
+    await recordAudit({
+      connection,
+      actorUserId: actor?.userId,
+      action: "organization.member.remove",
+      entityType: "organization_entity_member",
+      entityId: current.id,
+      summary: {
+        entityId,
+        entityName: entity.name,
+        userId,
+        userEmail: current.email,
+      },
+      ipAddress: actor?.ipAddress,
+      userAgent: actor?.userAgent,
+    });
+  });
+
+  return true;
+}
+
+export async function listUserMemberships(userId) {
+  const user = await findUserRowById(userId);
+
+  if (!user) {
+    throw notFound("User not found.", { code: "USER_NOT_FOUND" });
+  }
+
+  return findUserMemberships(userId);
+}
+

@@ -1,5 +1,11 @@
 import useAsyncData from "../../hooks/useAsyncData.js";
-import { dropdowns as dropdownsApi, records as recordsApi, tables as tablesApi } from "../../services/resources.js";
+import {
+  dropdowns as dropdownsApi,
+  organization as organizationApi,
+  records as recordsApi,
+  tables as tablesApi,
+  users as usersApi,
+} from "../../services/resources.js";
 
 import { pickDisplayKey } from "./recordValues.js";
 
@@ -61,6 +67,48 @@ async function loadTable(tableId) {
   return { options, total: recordsResponse?.meta?.total ?? options.length };
 }
 
+async function loadEntities(entityTypeId = null) {
+  const params = {
+    pageSize: CANDIDATE_PAGE_SIZE,
+    status: "active",
+  };
+
+  if (entityTypeId) {
+    params.entityTypeId = entityTypeId;
+  }
+
+  const response = await organizationApi.listEntities(params);
+  const entities = response?.data ?? [];
+
+  const options = entities.map((entity) => ({
+    value: entity.id,
+    label: entity.name,
+  }));
+
+  return { options, total: response?.meta?.total ?? options.length };
+}
+
+async function loadUsers() {
+  const response = await usersApi.list({
+    pageSize: CANDIDATE_PAGE_SIZE,
+    status: "active",
+  });
+
+  const usersList = response?.data ?? [];
+
+  const options = usersList.map((user) => {
+    const name = [user.firstName, user.lastName].filter(Boolean).join(" ");
+    const label = name ? (user.email ? `${name} (${user.email})` : name) : user.email;
+
+    return {
+      value: user.id,
+      label,
+    };
+  });
+
+  return { options, total: response?.meta?.total ?? options.length };
+}
+
 /*
  * Entry forms mix dropdowns and relations, and several fields can share one
  * option set or one target table. Loading each source once per screen keeps the
@@ -72,29 +120,80 @@ export default function useEntryOptions(items = []) {
   const dropdownIds = collectIds(list, "dropdown", "dropdownId");
   const tableIds = collectIds(list, "record_reference", "targetTableId");
 
-  const signature = `${dropdownIds.join(",")}|${tableIds.join(",")}`;
+  const entityTypeIds = new Set();
+  let hasUntypedEntities = false;
+  let hasUsers = false;
+
+  for (const item of list) {
+    if (item.dataType === "entity_reference") {
+      const typeId = Number(item.config?.entityTypeId);
+      if (Number.isInteger(typeId) && typeId > 0) {
+        entityTypeIds.add(typeId);
+      } else {
+        hasUntypedEntities = true;
+      }
+    }
+
+    if (item.dataType === "user_reference") {
+      hasUsers = true;
+    }
+  }
+
+  const sortedEntityTypes = [...entityTypeIds].sort((a, b) => a - b);
+  const signature = `${dropdownIds.join(",")}|${tableIds.join(",")}|${sortedEntityTypes.join(",")}|${hasUntypedEntities ? "untyped" : ""}|${hasUsers ? "users" : ""}`;
 
   const { data, loading, error, reload } = useAsyncData(
     `entry-options:${signature}`,
     async () => {
-      if (dropdownIds.length === 0 && tableIds.length === 0) return new Map();
+      const tasks = [];
 
-      const entries = await Promise.all([
-        ...dropdownIds.map(async (id) => [
-          `dropdown:${id}`,
-          await loadDropdown(id).catch(() => ({ options: null, total: 0, failed: true })),
-        ]),
-        ...tableIds.map(async (id) => [
-          `table:${id}`,
-          await loadTable(id).catch(() => ({ options: null, total: 0, failed: true })),
-        ]),
-      ]);
+      for (const id of dropdownIds) {
+        tasks.push(
+          loadDropdown(id)
+            .then((res) => [`dropdown:${id}`, res])
+            .catch(() => [`dropdown:${id}`, { options: null, total: 0, failed: true }])
+        );
+      }
 
+      for (const id of tableIds) {
+        tasks.push(
+          loadTable(id)
+            .then((res) => [`table:${id}`, res])
+            .catch(() => [`table:${id}`, { options: null, total: 0, failed: true }])
+        );
+      }
+
+      for (const id of sortedEntityTypes) {
+        tasks.push(
+          loadEntities(id)
+            .then((res) => [`entity:${id}`, res])
+            .catch(() => [`entity:${id}`, { options: null, total: 0, failed: true }])
+        );
+      }
+
+      if (hasUntypedEntities) {
+        tasks.push(
+          loadEntities(null)
+            .then((res) => [`entity:all`, res])
+            .catch(() => [`entity:all`, { options: null, total: 0, failed: true }])
+        );
+      }
+
+      if (hasUsers) {
+        tasks.push(
+          loadUsers()
+            .then((res) => [`users:all`, res])
+            .catch(() => [`users:all`, { options: null, total: 0, failed: true }])
+        );
+      }
+
+      if (tasks.length === 0) return new Map();
+
+      const entries = await Promise.all(tasks);
       return new Map(entries);
     }
   );
 
-  // `useAsyncData` hands back the loader's own value, which here is the Map.
   const sources = data ?? new Map();
 
   function sourceFor(item) {
@@ -106,6 +205,17 @@ export default function useEntryOptions(items = []) {
       return sources.get(`table:${Number(item.config?.targetTableId)}`) ?? null;
     }
 
+    if (item?.dataType === "entity_reference") {
+      const typeId = Number(item.config?.entityTypeId);
+      return (
+        sources.get(typeId > 0 ? `entity:${typeId}` : "entity:all") ?? null
+      );
+    }
+
+    if (item?.dataType === "user_reference") {
+      return sources.get("users:all") ?? null;
+    }
+
     return null;
   }
 
@@ -113,22 +223,19 @@ export default function useEntryOptions(items = []) {
     return sourceFor(item)?.options ?? null;
   }
 
-  /*
-   * A source that failed to load leaves its picker asking for options forever,
-   * so the caller can say so instead of showing a permanent loading state.
-   */
   function failedFor(item) {
     return Boolean(sourceFor(item)?.failed);
   }
 
-  /*
-   * A relation picker only ever offers the newest candidates, so the form says
-   * so instead of implying the list is complete.
-   */
   function truncatedFor(item) {
     const source = sourceFor(item);
 
-    if (!source || item?.dataType !== "record_reference") return false;
+    if (
+      !source ||
+      !["record_reference", "entity_reference", "user_reference"].includes(item?.dataType)
+    ) {
+      return false;
+    }
 
     return source.options !== null && source.total > source.options.length;
   }

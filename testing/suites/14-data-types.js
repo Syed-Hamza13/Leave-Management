@@ -29,6 +29,8 @@ const TYPE_KEYS = [
   "checkbox",
   "toggle",
   "record_reference",
+  "entity_reference",
+  "user_reference",
 ];
 
 async function openTableDetail(session, label) {
@@ -1330,6 +1332,111 @@ export default {
 
         assert.ok(matchingColumn, "the report covers the column the fixture mapped");
         assert.eq(matchingColumn.compatible, true, "a relation onto its own twin is compatible");
+      },
+    },
+    {
+      name: "entity_reference and user_reference enforce mapping compatibility rules",
+      screen: "/admin/mappings",
+      area: "Relations — entity_reference & user_reference",
+      fn: async ({ adminApi, assert, isolate }) => {
+        const entityType = await adminApi.expectOk(
+          adminApi.post("/organization/entity-types", {
+            label: isolate.label("Division"),
+            key: isolate.key("division"),
+          }),
+          "create entity type"
+        );
+
+        const otherEntityType = await adminApi.expectOk(
+          adminApi.post("/organization/entity-types", {
+            label: isolate.label("Squad"),
+            key: isolate.key("squad"),
+          }),
+          "create other entity type"
+        );
+
+        const testTable = await buildMappedTable({
+          adminApi,
+          isolate,
+          name: "Project",
+          specs: [
+            {
+              name: "Org Unit",
+              dataType: "entity_reference",
+              config: { entityTypeId: entityType.id },
+            },
+            {
+              name: "Assignee",
+              dataType: "user_reference",
+            },
+          ],
+        });
+
+        const mismatchCol = await adminApi.expectOk(
+          adminApi.post(`/admin/tables/${testTable.tableId}/columns`, {
+            label: isolate.label("Wrong Entity Type"),
+            key: isolate.key("wrong_entity"),
+            dataType: "entity_reference",
+            config: { entityTypeId: otherEntityType.id },
+          }),
+          "add mismatching entity reference column"
+        );
+
+        const textCol = await adminApi.expectOk(
+          adminApi.post(`/admin/tables/${testTable.tableId}/columns`, {
+            label: isolate.label("Plain Text Col"),
+            key: isolate.key("plain_text"),
+            dataType: "text",
+          }),
+          "add plain text column"
+        );
+
+        const report = await adminApi.expectOk(
+          adminApi.get(
+            `/admin/mappings/compatibility?formId=${testTable.formId}&tableId=${testTable.tableId}`
+          ),
+          "check mapping compatibility report"
+        );
+
+        const entityField = (report.compatibility ?? []).find(
+          (entry) => Number(entry.formFieldId) === Number(testTable.columns[0].formFieldId)
+        );
+        assert.ok(entityField, "report covers entity_reference field");
+
+        const matchingColVerdict = (entityField.columns ?? []).find(
+          (v) => Number(v.columnId) === Number(testTable.columns[0].columnId)
+        );
+        assert.ok(matchingColVerdict, "verdict found for matching entity reference column");
+        assert.eq(matchingColVerdict.compatible, true, "entity_reference with same entity type is compatible");
+
+        const mismatchColVerdict = (entityField.columns ?? []).find(
+          (v) => Number(v.columnId) === Number(mismatchCol.id)
+        );
+        assert.ok(mismatchColVerdict, "verdict found for mismatching entity reference column");
+        assert.eq(mismatchColVerdict.compatible, false, "entity_reference with different entity type is rejected");
+
+        const textColVerdict = (entityField.columns ?? []).find(
+          (v) => Number(v.columnId) === Number(textCol.id)
+        );
+        assert.ok(textColVerdict, "verdict found for text column against entity_reference");
+        assert.eq(textColVerdict.compatible, false, "entity_reference cannot map to text column");
+
+        const userField = (report.compatibility ?? []).find(
+          (entry) => Number(entry.formFieldId) === Number(testTable.columns[1].formFieldId)
+        );
+        assert.ok(userField, "report covers user_reference field");
+
+        const matchingUserVerdict = (userField.columns ?? []).find(
+          (v) => Number(v.columnId) === Number(testTable.columns[1].columnId)
+        );
+        assert.ok(matchingUserVerdict, "verdict found for matching user reference column");
+        assert.eq(matchingUserVerdict.compatible, true, "user_reference onto user_reference column is compatible");
+
+        const userToTextVerdict = (userField.columns ?? []).find(
+          (v) => Number(v.columnId) === Number(textCol.id)
+        );
+        assert.ok(userToTextVerdict, "verdict found for text column against user_reference");
+        assert.eq(userToTextVerdict.compatible, false, "user_reference cannot map to text column");
       },
     },
   ],

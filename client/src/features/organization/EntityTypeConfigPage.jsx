@@ -183,6 +183,7 @@ export default function EntityTypeConfigPage() {
       {configDialog ? (
         <ConfigurationDialog
           entityTypeId={entityType.id}
+          entityType={entityType}
           configuration={configDialog.configuration ?? null}
           onClose={() => setConfigDialog(null)}
           onSaved={(saved) => {
