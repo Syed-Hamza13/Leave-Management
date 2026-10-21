@@ -151,14 +151,8 @@ export default function SettingsPage() {
 
     const payload = {
       enabled: Boolean(turnstileValue.enabled),
+      siteKey: (turnstileValue.siteKey || "").trim(),
     };
-
-    if (
-      turnstileDraft?.siteKey !== undefined &&
-      turnstileDraft.siteKey.trim() !== turnstile.siteKey
-    ) {
-      payload.siteKey = turnstileDraft.siteKey.trim();
-    }
 
     if (turnstileDraft?.secretKey) {
       payload.secretKey = turnstileDraft.secretKey.trim();

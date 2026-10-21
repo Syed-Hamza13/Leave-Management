@@ -49,7 +49,10 @@ export async function getTurnstileSettings() {
     }
   }
 
-  const enabled = Boolean(stored.enabled);
+  const enabled =
+    env.TURNSTILE_ENABLED !== undefined
+      ? env.TURNSTILE_ENABLED
+      : Boolean(stored.enabled);
   const secretConfigured = Boolean(secretKey);
 
   return {
@@ -68,9 +71,12 @@ export async function getTurnstileSettings() {
 export async function getPublicTurnstileConfig() {
   const settings = await getTurnstileSettings();
 
+  const isFullyConfigured =
+    settings.enabled && Boolean(settings.siteKey) && settings.secretConfigured;
+
   return {
-    enabled: settings.enabled && Boolean(settings.siteKey) && settings.secretConfigured,
-    siteKey: settings.enabled ? settings.siteKey : null,
+    enabled: isFullyConfigured,
+    siteKey: isFullyConfigured ? settings.siteKey : null,
   };
 }
 
@@ -147,6 +153,14 @@ export async function verifyTurnstileToken({ token, ip, action = "login", header
 
   // If Turnstile is not enabled, bypass validation
   if (!settings.enabled) {
+    return { success: true, bypassed: true };
+  }
+
+  // If enabled but keys are not configured or decrypt failed, bypass to prevent lockout
+  if (!settings.siteKey || !settings.secretConfigured) {
+    console.warn(
+      "[Turnstile] Enabled in settings but missing siteKey or secretKey. Bypassing check to prevent lockout."
+    );
     return { success: true, bypassed: true };
   }
 

@@ -35,6 +35,13 @@ const envSchema = z.object({
   TURNSTILE_SITE_KEY: z.string().optional(),
   TURNSTILE_SECRET_KEY: z.string().optional(),
   TURNSTILE_HOSTNAMES: z.string().optional(),
+  TURNSTILE_ENABLED: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (val === undefined || val === "") return undefined;
+      return val.toLowerCase() === "true" || val === "1";
+    }),
 });
 
 const result = envSchema.safeParse(process.env);

@@ -39,6 +39,11 @@ function LoginPage() {
   const handleTurnstileError = useCallback((code) => {
     console.warn("[LoginPage] Turnstile error:", code);
     setTurnstileToken("");
+    if (code === "110200") {
+      setError(
+        "Security check failed: Domain not allowed (Error 110200). If testing on localhost, add 'localhost' to Allowed Domains in Cloudflare Turnstile dashboard."
+      );
+    }
   }, []);
 
   // Expose test helper in non-production for automated testing
