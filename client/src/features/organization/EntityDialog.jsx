@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 
 import Button from "../../components/ui/Button.jsx";
 import FieldRenderer from "../../components/ui/FieldRenderer.jsx";
+import { LoadingState } from "../../components/ui/LoadingState.jsx";
 import Modal from "../../components/ui/Modal.jsx";
-import TextInput from "../../components/ui/TextInput.jsx";
 import { useToast } from "../../components/ui/ToastContext.js";
 
 import useAsyncData from "../../hooks/useAsyncData.js";
@@ -30,18 +30,17 @@ export default function EntityDialog({
   const isEdit = Boolean(entity);
   const toast = useToast();
 
-  const [fallbackName, setFallbackName] = useState(entity?.name ?? "");
   const [draftValues, setDraftValues] = useState(null);
   const [errors, setErrors] = useState({});
 
   const { run, pending, error } = useMutation();
 
-  const { data: renderData } = useAsyncData(
+  const { data: renderData, loading: renderLoading } = useAsyncData(
     `entity-profile-form:${profileConfiguration?.form.id ?? "none"}`,
     () => (profileConfiguration ? formsApi.render(profileConfiguration.form.id) : Promise.resolve(null))
   );
 
-  const { data: pairData } = useAsyncData(
+  const { data: pairData, loading: pairLoading } = useAsyncData(
     `entity-profile-pair:${profileConfiguration?.form.id ?? "none"}:${profileConfiguration?.table.id ?? "none"}`,
     () =>
       profileConfiguration
@@ -51,6 +50,7 @@ export default function EntityDialog({
 
   const fields = useMemo(() => renderData?.data?.fields ?? [], [renderData]);
   const entries = pairData?.data?.entries ?? null;
+  const formLoading = (renderLoading || pairLoading) && Boolean(profileConfiguration);
 
   const initialValues = useMemo(() => {
     const raw = initialValuesFromFields(fields, entries, entity?.profile?.values ?? null);
@@ -78,20 +78,16 @@ export default function EntityDialog({
 
     const payload = {
       parentEntityId: null,
+      values: { ...values },
     };
 
-    if (fields.length > 0) {
-      payload.values = { ...values };
-      const firstStr = Object.values(values).find(
-        (v) => typeof v === "string" && v.trim().length > 0
-      );
-      if (firstStr) {
-        payload.name = String(firstStr).trim();
-      } else if (entity?.name) {
-        payload.name = entity.name;
-      }
-    } else {
-      payload.name = fallbackName.trim();
+    const firstStr = Object.values(values).find(
+      (v) => typeof v === "string" && v.trim().length > 0
+    );
+    if (firstStr) {
+      payload.name = String(firstStr).trim();
+    } else if (entity?.name) {
+      payload.name = entity.name;
     }
 
     const outcome = await run(() =>
@@ -127,14 +123,19 @@ export default function EntityDialog({
           ? `Enter details through "${profileConfiguration.form.label}".`
           : `Details for ${entityType?.label || "this entity"}.`
       }
-      size={fields.length > 0 ? "lg" : "sm"}
+      size={fields.length > 3 ? "lg" : "md"}
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
 
-          <Button type="submit" form={FORM_ID} loading={pending}>
+          <Button
+            type="submit"
+            form={FORM_ID}
+            loading={pending}
+            disabled={formLoading || pending}
+          >
             {isEdit ? "Save changes" : `Add ${entityType?.label || "entry"}`}
           </Button>
         </>
@@ -150,7 +151,11 @@ export default function EntityDialog({
           </p>
         ) : null}
 
-        {fields.length > 0 ? (
+        {formLoading ? (
+          <div className="flex items-center justify-center py-10">
+            <LoadingState label="Loading form fields…" />
+          </div>
+        ) : fields.length > 0 ? (
           <div className="space-y-4">
             {fields.map((field) => {
               const options = optionsFor(field);
@@ -183,18 +188,9 @@ export default function EntityDialog({
             })}
           </div>
         ) : (
-          <TextInput
-            id="entity-name"
-            label={`${entityType?.label || "Entity"} Name`}
-            required
-            autoFocus
-            data-autofocus
-            value={fallbackName}
-            onChange={(event) => setFallbackName(event.target.value)}
-            error={errors.name}
-            maxLength={190}
-            placeholder={`Enter ${entityType?.label?.toLowerCase() || "entity"} name…`}
-          />
+          <p className="py-6 text-center text-sm text-ink-muted">
+            No fields found in this form. Configure fields in Form Builder first.
+          </p>
         )}
       </form>
     </Modal>
