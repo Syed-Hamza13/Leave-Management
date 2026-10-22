@@ -11,6 +11,7 @@ import { LoadingState } from "../../components/ui/LoadingState.jsx";
 import { useToast } from "../../components/ui/ToastContext.js";
 
 import useAsyncData from "../../hooks/useAsyncData.js";
+import useColumnPreferences from "../../hooks/useColumnPreferences.js";
 import useMutation from "../../hooks/useMutation.js";
 import { PERMISSIONS } from "../../lib/permissions.js";
 import { errorMessage } from "../../services/errors.js";
@@ -169,41 +170,55 @@ function SectionPanel({ configuration, entityId, entityActive }) {
     [availableColumns]
   );
 
-  const [visibleColumnKeys, setVisibleColumnKeys] = useState(() => defaultVisibleKeys);
-
-  useEffect(() => {
-    setVisibleColumnKeys((prev) => {
-      const allKeySet = new Set(availableColumns.map((c) => c.key));
-      const valid = prev.filter((k) => allKeySet.has(k));
-      return valid.length > 0 ? valid : availableColumns.map((c) => c.key);
-    });
-  }, [availableColumns]);
+  const {
+    orderedColumns,
+    visibleKeys: visibleColumnKeys,
+    setVisibleKeys: setVisibleColumnKeys,
+    reorderColumns,
+    resetPreferences,
+  } = useColumnPreferences({
+    storageKey: configuration?.id ? `columns:entity-section:${configuration.id}` : null,
+    columns: availableColumns,
+    defaultVisibleKeys,
+  });
 
   const { optionsFor } = useEntryOptions(columns);
 
   const rows = data?.data ?? [];
 
-  const tableColumns = useMemo(
-    () =>
-      browsable.map((column) => {
-        const type = getDataType(column.dataType);
+  const columnDefinitionMap = useMemo(() => {
+    const map = new Map();
+    browsable.forEach((column) => {
+      const type = getDataType(column.dataType);
+      map.set(column.key, {
+        key: column.key,
+        header: column.label,
+        render: (row) => (
+          <span className="text-ink-soft">
+            {formatRecordValue(row.values?.[column.key], {
+              storage: type?.storage ?? "string",
+              options: optionsFor(column),
+            })}
+          </span>
+        ),
+      });
+    });
+    return map;
+  }, [browsable, getDataType, optionsFor]);
 
-        return {
-          key: column.key,
-          header: column.label,
-          hidden: !visibleColumnKeys.includes(column.key),
-          render: (row) => (
-            <span className="text-ink-soft">
-              {formatRecordValue(row.values?.[column.key], {
-                storage: type?.storage ?? "string",
-                options: optionsFor(column),
-              })}
-            </span>
-          ),
-        };
-      }),
-    [browsable, getDataType, optionsFor, visibleColumnKeys]
-  );
+  const tableColumns = useMemo(() => {
+    return orderedColumns.map((col) => {
+      const def = columnDefinitionMap.get(col.key) || {
+        key: col.key,
+        header: col.label || col.key,
+        render: (row) => String(row[col.key] ?? "—"),
+      };
+      return {
+        ...def,
+        hidden: !visibleColumnKeys.includes(col.key),
+      };
+    });
+  }, [orderedColumns, columnDefinitionMap, visibleColumnKeys]);
 
   async function confirmArchive() {
     const target = archiveTarget;
@@ -250,9 +265,11 @@ function SectionPanel({ configuration, entityId, entityActive }) {
         <div className="flex items-center gap-2">
           {availableColumns.length > 0 ? (
             <ColumnVisibilityManager
-              columns={availableColumns}
+              columns={orderedColumns}
               visibleKeys={visibleColumnKeys}
               onChangeVisibleKeys={setVisibleColumnKeys}
+              onReorderColumns={reorderColumns}
+              onReset={resetPreferences}
               storageKey={`columns:entity-section:${configuration.id}`}
               defaultVisibleKeys={defaultVisibleKeys}
             />
@@ -272,6 +289,7 @@ function SectionPanel({ configuration, entityId, entityActive }) {
         loading={loading}
         error={error}
         onRetry={reload}
+        onReorderColumns={reorderColumns}
         empty={
           <EmptyState
             title={`No ${configuration.label.toLowerCase()} yet`}
@@ -381,7 +399,7 @@ function MembersPanel({ entity, canManage, entityActive }) {
         ) : null}
       </div>
 
-      {loading ? (
+      {loading && !membersData ? (
         <LoadingState label="Loading members…" />
       ) : members.length === 0 ? (
         <EmptyState

@@ -7,7 +7,7 @@ import { auth as authApi } from "../../services/resources.js";
 import { useAuth } from "./AuthContext.js";
 
 function LoginPage() {
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, loading } = useAuth();
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -58,6 +58,14 @@ function LoginPage() {
   }, []);
 
   const destination = location.state?.from?.pathname || "/";
+
+  if (loading) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <p className="text-gray-600">Loading...</p>
+      </main>
+    );
+  }
 
   /*
    * Signing in flips the authenticated flag while the submit handler is still
@@ -143,7 +151,6 @@ function LoginPage() {
         <form
           onSubmit={handleSubmit}
           className="space-y-5"
-          noValidate
         >
           <div>
             <label

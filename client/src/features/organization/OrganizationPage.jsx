@@ -12,6 +12,7 @@ import Select from "../../components/ui/Select.jsx";
 import { useToast } from "../../components/ui/ToastContext.js";
 
 import useAsyncData from "../../hooks/useAsyncData.js";
+import useColumnPreferences from "../../hooks/useColumnPreferences.js";
 import useMutation from "../../hooks/useMutation.js";
 import { PERMISSIONS } from "../../lib/permissions.js";
 import { errorMessage } from "../../services/errors.js";
@@ -25,9 +26,11 @@ import EntityTypeDialog from "./EntityTypeDialog.jsx";
 const PAGE_SIZE = 25;
 
 const AVAILABLE_COLUMNS = [
-  { key: "label", label: "Entity", alwaysVisible: true },
+  { key: "label", label: "Entity type", alwaysVisible: true },
+  { key: "parentType", label: "Parent" },
   { key: "description", label: "Description" },
-  { key: "entityCount", label: "Entries" },
+  { key: "configurationCount", label: "Configurations" },
+  { key: "entityCount", label: "Entities" },
   { key: "status", label: "Status" },
 ];
 
@@ -41,7 +44,18 @@ export default function OrganizationPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("active");
   const [page, setPage] = useState(1);
-  const [visibleColumnKeys, setVisibleColumnKeys] = useState(() => DEFAULT_VISIBLE_KEYS);
+
+  const {
+    orderedColumns,
+    visibleKeys: visibleColumnKeys,
+    setVisibleKeys: setVisibleColumnKeys,
+    reorderColumns,
+    resetPreferences,
+  } = useColumnPreferences({
+    storageKey: "columns:organization-types",
+    columns: AVAILABLE_COLUMNS,
+    defaultVisibleKeys: DEFAULT_VISIBLE_KEYS,
+  });
 
   const [dialog, setDialog] = useState(null);
   const [archiveTarget, setArchiveTarget] = useState(null);
@@ -58,52 +72,85 @@ export default function OrganizationPage() {
 
   const { run: runArchive, pending: archiving } = useMutation();
 
-  const columns = useMemo(
-    () => [
-      {
-        key: "label",
-        header: "Entity",
-        hidden: !visibleColumnKeys.includes("label"),
-        render: (row) => (
-          <div className="min-w-0">
-            <Link
-              to={`/organization/${row.id}`}
-              className="truncate font-medium text-ink hover:text-brand hover:underline"
-            >
-              {row.label}
-            </Link>
-            <code className="ml-2 font-mono text-xs text-ink-muted">{row.key}</code>
-          </div>
+  const columnDefinitionMap = useMemo(() => {
+    const map = new Map();
+
+    map.set("label", {
+      key: "label",
+      header: "Entity type",
+      alwaysVisible: true,
+      render: (row) => (
+        <div className="min-w-0">
+          <Link
+            to={`/organization/${row.id}`}
+            className="truncate font-medium text-ink hover:text-brand hover:underline"
+          >
+            {row.label}
+          </Link>
+          <code className="ml-2 font-mono text-xs text-ink-muted">{row.key}</code>
+        </div>
+      ),
+    });
+
+    map.set("parentType", {
+      key: "parentType",
+      header: "Parent",
+      render: (row) =>
+        row.parentType ? (
+          <span className="text-sm text-ink-soft">{row.parentType.label}</span>
+        ) : (
+          <span className="text-xs text-ink-muted">—</span>
         ),
-      },
-      {
-        key: "description",
-        header: "Description",
-        hidden: !visibleColumnKeys.includes("description"),
-        render: (row) => (
-          <span className="truncate max-w-xs block text-sm text-ink-soft">
-            {row.description || "—"}
-          </span>
-        ),
-      },
-      {
-        key: "entityCount",
-        header: "Entries",
-        align: "right",
-        hidden: !visibleColumnKeys.includes("entityCount"),
-        render: (row) => <span className="font-medium text-ink-soft">{row.entityCount}</span>,
-      },
-      {
-        key: "status",
-        header: "Status",
-        hidden: !visibleColumnKeys.includes("status"),
-        render: (row) => (
-          <Badge tone={row.status === "active" ? "success" : "neutral"}>{row.status}</Badge>
-        ),
-      },
-    ],
-    [visibleColumnKeys]
-  );
+    });
+
+    map.set("description", {
+      key: "description",
+      header: "Description",
+      render: (row) => (
+        <span className="truncate max-w-xs block text-sm text-ink-soft">
+          {row.description || "—"}
+        </span>
+      ),
+    });
+
+    map.set("configurationCount", {
+      key: "configurationCount",
+      header: "Configurations",
+      align: "right",
+      render: (row) => <span className="font-medium text-ink-soft">{row.configurationCount ?? 0}</span>,
+    });
+
+    map.set("entityCount", {
+      key: "entityCount",
+      header: "Entities",
+      align: "right",
+      render: (row) => <span className="font-medium text-ink-soft">{row.entityCount ?? 0}</span>,
+    });
+
+    map.set("status", {
+      key: "status",
+      header: "Status",
+      render: (row) => (
+        <Badge tone={row.status === "active" ? "success" : "neutral"}>{row.status}</Badge>
+      ),
+    });
+
+    return map;
+  }, []);
+
+  const columns = useMemo(() => {
+    return orderedColumns.map((col) => {
+      const def = columnDefinitionMap.get(col.key) || {
+        key: col.key,
+        header: col.label || col.key,
+        render: (row) => String(row[col.key] ?? "—"),
+      };
+      return {
+        ...def,
+        hidden: !visibleColumnKeys.includes(col.key),
+      };
+    });
+  }, [orderedColumns, columnDefinitionMap, visibleColumnKeys]);
 
   async function confirmArchive() {
     const target = archiveTarget;
@@ -119,7 +166,7 @@ export default function OrganizationPage() {
       return;
     }
 
-    toast.error(errorMessage(outcome.error, "The entity could not be archived."));
+    toast.error(errorMessage(outcome.error, "The entity type could not be archived."));
   }
 
   return (
@@ -133,7 +180,7 @@ export default function OrganizationPage() {
               setSearch(next);
               setPage(1);
             }}
-            label="Search entities"
+            label="Search entity types"
             placeholder="Search by name or key…"
           />
 
@@ -155,15 +202,17 @@ export default function OrganizationPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <ColumnVisibilityManager
-            columns={AVAILABLE_COLUMNS}
+            columns={orderedColumns}
             visibleKeys={visibleColumnKeys}
             onChangeVisibleKeys={setVisibleColumnKeys}
+            onReorderColumns={reorderColumns}
+            onReset={resetPreferences}
             storageKey="columns:organization-types"
             defaultVisibleKeys={DEFAULT_VISIBLE_KEYS}
           />
 
           {canManage ? (
-            <Button onClick={() => setDialog({ mode: "create" })}>+ New entity</Button>
+            <Button onClick={() => setDialog({ mode: "create" })}>New entity type</Button>
           ) : null}
         </div>
       </div>
@@ -174,19 +223,20 @@ export default function OrganizationPage() {
         loading={loading}
         error={error}
         onRetry={reload}
+        onReorderColumns={reorderColumns}
         pagination={meta}
         onPageChange={setPage}
         empty={
           <EmptyState
-            title={search ? "No entities match your search" : "No entities defined yet"}
+            title={search ? "No entity types match your search" : "No entity types yet"}
             description={
               search
                 ? "Try a different name or key, or clear the search."
-                : "Define entities such as Team, Department, or Council for your organization."
+                : "Entity types are the kinds of things your organization contains. Each one gets its own profile and sections."
             }
             action={
               canManage && !search ? (
-                <Button onClick={() => setDialog({ mode: "create" })}>+ New entity</Button>
+                <Button onClick={() => setDialog({ mode: "create" })}>New entity type</Button>
               ) : null
             }
           />
@@ -228,8 +278,8 @@ export default function OrganizationPage() {
             setDialog(null);
             toast.success(
               dialog.mode === "create"
-                ? `"${saved?.label ?? "Entity"}" was created.`
-                : `"${saved?.label ?? "Entity"}" was saved.`
+                ? `"${saved?.label ?? "Entity type"}" was created.`
+                : `"${saved?.label ?? "Entity type"}" was saved.`
             );
             reload();
             refreshMetadata();
@@ -239,10 +289,10 @@ export default function OrganizationPage() {
 
       <ConfirmDialog
         open={Boolean(archiveTarget)}
-        title="Archive entity"
+        title="Archive entity type"
         message={`Archive "${archiveTarget?.label ?? ""}"?`}
-        detail="Existing records are preserved. You can restore this entity later if needed."
-        confirmLabel="Archive entity"
+        detail="A type is refused while it still has entities or child types. Existing records are never deleted by archiving a definition."
+        confirmLabel="Archive type"
         loading={archiving}
         onCancel={() => setArchiveTarget(null)}
         onConfirm={confirmArchive}

@@ -313,10 +313,17 @@ export async function findProfileValuesByUserIds(userIds = []) {
     if (userMap) {
       let parsed = row.value;
       if (typeof parsed === "string") {
-        try {
-          parsed = JSON.parse(parsed);
-        } catch {
-          // keep as string
+        const trimmed = parsed.trim();
+        if (
+          (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+          (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+          (trimmed.startsWith('"') && trimmed.endsWith('"'))
+        ) {
+          try {
+            parsed = JSON.parse(trimmed);
+          } catch {
+            // keep as string
+          }
         }
       }
       userMap[row.column_key] = parsed;

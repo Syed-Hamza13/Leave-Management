@@ -635,5 +635,176 @@ export default {
         );
       },
     },
+    {
+      name: "users table supports dedicated phone (mobile number) data type with numeric validation",
+      fn: async ({ adminApi, assert, isolate }) => {
+        const usersTable = await adminApi.expectOk(adminApi.get("/admin/tables/users"));
+        const phoneColKey = isolate.key("mobile_no");
+
+        // 1. Add custom phone column to users table
+        const phoneCol = await adminApi.expectOk(
+          adminApi.post(`/admin/tables/${usersTable.id}/columns`, {
+            label: "Mobile No.",
+            key: phoneColKey,
+            dataType: "phone",
+          })
+        );
+        assert.eq(phoneCol.dataType, "phone", "column created with phone data type");
+
+        // 2. Reject non-numeric phone values
+        const badCreate = await adminApi.post("/admin/users", {
+          email: isolate.email("badphone"),
+          firstName: "Bad",
+          lastName: "Phone",
+          password: "Password123!",
+          roleKeys: ["employee"],
+          values: { [phoneColKey]: "123-abc-456" },
+        });
+        assert.eq(badCreate.status, 400, "non-numeric phone number is rejected with 400");
+
+        // 3. Accept valid numeric phone value
+        const userEmail = isolate.email("validphone");
+        const createdUser = await adminApi.expectOk(
+          adminApi.post("/admin/users", {
+            email: userEmail,
+            firstName: "Valid",
+            lastName: "Phone",
+            password: "Password123!",
+            roleKeys: ["employee"],
+            values: { [phoneColKey]: "9876543210" },
+          })
+        );
+        assert.eq(createdUser.values?.[phoneColKey], "9876543210", "valid phone number stored and returned");
+
+        // 4. Update phone number
+        const updatedUser = await adminApi.expectOk(
+          adminApi.patch(`/admin/users/${createdUser.id}`, {
+            values: { [phoneColKey]: "9998887776" },
+          })
+        );
+        assert.eq(updatedUser.values?.[phoneColKey], "9998887776", "phone number successfully updated");
+
+        // 5. Clean up: delete column permanently
+        await adminApi.expectOk(
+          adminApi.del(`/admin/tables/users/columns/${phoneCol.id}?permanent=true`)
+        );
+      },
+    },
+    {
+      name: "users table custom columns can be reordered and order persists",
+      fn: async ({ adminApi, assert, isolate }) => {
+        const usersTable = await adminApi.expectOk(adminApi.get("/admin/tables/users"));
+        const col1Key = isolate.key("field_a");
+        const col2Key = isolate.key("field_b");
+
+        const col1 = await adminApi.expectOk(
+          adminApi.post(`/admin/tables/${usersTable.id}/columns`, {
+            label: "Custom Field A",
+            key: col1Key,
+            dataType: "text",
+          })
+        );
+        const col2 = await adminApi.expectOk(
+          adminApi.post(`/admin/tables/${usersTable.id}/columns`, {
+            label: "Custom Field B",
+            key: col2Key,
+            dataType: "text",
+          })
+        );
+
+        // Fetch all manageable custom columns currently active
+        const tableBefore = await adminApi.expectOk(adminApi.get("/admin/tables/users"));
+        const customCols = tableBefore.columns.filter((c) => !c.isSystem && c.status === "active");
+
+        // Create reordered array with col2 placed before col1
+        const otherIds = customCols.map((c) => c.id).filter((id) => id !== col1.id && id !== col2.id);
+        const newOrderIds = [col2.id, col1.id, ...otherIds];
+
+        // Reorder via tableId as string "users"
+        await adminApi.expectOk(
+          adminApi.put("/admin/tables/users/columns/order", {
+            columnIds: newOrderIds,
+          })
+        );
+
+        const tableAfter = await adminApi.expectOk(adminApi.get("/admin/tables/users"));
+        const colsAfter = tableAfter.columns.filter((c) => !c.isSystem && c.status === "active");
+        const idx1 = colsAfter.findIndex((c) => c.id === col1.id);
+        const idx2 = colsAfter.findIndex((c) => c.id === col2.id);
+
+        assert.ok(idx2 < idx1, "Custom Field B is positioned before Custom Field A in users table");
+
+        // Clean up: permanently delete both test columns
+        await adminApi.expectOk(adminApi.del(`/admin/tables/users/columns/${col1.id}?permanent=true`));
+        await adminApi.expectOk(adminApi.del(`/admin/tables/users/columns/${col2.id}?permanent=true`));
+      },
+    },
+    {
+      name: "users custom column permanent deletion removes definition and cascades profile values",
+      fn: async ({ adminApi, assert, isolate }) => {
+        const usersTable = await adminApi.expectOk(adminApi.get("/admin/tables/users"));
+        const colKey = isolate.key("temp_field");
+
+        const col = await adminApi.expectOk(
+          adminApi.post(`/admin/tables/${usersTable.id}/columns`, {
+            label: "Temporary Custom Field",
+            key: colKey,
+            dataType: "text",
+          })
+        );
+
+        // Create user with value for this custom column
+        const user = await adminApi.expectOk(
+          adminApi.post("/admin/users", {
+            email: isolate.email("cascade_test"),
+            firstName: "Cascade",
+            lastName: "Tester",
+            password: "Password123!",
+            roleKeys: ["employee"],
+            values: { [colKey]: "ShouldBeDeleted" },
+          })
+        );
+        assert.eq(user.values?.[colKey], "ShouldBeDeleted", "custom field value set on user");
+
+        // Delete custom column permanently via /admin/tables/users/columns/:id?permanent=true
+        const deleteRes = await adminApi.expectOk(
+          adminApi.del(`/admin/tables/users/columns/${col.id}?permanent=true`)
+        );
+        assert.eq(deleteRes.deleted, true, "deleted is true");
+        assert.eq(deleteRes.permanent, true, "permanent is true");
+
+        // Verify column no longer exists in users table
+        const tableAfter = await adminApi.expectOk(adminApi.get("/admin/tables/users"));
+        assert.ok(!tableAfter.columns.some((c) => c.id === col.id), "column is removed from users table definition");
+
+        // Verify user profile values no longer include the deleted column key
+        const userAfter = await adminApi.expectOk(adminApi.get(`/admin/users/${user.id}`));
+        assert.ok(!userAfter.values || userAfter.values[colKey] === undefined, "profile value was purged");
+      },
+    },
+    {
+      name: "users table rejects deletion of system columns like email, roles, status",
+      fn: async ({ adminApi, assert }) => {
+        const usersTable = await adminApi.expectOk(adminApi.get("/admin/tables/users"));
+        const systemColumns = usersTable.columns.filter((c) => c.isSystem);
+        assert.ok(systemColumns.length >= 4, "users table has system columns seeded");
+
+        for (const sysCol of systemColumns) {
+          const attempt = await adminApi.del(
+            `/admin/tables/users/columns/${sysCol.id}?permanent=true`
+          );
+          assert.eq(
+            attempt.status,
+            409,
+            `deleting system column "${sysCol.key}" is rejected with 409 Conflict`
+          );
+          assert.eq(
+            attempt.body?.code,
+            "SYSTEM_COLUMN_LOCKED",
+            `system column "${sysCol.key}" reports SYSTEM_COLUMN_LOCKED code`
+          );
+        }
+      },
+    },
   ],
 };

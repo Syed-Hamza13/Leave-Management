@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 
 import Badge from "../../components/ui/Badge.jsx";
@@ -12,7 +13,11 @@ import { useMetadata } from "../metadata/MetadataContext.js";
  * offered here.
  */
 export default function RecordsIndexPage() {
-  const { lookups, loading, error } = useMetadata();
+  const { lookups, loading, error, refresh } = useMetadata();
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const tables = (lookups.tables ?? []).filter((table) => table.storageKind === "managed");
 

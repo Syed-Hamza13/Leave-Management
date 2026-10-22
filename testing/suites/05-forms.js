@@ -226,7 +226,7 @@ export default {
         await session.expectToast("saved");
 
         assert.ok(
-          await session.itemExists(isolate.label("Why you are away")),
+          await session.waitItem(isolate.label("Why you are away")),
           "the form now shows the overridden label"
         );
 

@@ -1440,5 +1440,66 @@ export default {
         assert.eq(userToTextVerdict.compatible, false, "user_reference cannot map to text column");
       },
     },
+    {
+      name: "phone data type accepts valid numeric digits, rejects non-numeric input, and persists values",
+      fn: async ({ adminApi, assert, isolate }) => {
+        const table = await adminApi.expectOk(
+          adminApi.post("/admin/tables", {
+            label: isolate.label("Contact Directory"),
+            key: isolate.key("contacts_table"),
+          })
+        );
+
+        // 1. Add phone column
+        const phoneCol = await adminApi.expectOk(
+          adminApi.post(`/admin/tables/${table.id}/columns`, {
+            label: "Phone Number",
+            key: isolate.key("phone_number"),
+            dataType: "phone",
+          })
+        );
+        assert.eq(phoneCol.dataType, "phone", "column created with data_type phone");
+
+        // 2. Reject non-numeric phone values
+        const invalidRecord = await adminApi.post(`/tables/${table.id}/records`, {
+          values: {
+            [phoneCol.key]: "98765-abcd",
+          },
+        });
+        assert.eq(
+          invalidRecord.status,
+          400,
+          "non-numeric phone string is rejected with HTTP 400 Bad Request"
+        );
+
+        // 3. Accept valid numeric phone value
+        const validRecord = await adminApi.expectOk(
+          adminApi.post(`/tables/${table.id}/records`, {
+            values: {
+              [phoneCol.key]: "9876543210",
+            },
+          })
+        );
+        assert.eq(
+          validRecord.values?.[phoneCol.key],
+          "9876543210",
+          "valid numeric phone number stored and retrieved"
+        );
+
+        // 4. Update with another valid phone number
+        const updatedRecord = await adminApi.expectOk(
+          adminApi.patch(`/tables/${table.id}/records/${validRecord.id}`, {
+            values: {
+              [phoneCol.key]: "1234567890",
+            },
+          })
+        );
+        assert.eq(
+          updatedRecord.values?.[phoneCol.key],
+          "1234567890",
+          "phone number successfully updated"
+        );
+      },
+    },
   ],
 };

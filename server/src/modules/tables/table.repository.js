@@ -236,14 +236,29 @@ export async function updateTable(connection, id, patch, actorUserId) {
  * column layout.
  */
 export async function bumpSchemaVersion(connection, tableId) {
-  await connection.execute(
-    `
-      UPDATE table_definitions
-      SET schema_version = schema_version + 1
-      WHERE id = ?
-    `,
-    [tableId]
-  );
+  const isNumeric =
+    typeof tableId === "number" ||
+    (typeof tableId === "string" && /^\d+$/.test(tableId));
+
+  if (isNumeric) {
+    await connection.execute(
+      `
+        UPDATE table_definitions
+        SET schema_version = schema_version + 1
+        WHERE id = ?
+      `,
+      [Number(tableId)]
+    );
+  } else {
+    await connection.execute(
+      `
+        UPDATE table_definitions
+        SET schema_version = schema_version + 1
+        WHERE table_key = ?
+      `,
+      [tableId]
+    );
+  }
 }
 
 const SELECT_COLUMNS = `

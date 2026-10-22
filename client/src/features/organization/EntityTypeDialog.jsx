@@ -2,22 +2,25 @@ import { useState } from "react";
 
 import Button from "../../components/ui/Button.jsx";
 import Modal from "../../components/ui/Modal.jsx";
+import Select from "../../components/ui/Select.jsx";
 import TextInput from "../../components/ui/TextInput.jsx";
 import Textarea from "../../components/ui/Textarea.jsx";
 
+import useAsyncData from "../../hooks/useAsyncData.js";
 import useMutation from "../../hooks/useMutation.js";
 import { errorMessage, fieldErrors } from "../../services/errors.js";
 import { organization as organizationApi } from "../../services/resources.js";
 
 const FORM_ID = "entity-type-dialog-form";
 
-const EMPTY = { label: "", key: "", description: "" };
+const EMPTY = { label: "", key: "", description: "", parentTypeId: "" };
 
 function fromEntityType(entityType) {
   return {
     label: entityType.label ?? "",
     key: entityType.key ?? "",
     description: entityType.description ?? "",
+    parentTypeId: entityType.parentTypeId ? String(entityType.parentTypeId) : "",
   };
 }
 
@@ -29,6 +32,18 @@ export default function EntityTypeDialog({ entityType, onClose, onSaved }) {
 
   const { run, pending, error } = useMutation();
 
+  /*
+   * Types nest, so the parent list excludes the type being edited — a type may
+   * not become its own parent.
+   */
+  const { data } = useAsyncData("entity-types:parents", () =>
+    organizationApi.listEntityTypes({ pageSize: 100, status: "active" })
+  );
+
+  const candidates = (data?.data ?? []).filter(
+    (entry) => Number(entry.id) !== Number(entityType?.id ?? -1)
+  );
+
   function patch(changes) {
     setDraft((current) => ({ ...current, ...changes }));
   }
@@ -37,7 +52,7 @@ export default function EntityTypeDialog({ entityType, onClose, onSaved }) {
     const payload = {
       label: draft.label.trim(),
       description: draft.description.trim() || null,
-      parentTypeId: null,
+      parentTypeId: draft.parentTypeId ? Number(draft.parentTypeId) : null,
     };
 
     if (!isEdit && draft.key.trim()) payload.key = draft.key.trim();
@@ -67,11 +82,11 @@ export default function EntityTypeDialog({ entityType, onClose, onSaved }) {
     <Modal
       open
       onClose={pending ? () => {} : onClose}
-      title={isEdit ? `Edit "${entityType.label}"` : "New entity"}
+      title={isEdit ? `Edit "${entityType.label}"` : "New entity type"}
       description={
         isEdit
-          ? "Update the details for this organization entity."
-          : "Define an entity for your organization, such as Department, Council, or Team."
+          ? "Renaming or re-parenting a type does not change the entities already filed under it."
+          : "An entity type is a kind of thing in the organization, such as Department, Council or Team."
       }
       footer={
         <>
@@ -80,7 +95,7 @@ export default function EntityTypeDialog({ entityType, onClose, onSaved }) {
           </Button>
 
           <Button type="submit" form={FORM_ID} loading={pending}>
-            {isEdit ? "Save entity" : "Create entity"}
+            {isEdit ? "Save type" : "Create type"}
           </Button>
         </>
       }
@@ -91,7 +106,7 @@ export default function EntityTypeDialog({ entityType, onClose, onSaved }) {
             role="alert"
             className="rounded-control border border-danger bg-danger-soft px-3 py-2 text-sm font-medium text-danger"
           >
-            {errorMessage(error, "The entity could not be saved.")}
+            {errorMessage(error, "The entity type could not be saved.")}
           </p>
         ) : null}
 
@@ -105,7 +120,7 @@ export default function EntityTypeDialog({ entityType, onClose, onSaved }) {
           onChange={(event) => patch({ label: event.target.value })}
           error={errors.label}
           maxLength={160}
-          placeholder="e.g. Department, Team, Council"
+          placeholder="Department"
         />
 
         {isEdit ? (
@@ -115,26 +130,37 @@ export default function EntityTypeDialog({ entityType, onClose, onSaved }) {
               <code className="rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-ink">
                 {draft.key}
               </code>{" "}
-              identifies this entity and cannot be changed.
+              identifies this type and cannot be changed.
             </p>
           </div>
         ) : (
           <TextInput
             id="entity-type-key"
             label="Key"
-            hint="Lowercase letters, numbers and underscores. Leave blank to generate automatically."
+            hint="Lowercase letters, numbers and underscores. Leave blank to generate it from the name."
             value={draft.key}
             onChange={(event) => patch({ key: event.target.value })}
             error={errors.key}
             maxLength={63}
-            placeholder="team"
+            placeholder="department"
           />
         )}
+
+        <Select
+          id="entity-type-parent"
+          label="Parent type"
+          hint="Optional. Nesting a type describes how kinds of things relate, not individual records."
+          placeholder="No parent"
+          value={draft.parentTypeId}
+          onChange={(event) => patch({ parentTypeId: event.target.value })}
+          error={errors.parentTypeId}
+          options={candidates.map((entry) => ({ value: entry.id, label: entry.label }))}
+        />
 
         <Textarea
           id="entity-type-description"
           label="Description"
-          hint="Optional description or purpose of this entity."
+          hint="Internal note for other administrators."
           rows={3}
           value={draft.description}
           onChange={(event) => patch({ description: event.target.value })}

@@ -72,8 +72,10 @@ export class Session {
     const signedIn = By.css("#app-navigation");
     const signedOut = By.css("input#email");
 
+    let state = "unknown";
+
     try {
-      await this.driver.wait(
+      state = await this.driver.wait(
         async (driver) => {
           const nav = await driver.findElements(signedIn);
 
@@ -92,9 +94,7 @@ export class Session {
       return "unknown";
     }
 
-    await this.driver.sleep(150);
-
-    return (await this.driver.findElements(signedIn)).length ? "in" : "out";
+    return state;
   }
 
   async step(label, data = {}) {
@@ -171,6 +171,7 @@ export class Session {
       const current = await this.heading().catch(() => null);
 
       if (current === expected) {
+        await this.waitForApp();
         return current;
       }
 
@@ -484,26 +485,38 @@ export class Session {
   }
 
   async fill(idOrLabel, value) {
-    const first = await this.control(idOrLabel);
-    const type = await first.getAttribute("type");
+    const limit = Date.now() + 6000;
 
-    // Chrome's segmented date widget never accepts an ISO string as keystrokes.
-    if (type === "date" || type === "datetime-local") {
-      await this.setDate(idOrLabel, value);
+    while (Date.now() < limit) {
+      try {
+        const first = await this.control(idOrLabel);
+        const type = await first.getAttribute("type");
 
-      return this.control(idOrLabel);
+        // Chrome's segmented date widget never accepts an ISO string as keystrokes.
+        if (type === "date" || type === "datetime-local") {
+          await this.setDate(idOrLabel, value);
+
+          return this.control(idOrLabel);
+        }
+
+        await first.clear().catch(() => {});
+
+        // Clearing a controlled input re-renders it, so the value is typed into a
+        // freshly located element.
+        const input = await this.control(idOrLabel);
+
+        await input.sendKeys(String(value ?? ""));
+        await this.step(`type ${idOrLabel}`);
+
+        return input;
+      } catch (err) {
+        if (/stale element reference|not attached/i.test(String(err?.message)) && Date.now() < limit) {
+          await this.driver.sleep(150);
+          continue;
+        }
+        throw err;
+      }
     }
-
-    await first.clear().catch(() => {});
-
-    // Clearing a controlled input re-renders it, so the value is typed into a
-    // freshly located element.
-    const input = await this.control(idOrLabel);
-
-    await input.sendKeys(String(value ?? ""));
-    await this.step(`type ${idOrLabel}`);
-
-    return input;
   }
 
   /** Sets a native date input the way React reads it: the property setter plus an input event. */
@@ -567,56 +580,88 @@ export class Session {
     return this.control(idOrLabel);
   }
 
-  async selectOption(idOrLabel, optionText) {
+  async selectOption(idOrLabel, optionText, timeout = null) {
     const control = await this.control(idOrLabel);
+    const limit = Date.now() + (timeout || config.timeouts.element);
 
-    await this.driver.wait(
-      async () => {
-        const disabled = await control.getAttribute("disabled");
+    while (Date.now() < limit) {
+      try {
+        const options = await control.findElements(By.css("option"));
 
-        return disabled === null ? true : undefined;
-      },
-      config.timeouts.element,
-      `Select "${idOrLabel}" stayed disabled (options never loaded)`
-    );
+        for (const option of options) {
+          const label = escape(await option.getText());
 
-    const options = await control.findElements(By.css("option"));
+          if (label === optionText || label.startsWith(optionText)) {
+            await option.click();
+            await this.step(`choose ${optionText} in ${idOrLabel}`);
 
-    for (const option of options) {
-      const label = escape(await option.getText());
-
-      if (label === optionText || label.startsWith(optionText)) {
-        await option.click();
-        await this.step(`choose ${optionText} in ${idOrLabel}`);
-
-        return label;
+            return label;
+          }
+        }
+      } catch (err) {
+        if (!/stale element reference|not attached/i.test(String(err?.message))) {
+          throw err;
+        }
       }
+
+      await this.driver.sleep(200);
     }
 
-    const available = (await Promise.all(options.map((o) => o.getText()))).map(escape);
+    const finalOptions = await control.findElements(By.css("option")).catch(() => []);
+    const available = (await Promise.all(finalOptions.map((o) => o.getText().catch(() => "")))).map(escape);
 
     throw new AssertionError(
       `Option "${optionText}" is not in "${idOrLabel}". Available: ${available.join(" | ")}`
     );
   }
 
-  async optionLabels(idOrLabel) {
+  async optionLabels(idOrLabel, timeout = null) {
+    const limit = Date.now() + (timeout || config.timeouts.element);
+
+    while (Date.now() < limit) {
+      try {
+        const control = await this.control(idOrLabel);
+        const options = await control.findElements(By.css("option"));
+        const rawLabels = await Promise.all(options.map((option) => option.getText().catch(() => "")));
+        const labels = rawLabels.map(escape).filter(Boolean);
+
+        if (labels.length > 0 && !labels.every((l) => /loading/i.test(l))) {
+          return labels;
+        }
+      } catch (err) {
+        if (err.name !== "StaleElementReferenceError") throw err;
+      }
+
+      await this.driver.sleep(150);
+    }
+
     const control = await this.control(idOrLabel);
     const options = await control.findElements(By.css("option"));
-    const labels = await Promise.all(options.map((option) => option.getText()));
+    const labels = await Promise.all(options.map((option) => option.getText().catch(() => "")));
 
     return labels.map(escape);
   }
 
   async setCheckbox(idOrLabel, want = true) {
-    const control = await this.control(idOrLabel);
-    const is = await control.isSelected();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const control = await this.control(idOrLabel);
+        const is = await control.isSelected();
 
-    if (is !== want) {
-      await control.click();
+        if (is !== want) {
+          await control.click();
+        }
+
+        await this.step(`${want ? "check" : "uncheck"} ${idOrLabel}`);
+        return;
+      } catch (err) {
+        if (err.name === "StaleElementReferenceError" && attempt < 2) {
+          await this.driver.sleep(150);
+          continue;
+        }
+        throw err;
+      }
     }
-
-    await this.step(`${want ? "check" : "uncheck"} ${idOrLabel}`);
   }
 
   async controlValue(idOrLabel) {
@@ -718,19 +763,27 @@ export class Session {
     const limit = Date.now() + config.timeouts.element;
 
     while (Date.now() < limit) {
-      const buttons = await this.driver.findElements(
-        By.xpath('//div[@role="dialog"]//button[@type="submit"]')
-      );
+      try {
+        const buttons = await this.driver.findElements(
+          By.xpath('//div[@role="dialog"]//button[@type="submit"]')
+        );
 
-      for (const button of buttons) {
-        if ((await button.isDisplayed()) && (await button.isEnabled())) {
-          const label = escape(await button.getText());
+        for (const button of buttons) {
+          if ((await button.isDisplayed()) && (await button.isEnabled())) {
+            const label = escape(await button.getText());
 
-          await button.click();
-          await this.step(`submit dialog: ${label}`);
+            await button.click();
+            await this.step(`submit dialog: ${label}`);
 
-          return label;
+            return label;
+          }
         }
+      } catch (err) {
+        if (err.name === "StaleElementReferenceError") {
+          await this.driver.sleep(100);
+          continue;
+        }
+        throw err;
       }
 
       await this.driver.sleep(150);
@@ -878,6 +931,7 @@ export class Session {
     const limit = timeout || config.timeouts.toast;
     const region = By.css('[role="status"]');
 
+    let matchedText = "";
     await this.driver.wait(
       async (driver) => {
         const regions = await driver.findElements(region);
@@ -887,6 +941,7 @@ export class Session {
             const text = await entry.getText();
 
             if (text.includes(needle)) {
+              matchedText = escape(text);
               return text;
             }
           } catch {
@@ -900,7 +955,7 @@ export class Session {
       `No toast containing "${needle}" appeared`
     );
 
-    const toast = await this.anyText(region);
+    const toast = matchedText || (await this.anyText(region)) || "";
 
     await this.step(`toast: ${needle}`);
 
@@ -930,15 +985,33 @@ export class Session {
 
     await this.driver.wait(
       async (driver) => {
-        const error = await driver.findElements(By.xpath('//p[normalize-space()="This table could not be loaded."]'));
+        try {
+          const error = await driver.findElements(
+            By.xpath('//p[normalize-space()="This table could not be loaded."]')
+          );
 
-        if (error.length) {
-          throw new AssertionError("The data table reported a load error.");
+          if (error.length) {
+            throw new AssertionError("The data table reported a load error.");
+          }
+
+          const busy = await driver.executeScript(
+            `return document.querySelector("table[aria-busy='true']") !== null ||
+                    document.querySelectorAll("table tbody tr.skeleton-row").length > 0;`
+          );
+
+          if (busy) {
+            return false;
+          }
+
+          const rows = await driver.findElements(By.css("table tbody tr:not(.skeleton-row)"));
+
+          return rows.length > 0;
+        } catch (err) {
+          if (/stale element reference|not attached/i.test(String(err?.message))) {
+            return false;
+          }
+          throw err;
         }
-
-        const rows = await driver.findElements(By.css("table tbody tr"));
-
-        return rows.length > 0 ? rows : undefined;
       },
       limit,
       "The data table never rendered rows"
@@ -955,28 +1028,36 @@ export class Session {
    */
   async rowTexts() {
     return this.driver.executeScript(
-      `return Array.from(document.querySelectorAll("table tbody tr")).map((row) => {
-         const cells = Array.from(row.querySelectorAll("td"));
-         const sources = cells.length ? cells : [row];
+      `const table = document.querySelector("table");
+       if (table && table.getAttribute("aria-busy") === "true") return [];
+       return Array.from(document.querySelectorAll("table tbody tr:not(.skeleton-row)")).map((row) => {
+          const cells = Array.from(row.querySelectorAll("td"));
+          const sources = cells.length ? cells : [row];
 
-         return sources.map((node) => (node.innerText || "").replace(/\\s+/g, " ").trim());
-       });`
+          return sources.map((node) => (node.innerText || "").replace(/\\s+/g, " ").trim());
+        });`
     );
   }
 
-  async rowCells(matchText, { column = null } = {}) {
-    const rows = await this.rowTexts();
+  async rowCells(matchText, { column = null } = {}, timeout = null) {
+    const limit = Date.now() + (timeout || config.timeouts.element);
 
-    for (const cells of rows) {
-      if (escape(cells.join(" ")).includes(matchText)) {
-        if (column === null) {
-          return cells;
+    while (Date.now() < limit) {
+      const rows = await this.rowTexts();
+
+      for (const cells of rows) {
+        if (escape(cells.join(" ")).includes(matchText)) {
+          if (column === null) {
+            return cells;
+          }
+
+          const index = await this.columnHeaderIndex(column);
+
+          return index === null ? null : (cells[index] ?? null);
         }
-
-        const index = await this.columnHeaderIndex(column);
-
-        return index === null ? null : (cells[index] ?? null);
       }
+
+      await this.driver.sleep(150);
     }
 
     return null;
@@ -985,20 +1066,20 @@ export class Session {
   async columnHeaderIndex(label) {
     const headers = await this.driver.executeScript(
       `return Array.from(document.querySelectorAll("table thead th"))
-         .map((th) => (th.innerText || "").replace(/\\s+/g, " ").trim());`
+         .map((th) => (th.innerText || "").replace(/^[⋮\\s]+/, "").replace(/\\s+/g, " ").trim());`
     );
 
     /*
      * Headers are uppercased by CSS and the rendered form is what is read, so
      * the comparison has to ignore case. A header also carries its sort
-     * indicator, hence the prefix match.
+     * indicator, hence the prefix match or substring match.
      */
     const wanted = escape(label).toLowerCase();
 
     for (const [index, header] of headers.entries()) {
       const text = header.toLowerCase();
 
-      if (text === wanted || text.startsWith(wanted)) {
+      if (text === wanted || text.startsWith(wanted) || text.includes(wanted)) {
         return index;
       }
     }
@@ -1006,10 +1087,20 @@ export class Session {
     return null;
   }
 
-  async rowExists(matchText) {
-    const rows = await this.rowTexts();
+  async rowExists(matchText, timeout = 3000) {
+    const limit = Date.now() + timeout;
 
-    return rows.some((cells) => escape(cells.join(" ")).includes(matchText));
+    while (Date.now() < limit) {
+      const rows = await this.rowTexts();
+
+      if (rows.some((cells) => escape(cells.join(" ")).includes(matchText))) {
+        return true;
+      }
+
+      await this.driver.sleep(150);
+    }
+
+    return false;
   }
 
   /**
@@ -1175,24 +1266,39 @@ export class Session {
   }
 
   /** Same as clickInRow but for the <li> lists the builder detail screens use. */
-  async clickInItem(matchText, buttonText) {
+  async clickInItem(matchText, buttonText, timeout = null) {
     await this.waitForApp();
+    const limit = Date.now() + (timeout || config.timeouts.element);
 
-    const button = await this.driver.wait(
-      until.elementLocated(
-        By.xpath(
-          `//li[contains(normalize-space(), "${matchText}")]//button[normalize-space()="${buttonText}"]`
-        )
-      ),
-      config.timeouts.element,
-      `No "${buttonText}" control in the list item "${matchText}"`
+    while (Date.now() < limit) {
+      try {
+        const button = await this.driver.wait(
+          until.elementLocated(
+            By.xpath(
+              `//li[contains(normalize-space(), "${matchText}")]//button[normalize-space()="${buttonText}"]`
+            )
+          ),
+          Math.min(3000, Math.max(1000, limit - Date.now())),
+          `No "${buttonText}" control in the list item "${matchText}"`
+        );
+
+        await this.driver.actions({ async: true }).move({ origin: button }).perform();
+        await button.click();
+        await this.step(`${buttonText} on item ${matchText}`);
+
+        return button;
+      } catch (error) {
+        if (!/stale element reference|not attached/i.test(String(error?.message))) {
+          throw error;
+        }
+      }
+
+      await this.driver.sleep(250);
+    }
+
+    throw new AssertionError(
+      `Timed out waiting to click "${buttonText}" on list item "${matchText}" due to element churn.`
     );
-
-    await this.driver.actions({ async: true }).move({ origin: button }).perform();
-    await button.click();
-    await this.step(`${buttonText} on item ${matchText}`);
-
-    return button;
   }
 
   async clickHeaderSort(label) {
@@ -1205,6 +1311,7 @@ export class Session {
 
     await header.click();
     await this.step(`sort by ${label}`);
+    await this.waitForRows();
   }
 
   async ariaSort(label) {
@@ -1224,6 +1331,18 @@ export class Session {
   // ------------------------------------------------------------------- auth
 
   async login(account) {
+    if (await this.isLoggedIn()) {
+      const shown = (await this.sidebarUserText()).toLowerCase();
+
+      if (shown.includes(account.email.toLowerCase())) {
+        await this.step("already signed in");
+
+        return;
+      }
+
+      await this.logout();
+    }
+
     await this.goto("/login");
 
     if ((await this.settleAuth()) === "in") {
@@ -1286,14 +1405,17 @@ export class Session {
 
   /** Signs out when a previous test left the browser authenticated. */
   async ensureSignedOut() {
-    await this.goto("/login");
-
-    if ((await this.settleAuth()) === "in") {
+    if (await this.isLoggedIn()) {
       await this.logout();
     }
 
     await this.goto("/login");
-    await this.settleAuth();
+
+    if ((await this.settleAuth()) === "in") {
+      await this.logout();
+      await this.goto("/login");
+      await this.settleAuth();
+    }
   }
 
   async isLoggedIn() {

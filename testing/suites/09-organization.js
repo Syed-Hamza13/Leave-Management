@@ -179,7 +179,7 @@ export default {
 
         await session.goto("/organization");
         await session.fill("Search entity types", campus.typeLabel);
-        await session.waitForRows();
+        await session.waitRow(campus.typeLabel);
 
         const link = await session.driver.findElement(
           By.xpath(`//table//a[normalize-space()="${campus.typeLabel}"]`)
@@ -239,7 +239,7 @@ export default {
 
         await session.goto("/organization");
         await session.fill("Search entity types", isolate.label("Department"));
-        await session.waitForRows();
+        await session.waitRow(isolate.label("Department"));
 
         const link = await session.driver.findElement(
           By.xpath(`//table//a[normalize-space()="${isolate.label("Department")}"]`)
@@ -304,7 +304,7 @@ export default {
 
         await session.goto("/organization");
         await session.fill("Search entity types", campus.typeLabel);
-        await session.waitForRows();
+        await session.waitRow(campus.typeLabel);
 
         // "New <type>" belongs to the type screen, not to the list of types.
         const typeLink = await session.driver.findElement(
@@ -411,7 +411,7 @@ export default {
 
         await session.goto("/organization");
         await session.fill("Search entity types", campus.typeLabel);
-        await session.waitForRows();
+        await session.waitRow(campus.typeLabel);
 
         await session.clickInRow(campus.typeLabel, "Archive");
         await session.openDialog("Archive entity type");

@@ -154,6 +154,7 @@ export default {
           );
 
           await session.goto("/admin/fields");
+          await session.waitForApp();
 
           assert.includesText(
             await session.text(By.css("main")),

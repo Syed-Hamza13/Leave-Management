@@ -163,11 +163,7 @@ function MappingEditor({ formId, tableId }) {
       return;
     }
 
-    toast.success("The mapping was saved with warnings.");
-
-    for (const warning of warnings.slice(0, 3)) {
-      toast.warning(warning);
-    }
+    toast.warning(`The mapping was saved with warnings: ${warnings.join(", ")}`);
   }
 
   async function confirmArchive() {

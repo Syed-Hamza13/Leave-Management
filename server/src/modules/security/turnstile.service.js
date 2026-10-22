@@ -21,6 +21,7 @@ const TEST_BYPASS_TOKENS = new Set([
   "cf-turnstile-test-token",
   "1x00000000000000000000AA",
   "XXXX.DUMMY.TOKEN.XXXX",
+  "dummy-e2e-token",
 ]);
 
 /**

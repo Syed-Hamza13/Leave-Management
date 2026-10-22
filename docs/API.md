@@ -271,6 +271,8 @@ A record accepts at most **200** values, revalidated against the live column def
 | `PATCH` / `DELETE` | `/configurations/:configurationId` | manage |
 | `GET` / `POST` | `/entities` | view / manage |
 | `GET` / `PATCH` / `DELETE` | `/entities/:entityId` | view / manage / manage (archive) |
+| `GET` / `POST` | `/entities/:entityId/members` | `ORGANIZATION_VIEW` / `ORGANIZATION_MANAGE` — list or add members (`{ userId, role }`) |
+| `PATCH` / `DELETE` | `/entities/:entityId/members/:userId` | `ORGANIZATION_MANAGE` — update role (`{ role }`) or remove membership |
 
 ### Authorization — `/api/v1/authorization`
 
@@ -290,13 +292,13 @@ A record accepts at most **200** values, revalidated against the live column def
 
 | Method | Path | Permission |
 |---|---|---|
-| `GET` | `/` | `USERS_VIEW` \| `USERS_MANAGE` — searchable by email/name, filterable by `status` and `role`, sortable |
-| `GET` | `/:userId` | view \| manage |
-| `POST` | `/` | `USERS_MANAGE` — `{ email, firstName, lastName?, password, roleKeys, status? }` |
-| `PATCH` | `/:userId` | `USERS_MANAGE` — profile and/or `status`; at least one key required |
+| `GET` | `/` | `USERS_VIEW` \| `USERS_MANAGE` — searchable by email/name, filterable by `status` and `role`, sortable; includes `profileValues` |
+| `GET` | `/:userId` | view \| manage — includes roles and dynamic `profileValues` |
+| `POST` | `/` | `USERS_MANAGE` — `{ email, firstName, lastName?, password, roleKeys, status?, profileValues? }` |
+| `PATCH` | `/:userId` | `USERS_MANAGE` — profile, `status`, and/or `profileValues`; at least one key required |
 | `PUT` | `/:userId/password` | `USERS_MANAGE` — sets a new password and revokes that account's sessions |
 
-The password hash is never returned. Setting a password or deactivating an account invalidates existing sessions.
+The password hash is never returned. Setting a password or deactivating an account invalidates existing sessions. Dynamic custom attributes are validated against active column definitions of the `users` table and stored in `user_profile_values`.
 
 ### Settings — `/api/v1/admin/settings`
 

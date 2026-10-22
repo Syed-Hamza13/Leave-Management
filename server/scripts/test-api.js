@@ -202,6 +202,7 @@ async function testInvalidCredentials() {
       body: JSON.stringify({
         email: TEST_EMAIL,
         password: "DefinitelyWrongPassword123!",
+        "cf-turnstile-response": "dummy-e2e-token",
       }),
     }
   );
@@ -268,6 +269,7 @@ async function testLogin() {
         email: TEST_EMAIL,
         password: TEST_PASSWORD,
         deviceId: DEVICE_ID,
+        "cf-turnstile-response": "dummy-e2e-token",
       }),
     }
   );

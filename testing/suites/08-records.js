@@ -31,9 +31,10 @@ export default {
       screen: "/records",
       fn: async ({ session, assert, fixture }) => {
         await session.goto("/records");
+        await session.waitForApp();
 
         assert.ok(
-          await session.exists(By.xpath(`//a[@href="/records/${fixture.tableId}"]`)),
+          await session.exists(By.xpath(`//a[@href="/records/${fixture.tableId}"]`), 10000),
           "the new managed table is linked from the index"
         );
         assert.ok(

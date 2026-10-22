@@ -218,6 +218,7 @@ export default {
 
         await link.click();
         await session.step("open the users system table");
+        await session.waitForMainText("System columns");
 
         const main = await session.text(By.css("main"));
 
@@ -324,6 +325,141 @@ export default {
           1,
           "only one column carries that key"
         );
+      },
+    },
+    {
+      name: "permanent column deletion removes column completely while archive marks it archived",
+      fn: async ({ adminApi, assert, isolate }) => {
+        const table = await adminApi.expectOk(
+          adminApi.post("/admin/tables", {
+            label: isolate.label("Deletion test table"),
+            key: isolate.key("del_test_table"),
+          }),
+          "create test table"
+        );
+
+        // 1. Create two custom columns
+        const col1 = await adminApi.expectOk(
+          adminApi.post(`/admin/tables/${table.id}/columns`, {
+            label: "Archivable Col",
+            key: isolate.key("col_archive"),
+            dataType: "text",
+          })
+        );
+        const col2 = await adminApi.expectOk(
+          adminApi.post(`/admin/tables/${table.id}/columns`, {
+            label: "Permanent Col",
+            key: isolate.key("col_permanent"),
+            dataType: "text",
+          })
+        );
+
+        // 2. Archive col1 (permanent: false / default)
+        const archiveResult = await adminApi.expectOk(
+          adminApi.del(`/admin/tables/${table.id}/columns/${col1.id}`)
+        );
+        assert.eq(archiveResult.status, "archived", "column is marked archived");
+
+        // Archived column still appears in list with status archived
+        const listAfterArchive = await adminApi.expectOk(
+          adminApi.get(`/admin/tables/${table.id}/columns?includeArchived=true`)
+        );
+        assert.ok(
+          listAfterArchive.some((c) => c.id === col1.id && c.status === "archived"),
+          "archived column is preserved in historical schema"
+        );
+
+        // 3. Permanently delete col2 (?permanent=true)
+        const deleteResult = await adminApi.expectOk(
+          adminApi.del(`/admin/tables/${table.id}/columns/${col2.id}?permanent=true`)
+        );
+        assert.eq(deleteResult.deleted, true, "column deletion returns deleted: true");
+        assert.eq(deleteResult.permanent, true, "column deletion is marked permanent");
+
+        // Permanently deleted column does NOT appear even with includeArchived=true
+        const listAfterDelete = await adminApi.expectOk(
+          adminApi.get(`/admin/tables/${table.id}/columns?includeArchived=true`)
+        );
+        assert.ok(
+          !listAfterDelete.some((c) => c.id === col2.id),
+          "permanently deleted column is completely removed from database"
+        );
+      },
+    },
+    {
+      name: "system columns reject deletion and updates with SYSTEM_COLUMN_LOCKED",
+      fn: async ({ adminApi, assert }) => {
+        const usersTable = await adminApi.expectOk(adminApi.get("/admin/tables/users"));
+        const systemCol = usersTable.columns.find((c) => c.isSystem && c.key === "email");
+        assert.ok(systemCol, "email is identified as a system column");
+
+        // Attempt archive/delete on system column
+        const deleteAttempt = await adminApi.del(
+          `/admin/tables/users/columns/${systemCol.id}?permanent=true`
+        );
+        assert.eq(deleteAttempt.status, 409, "deleting system column is rejected with 409 Conflict");
+        assert.eq(
+          deleteAttempt.body?.code,
+          "SYSTEM_COLUMN_LOCKED",
+          "correct error code returned for system column delete attempt"
+        );
+
+        // Attempt update on system column
+        const patchAttempt = await adminApi.patch(
+          `/admin/tables/users/columns/${systemCol.id}`,
+          { label: "Hacked Email" }
+        );
+        assert.eq(patchAttempt.status, 409, "updating system column is rejected with 409 Conflict");
+        assert.eq(
+          patchAttempt.body?.code,
+          "SYSTEM_COLUMN_LOCKED",
+          "correct error code returned for system column patch attempt"
+        );
+      },
+    },
+    {
+      name: "table columns can be reordered and mismatching IDs are rejected",
+      fn: async ({ adminApi, assert, isolate }) => {
+        const table = await adminApi.expectOk(
+          adminApi.post("/admin/tables", {
+            label: isolate.label("Reorder test table"),
+            key: isolate.key("reorder_test_table"),
+          })
+        );
+
+        const colA = await adminApi.expectOk(
+          adminApi.post(`/admin/tables/${table.id}/columns`, {
+            label: "Column Alpha",
+            key: isolate.key("col_alpha"),
+            dataType: "text",
+          })
+        );
+        const colB = await adminApi.expectOk(
+          adminApi.post(`/admin/tables/${table.id}/columns`, {
+            label: "Column Beta",
+            key: isolate.key("col_beta"),
+            dataType: "text",
+          })
+        );
+
+        // Reorder: put colB before colA
+        await adminApi.expectOk(
+          adminApi.put(`/admin/tables/${table.id}/columns/order`, {
+            columnIds: [colB.id, colA.id],
+          })
+        );
+
+        const columns = await adminApi.expectOk(adminApi.get(`/admin/tables/${table.id}/columns`));
+        const indexA = columns.findIndex((c) => c.id === colA.id);
+        const indexB = columns.findIndex((c) => c.id === colB.id);
+
+        assert.ok(indexB < indexA, "Column Beta is positioned before Column Alpha after reordering");
+
+        // Reorder with invalid/missing IDs is rejected
+        const badReorder = await adminApi.put(`/admin/tables/${table.id}/columns/order`, {
+          columnIds: [colA.id],
+        });
+        assert.eq(badReorder.status, 400, "incomplete column order is rejected with 400 Bad Request");
       },
     },
   ],

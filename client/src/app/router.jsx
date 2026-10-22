@@ -296,6 +296,11 @@ const router = createBrowserRouter([
                   permission: PERMISSIONS.ORGANIZATION_VIEW,
                   label: "Viewing the organization structure",
                   element: <EntityTypePage />,
+                  handle: {
+                    title: "Entity type",
+                    description:
+                      "The configurations that give this type a profile and sections, and the entities that exist under it.",
+                  },
                 }),
               },
 

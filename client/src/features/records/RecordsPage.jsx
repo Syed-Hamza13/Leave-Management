@@ -14,6 +14,7 @@ import Select from "../../components/ui/Select.jsx";
 import { useToast } from "../../components/ui/ToastContext.js";
 
 import useAsyncData from "../../hooks/useAsyncData.js";
+import useColumnPreferences from "../../hooks/useColumnPreferences.js";
 import useMutation from "../../hooks/useMutation.js";
 import { PERMISSIONS } from "../../lib/permissions.js";
 import { errorMessage } from "../../services/errors.js";
@@ -168,59 +169,74 @@ export default function RecordsPage() {
     [availableColumns]
   );
 
-  const [visibleColumnKeys, setVisibleColumnKeys] = useState(() => defaultVisibleKeys);
+  const {
+    orderedColumns,
+    visibleKeys: visibleColumnKeys,
+    setVisibleKeys: setVisibleColumnKeys,
+    reorderColumns,
+    resetPreferences,
+  } = useColumnPreferences({
+    storageKey: tableId ? `columns:records-table:${tableId}` : null,
+    columns: availableColumns,
+    defaultVisibleKeys,
+  });
 
-  useEffect(() => {
-    setVisibleColumnKeys((prev) => {
-      const allKeySet = new Set(availableColumns.map((c) => c.key));
-      const valid = prev.filter((k) => allKeySet.has(k));
-      return valid.length > 0 ? valid : availableColumns.map((c) => c.key);
-    });
-  }, [availableColumns]);
+  const columnDefinitionMap = useMemo(() => {
+    const map = new Map();
 
-  const tableColumns = useMemo(
-    () => [
-      ...browsable.map((column) => {
-        const type = getDataType(column.dataType);
-
-        return {
-          key: column.key,
-          header: column.label,
-          sortable: true,
-          hidden: !visibleColumnKeys.includes(column.key),
-          render: (row) => (
-            <span className="text-ink-soft">
-              {formatRecordValue(row.values?.[column.key], {
-                storage: type?.storage ?? "string",
-                options: optionsFor(column),
-              })}
-            </span>
-          ),
-        };
-      }),
-      {
-        key: "status",
-        header: "Status",
+    browsable.forEach((column) => {
+      const type = getDataType(column.dataType);
+      map.set(column.key, {
+        key: column.key,
+        header: column.label,
         sortable: true,
-        hidden: !visibleColumnKeys.includes("status"),
         render: (row) => (
-          <Badge tone={row.status === "active" ? "success" : "neutral"}>{row.status}</Badge>
-        ),
-      },
-      {
-        key: "createdAt",
-        header: "Created",
-        sortable: true,
-        hidden: !visibleColumnKeys.includes("createdAt"),
-        render: (row) => (
-          <span className="whitespace-nowrap text-xs text-ink-muted">
-            {row.createdAt ? String(row.createdAt).slice(0, 10) : "—"}
+          <span className="text-ink-soft">
+            {formatRecordValue(row.values?.[column.key], {
+              storage: type?.storage ?? "string",
+              options: optionsFor(column),
+            })}
           </span>
         ),
-      },
-    ],
-    [browsable, getDataType, optionsFor, visibleColumnKeys]
-  );
+      });
+    });
+
+    map.set("status", {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      render: (row) => (
+        <Badge tone={row.status === "active" ? "success" : "neutral"}>{row.status}</Badge>
+      ),
+    });
+
+    map.set("createdAt", {
+      key: "createdAt",
+      header: "Created",
+      sortable: true,
+      render: (row) => (
+        <span className="whitespace-nowrap text-xs text-ink-muted">
+          {row.createdAt ? String(row.createdAt).slice(0, 10) : "—"}
+        </span>
+      ),
+    });
+
+    return map;
+  }, [browsable, getDataType, optionsFor]);
+
+  const tableColumns = useMemo(() => {
+    return orderedColumns.map((col) => {
+      const def = columnDefinitionMap.get(col.key) || {
+        key: col.key,
+        header: col.label || col.key,
+        render: (row) => String(row[col.key] ?? "—"),
+      };
+      return {
+        ...def,
+        hidden: !visibleColumnKeys.includes(col.key),
+      };
+    });
+  }, [orderedColumns, columnDefinitionMap, visibleColumnKeys]);
 
   async function confirmArchive() {
     const target = archiveTarget;
@@ -307,9 +323,11 @@ export default function RecordsPage() {
 
         <div className="flex items-center gap-2">
           <ColumnVisibilityManager
-            columns={availableColumns}
+            columns={orderedColumns}
             visibleKeys={visibleColumnKeys}
             onChangeVisibleKeys={setVisibleColumnKeys}
+            onReorderColumns={reorderColumns}
+            onReset={resetPreferences}
             storageKey={`columns:records-table:${tableId}`}
             defaultVisibleKeys={defaultVisibleKeys}
           />
@@ -368,6 +386,7 @@ export default function RecordsPage() {
         loading={loading}
         error={error}
         onRetry={reload}
+        onReorderColumns={reorderColumns}
         sort={sort}
         onSortChange={(next) => {
           setSort(next);

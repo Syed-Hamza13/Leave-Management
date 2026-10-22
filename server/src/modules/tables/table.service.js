@@ -476,7 +476,7 @@ export async function updateColumnDefinition(tableId, columnId, patch, actor) {
     });
 
     if (didUpdate) {
-      await bumpSchemaVersion(connection, tableId);
+      await bumpSchemaVersion(connection, column.tableId);
 
       await recordAudit({
         connection,
@@ -484,7 +484,7 @@ export async function updateColumnDefinition(tableId, columnId, patch, actor) {
         action: patch.status === "archived" ? "table.column.archive" : "table.column.update",
         entityType: "column",
         entityId: columnId,
-        summary: { tableId, changedKeys: Object.keys(patch) },
+        summary: { tableId: column.tableId, changedKeys: Object.keys(patch) },
         ipAddress: actor?.ipAddress ?? null,
         userAgent: actor?.userAgent ?? null,
       });

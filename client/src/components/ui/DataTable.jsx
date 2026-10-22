@@ -64,7 +64,7 @@ export default function DataTable({
   return (
     <div className={`space-y-3 ${className}`}>
       <div className="overflow-x-auto rounded-card border border-line bg-surface">
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full border-collapse text-sm" aria-busy={loading ? "true" : undefined}>
           <caption className="sr-only">Data table</caption>
 
           <thead>
@@ -138,12 +138,19 @@ export default function DataTable({
                   >
                     <div className="inline-flex items-center gap-1.5">
                       {canReorder ? (
-                        <span
-                          className="opacity-0 group-hover:opacity-60 text-ink-muted hover:opacity-100"
+                        <svg
+                          className="w-3 h-3 opacity-0 group-hover:opacity-60 text-ink-muted hover:opacity-100 shrink-0"
                           aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
                         >
-                          ⋮
-                        </span>
+                          <circle cx="9" cy="5" r="2" />
+                          <circle cx="9" cy="12" r="2" />
+                          <circle cx="9" cy="19" r="2" />
+                          <circle cx="15" cy="5" r="2" />
+                          <circle cx="15" cy="12" r="2" />
+                          <circle cx="15" cy="19" r="2" />
+                        </svg>
                       ) : null}
 
                       {column.sortable && onSortChange ? (
@@ -186,7 +193,7 @@ export default function DataTable({
           <tbody>
             {loading ? (
               Array.from({ length: 5 }).map((_, rowIndex) => (
-                <tr key={`skeleton-${rowIndex}`} className="border-b border-line last:border-0">
+                <tr key={`skeleton-${rowIndex}`} className="border-b border-line last:border-0 skeleton-row">
                   {Array.from({ length: span }).map((__, cellIndex) => (
                     <td key={cellIndex} className="px-4 py-3">
                       <Skeleton className="h-4 w-full max-w-40" />

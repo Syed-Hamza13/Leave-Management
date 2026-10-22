@@ -347,6 +347,7 @@ export default {
           );
 
           await session.goto("/admin/audit");
+          await session.waitForApp();
 
           const main = await session.text(By.css("main"));
 

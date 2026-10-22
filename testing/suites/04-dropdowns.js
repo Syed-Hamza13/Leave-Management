@@ -37,6 +37,8 @@ async function openOptionSet(session, label) {
 
   await link.click();
   await session.step(`open option set ${label}`);
+  await session.waitForApp();
+  await session.waitForMainText(label);
 }
 
 export default {

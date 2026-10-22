@@ -4,6 +4,7 @@ import Button from "../../components/ui/Button.jsx";
 import FieldRenderer from "../../components/ui/FieldRenderer.jsx";
 import { LoadingState } from "../../components/ui/LoadingState.jsx";
 import Modal from "../../components/ui/Modal.jsx";
+import TextInput from "../../components/ui/TextInput.jsx";
 import { useToast } from "../../components/ui/ToastContext.js";
 
 import useAsyncData from "../../hooks/useAsyncData.js";
@@ -30,39 +31,33 @@ export default function EntityDialog({
   const isEdit = Boolean(entity);
   const toast = useToast();
 
+  const [name, setName] = useState(entity?.name ?? "");
   const [draftValues, setDraftValues] = useState(null);
   const [errors, setErrors] = useState({});
 
   const { run, pending, error } = useMutation();
 
+  const formId = profileConfiguration?.form?.id ?? null;
+  const tableId = profileConfiguration?.table?.id ?? null;
+
   const { data: renderData, loading: renderLoading } = useAsyncData(
-    `entity-profile-form:${profileConfiguration?.form.id ?? "none"}`,
-    () => (profileConfiguration ? formsApi.render(profileConfiguration.form.id) : Promise.resolve(null))
+    formId ? `entity-profile-form:${formId}` : null,
+    () => (formId ? formsApi.render(formId) : Promise.resolve(null))
   );
 
   const { data: pairData, loading: pairLoading } = useAsyncData(
-    `entity-profile-pair:${profileConfiguration?.form.id ?? "none"}:${profileConfiguration?.table.id ?? "none"}`,
-    () =>
-      profileConfiguration
-        ? mappingsApi.forFormAndTable(profileConfiguration.form.id, profileConfiguration.table.id)
-        : Promise.resolve(null)
+    formId && tableId ? `entity-profile-pair:${formId}:${tableId}` : null,
+    () => (formId && tableId ? mappingsApi.forFormAndTable(formId, tableId) : Promise.resolve(null))
   );
 
   const fields = useMemo(() => renderData?.data?.fields ?? [], [renderData]);
   const entries = pairData?.data?.entries ?? null;
   const formLoading = (renderLoading || pairLoading) && Boolean(profileConfiguration);
 
-  const initialValues = useMemo(() => {
-    const raw = initialValuesFromFields(fields, entries, entity?.profile?.values ?? null);
-    // If editing and first string field is empty, fallback to entity.name
-    if (entity?.name && fields.length > 0) {
-      const firstField = fields[0];
-      if (firstField && !raw[firstField.key]) {
-        raw[firstField.key] = entity.name;
-      }
-    }
-    return raw;
-  }, [fields, entries, entity]);
+  const initialValues = useMemo(
+    () => initialValuesFromFields(fields, entries, entity?.profile?.values ?? null),
+    [fields, entries, entity]
+  );
 
   const values = draftValues ?? initialValues;
 
@@ -76,18 +71,15 @@ export default function EntityDialog({
     event.preventDefault();
     setErrors({});
 
+    const entityName = name.trim() || entity?.name || "";
+
     const payload = {
+      name: entityName,
       parentEntityId: null,
-      values: { ...values },
     };
 
-    const firstStr = Object.values(values).find(
-      (v) => typeof v === "string" && v.trim().length > 0
-    );
-    if (firstStr) {
-      payload.name = String(firstStr).trim();
-    } else if (entity?.name) {
-      payload.name = entity.name;
+    if (fields.length > 0 || !isEdit) {
+      payload.values = { ...values };
     }
 
     const outcome = await run(() =>
@@ -117,7 +109,7 @@ export default function EntityDialog({
     <Modal
       open
       onClose={pending ? () => {} : onClose}
-      title={isEdit ? `Edit ${entity.name}` : `New ${entityType?.label || "Entry"}`}
+      title={isEdit ? `Edit "${entity.name}"` : `New ${entityType?.label?.toLowerCase() || "entry"}`}
       description={
         profileConfiguration
           ? `Enter details through "${profileConfiguration.form.label}".`
@@ -151,12 +143,25 @@ export default function EntityDialog({
           </p>
         ) : null}
 
+        <TextInput
+          id="entity-name"
+          label={`${entityType?.label || "Entity"} Name`}
+          required
+          autoFocus
+          data-autofocus
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          error={errors.name}
+          maxLength={190}
+          placeholder={`Enter ${entityType?.label?.toLowerCase() || "entity"} name…`}
+        />
+
         {formLoading ? (
           <div className="flex items-center justify-center py-10">
             <LoadingState label="Loading form fields…" />
           </div>
         ) : fields.length > 0 ? (
-          <div className="space-y-4">
+          <div className="space-y-4 border-t border-line pt-4">
             {fields.map((field) => {
               const options = optionsFor(field);
 
@@ -175,7 +180,7 @@ export default function EntityDialog({
                   field={rendered}
                   value={values[field.key] ?? null}
                   onChange={setField}
-                  error={errors[field.key] ?? (field === fields[0] ? errors.name : null)}
+                  error={errors[field.key] ?? null}
                   disabled={pending}
                   options={field.dataType === "dropdown" ? options : null}
                   recordOptions={
@@ -187,11 +192,7 @@ export default function EntityDialog({
               );
             })}
           </div>
-        ) : (
-          <p className="py-6 text-center text-sm text-ink-muted">
-            No fields found in this form. Configure fields in Form Builder first.
-          </p>
-        )}
+        ) : null}
       </form>
     </Modal>
   );
