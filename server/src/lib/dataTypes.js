@@ -71,6 +71,12 @@ const emailConfigSchema = z.object({
   placeholder: z.string().max(120).optional(),
 });
 
+const phoneConfigSchema = z.object({
+  minLength: z.number().int().min(1).max(20).optional(),
+  maxLength: z.number().int().min(1).max(20).optional(),
+  placeholder: z.string().max(120).optional(),
+});
+
 const dropdownConfigSchema = z.object({
   dropdownId: z.number().int().positive(),
 });
@@ -193,6 +199,33 @@ function coerceEmail(value, config, label) {
   }
 
   return result;
+}
+
+function coercePhone(value, config, label) {
+  const text = typeof value === "number" ? String(value) : value;
+
+  if (typeof text !== "string") {
+    return typeError(`${label} must be a valid phone number.`);
+  }
+
+  const trimmed = text.trim();
+
+  if (!/^\d+$/.test(trimmed)) {
+    return typeError(`${label} must contain only numbers.`);
+  }
+
+  const min = config?.minLength ?? 7;
+  const max = config?.maxLength ?? 15;
+
+  if (trimmed.length < min) {
+    return typeError(`${label} must be at least ${min} digits.`);
+  }
+
+  if (trimmed.length > max) {
+    return typeError(`${label} must be at most ${max} digits.`);
+  }
+
+  return { ok: true, value: trimmed };
 }
 
 function coerceBoolean(value, config, label) {
@@ -351,6 +384,21 @@ export const DATA_TYPES = [
     ],
     coerce: coerceEmail,
     defaultConfig: { maxLength: 255 },
+  },
+  {
+    key: "phone",
+    label: "Mobile number",
+    description: "Phone or mobile number containing only numeric digits.",
+    storage: STORAGE.STRING,
+    input: "tel",
+    configSchema: phoneConfigSchema,
+    configFields: [
+      { key: "minLength", label: "Minimum digits", type: "number", min: 1, max: 20 },
+      { key: "maxLength", label: "Maximum digits", type: "number", min: 1, max: 20 },
+      { key: "placeholder", label: "Placeholder", type: "text" },
+    ],
+    coerce: coercePhone,
+    defaultConfig: { minLength: 7, maxLength: 15, placeholder: "e.g. 9876543210" },
   },
   {
     key: "dropdown",

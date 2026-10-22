@@ -19,6 +19,7 @@ import {
   listColumns,
   addColumn,
   updateColumnDefinition,
+  deleteColumn,
   archiveColumn,
   reorderTableColumns,
   getTableUsage,
@@ -150,8 +151,9 @@ export async function updateColumnHandler(req, res, next) {
 export async function archiveColumnHandler(req, res, next) {
   try {
     const { tableId, columnId } = columnIdParamSchema.parse(req.params);
+    const permanent = req.query.permanent === "true" || req.query.permanent === true;
 
-    return ok(res, await archiveColumn(tableId, columnId, actorFrom(req)));
+    return ok(res, await deleteColumn(tableId, columnId, { permanent }, actorFrom(req)));
   } catch (error) {
     return next(error);
   }

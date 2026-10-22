@@ -166,6 +166,24 @@ export default function FieldRenderer({
         />
       );
 
+    case "phone":
+      return (
+        <TextInput
+          {...shared}
+          type="tel"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={value ?? ""}
+          onChange={(event) => {
+            const numbersOnly = event.target.value.replace(/\D/g, "");
+            emit(numbersOnly);
+          }}
+          placeholder={config.placeholder || "e.g. 9876543210"}
+          minLength={config.minLength}
+          maxLength={config.maxLength || 15}
+        />
+      );
+
     case "textarea":
       return (
         <Textarea

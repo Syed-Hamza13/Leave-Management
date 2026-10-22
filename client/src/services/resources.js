@@ -100,8 +100,11 @@ export const tables = {
     put(`/admin/tables/${tableId}/columns/order`, { columnIds }),
   updateColumn: (tableId, columnId, payload) =>
     patch(`/admin/tables/${tableId}/columns/${columnId}`, payload),
-  deleteColumn: (tableId, columnId) =>
-    api(`/admin/tables/${tableId}/columns/${columnId}`, { method: "DELETE" }),
+  deleteColumn: (tableId, columnId, { permanent = false } = {}) =>
+    api(
+      `/admin/tables/${tableId}/columns/${columnId}${permanent ? "?permanent=true" : ""}`,
+      { method: "DELETE" }
+    ),
 };
 
 export const mappings = {

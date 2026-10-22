@@ -25,6 +25,7 @@ const TYPE_KEYS = [
   "number",
   "date",
   "email",
+  "phone",
   "dropdown",
   "checkbox",
   "toggle",

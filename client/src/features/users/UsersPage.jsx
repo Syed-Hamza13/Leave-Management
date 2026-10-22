@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import Badge from "../../components/ui/Badge.jsx";
 import Button from "../../components/ui/Button.jsx";
+import ColumnVisibilityManager from "../../components/ui/ColumnVisibilityManager.jsx";
 import DataTable from "../../components/ui/DataTable.jsx";
 import EmptyState from "../../components/ui/EmptyState.jsx";
 import SearchInput from "../../components/ui/SearchInput.jsx";
@@ -9,6 +10,7 @@ import Select from "../../components/ui/Select.jsx";
 import { useToast } from "../../components/ui/ToastContext.js";
 
 import useAsyncData from "../../hooks/useAsyncData.js";
+import useColumnPreferences from "../../hooks/useColumnPreferences.js";
 import { PERMISSIONS } from "../../lib/permissions.js";
 import {
   authorization as authorizationApi,
@@ -23,6 +25,7 @@ import { formatRecordValue } from "../records/recordValues.js";
 
 import ResetPasswordDialog from "./ResetPasswordDialog.jsx";
 import UserDialog from "./UserDialog.jsx";
+import UserFieldsDialog from "./UserFieldsDialog.jsx";
 
 const PAGE_SIZE = 25;
 
@@ -43,6 +46,7 @@ export default function UsersPage() {
   const [page, setPage] = useState(1);
 
   const [dialog, setDialog] = useState(null);
+  const [fieldsDialogOpen, setFieldsDialogOpen] = useState(false);
 
   const canManage = can(PERMISSIONS.USERS_MANAGE);
   const { getDataType } = useMetadata();
@@ -50,19 +54,52 @@ export default function UsersPage() {
   const { data: rolesData } = useAsyncData("authorization-roles", () => authorizationApi.roles());
   const roles = useMemo(() => rolesData?.data ?? [], [rolesData]);
 
-  const { data: tableData } = useAsyncData("table-users-meta", () =>
+  const { data: tableData, reload: reloadTableMeta } = useAsyncData("table-users-meta", () =>
     tablesApi.get("users")
   );
 
-  const customColumns = useMemo(
+  const allCustomColumns = useMemo(
     () =>
       (tableData?.data?.columns ?? []).filter(
-        (col) => !col.isSystem && col.status === "active" && col.isVisible
+        (col) => !col.isSystem && col.status === "active"
       ),
     [tableData]
   );
 
-  const { optionsFor } = useEntryOptions(customColumns);
+  const availableColumns = useMemo(
+    () => [
+      { key: "email", label: "Account", alwaysVisible: true },
+      { key: "roles", label: "Roles" },
+      { key: "status", label: "Status" },
+      ...allCustomColumns.map((col) => ({
+        key: `custom_${col.key}`,
+        label: col.label,
+      })),
+      { key: "lastLoginAt", label: "Last sign-in" },
+      { key: "createdAt", label: "Created" },
+    ],
+    [allCustomColumns]
+  );
+
+  const defaultVisibleKeys = useMemo(
+    () => availableColumns.map((col) => col.key),
+    [availableColumns]
+  );
+
+  const {
+    orderedColumns,
+    visibleKeys: visibleColumnKeys,
+    setVisibleKeys: setVisibleColumnKeys,
+    reorderColumns,
+    resetPreferences,
+    removeColumnFromPreferences,
+  } = useColumnPreferences({
+    storageKey: "columns:users-table",
+    columns: availableColumns,
+    defaultVisibleKeys,
+  });
+
+  const { optionsFor } = useEntryOptions(allCustomColumns);
 
   const { data, loading, error, reload } = useAsyncData(
     `users:${page}:${search}:${status}:${role}:${sort?.key ?? "none"}:${sort?.direction ?? "none"}`,
@@ -80,46 +117,52 @@ export default function UsersPage() {
   const rows = data?.data ?? [];
   const meta = data?.meta ?? null;
 
-  const columns = useMemo(
-    () => [
-      {
-        key: "email",
-        header: "Account",
-        sortable: true,
-        render: (row) => (
-          <div className="min-w-0">
-            <p className="truncate font-medium text-ink">
-              {[row.firstName, row.lastName].filter(Boolean).join(" ")}
-            </p>
-            <p className="truncate text-xs text-ink-muted">{row.email}</p>
+  const columnDefinitionMap = useMemo(() => {
+    const map = new Map();
+
+    map.set("email", {
+      key: "email",
+      header: "Account",
+      sortable: true,
+      alwaysVisible: true,
+      render: (row) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-ink">
+            {[row.firstName, row.lastName].filter(Boolean).join(" ")}
+          </p>
+          <p className="truncate text-xs text-ink-muted">{row.email}</p>
+        </div>
+      ),
+    });
+
+    map.set("roles", {
+      key: "roles",
+      header: "Roles",
+      render: (row) =>
+        row.roles?.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {row.roles.map((entry) => (
+              <Badge key={entry.key} tone={entry.key === "super_admin" ? "brand" : "neutral"}>
+                {entry.label}
+              </Badge>
+            ))}
           </div>
+        ) : (
+          <span className="text-xs text-ink-muted">No role</span>
         ),
-      },
-      {
-        key: "roles",
-        header: "Roles",
-        render: (row) =>
-          row.roles?.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {row.roles.map((entry) => (
-                <Badge key={entry.key} tone={entry.key === "super_admin" ? "brand" : "neutral"}>
-                  {entry.label}
-                </Badge>
-              ))}
-            </div>
-          ) : (
-            <span className="text-xs text-ink-muted">No role</span>
-          ),
-      },
-      {
-        key: "status",
-        header: "Status",
-        sortable: true,
-        render: (row) => (
-          <Badge tone={row.status === "active" ? "success" : "warning"}>{row.status}</Badge>
-        ),
-      },
-      ...customColumns.map((col) => ({
+    });
+
+    map.set("status", {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      render: (row) => (
+        <Badge tone={row.status === "active" ? "success" : "warning"}>{row.status}</Badge>
+      ),
+    });
+
+    for (const col of allCustomColumns) {
+      map.set(`custom_${col.key}`, {
         key: `custom_${col.key}`,
         header: col.label,
         render: (row) => {
@@ -133,26 +176,43 @@ export default function UsersPage() {
             </span>
           );
         },
-      })),
-      {
-        key: "lastLoginAt",
-        header: "Last sign-in",
-        sortable: true,
-        render: (row) => (
-          <span className="text-ink-soft">
-            {row.lastLoginAt ? formatDate(row.lastLoginAt) : "Never"}
-          </span>
-        ),
-      },
-      {
-        key: "createdAt",
-        header: "Created",
-        sortable: true,
-        render: (row) => <span className="text-ink-soft">{formatDate(row.createdAt)}</span>,
-      },
-    ],
-    [customColumns, getDataType, optionsFor]
-  );
+      });
+    }
+
+    map.set("lastLoginAt", {
+      key: "lastLoginAt",
+      header: "Last sign-in",
+      sortable: true,
+      render: (row) => (
+        <span className="text-ink-soft">
+          {row.lastLoginAt ? formatDate(row.lastLoginAt) : "Never"}
+        </span>
+      ),
+    });
+
+    map.set("createdAt", {
+      key: "createdAt",
+      header: "Created",
+      sortable: true,
+      render: (row) => <span className="text-ink-soft">{formatDate(row.createdAt)}</span>,
+    });
+
+    return map;
+  }, [allCustomColumns, getDataType, optionsFor]);
+
+  const columns = useMemo(() => {
+    return orderedColumns.map((col) => {
+      const def = columnDefinitionMap.get(col.key) || {
+        key: col.key,
+        header: col.label || col.key,
+        render: (row) => String(row[col.key] ?? "—"),
+      };
+      return {
+        ...def,
+        hidden: !visibleColumnKeys.includes(col.key),
+      };
+    });
+  }, [orderedColumns, columnDefinitionMap, visibleColumnKeys]);
 
   return (
     <div className="space-y-4">
@@ -199,7 +259,31 @@ export default function UsersPage() {
           />
         </div>
 
-        {canManage ? <Button onClick={() => setDialog({ mode: "create" })}>New account</Button> : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <ColumnVisibilityManager
+            columns={orderedColumns}
+            visibleKeys={visibleColumnKeys}
+            onChangeVisibleKeys={setVisibleColumnKeys}
+            onReorderColumns={reorderColumns}
+            onReset={resetPreferences}
+            storageKey="columns:users-table"
+            defaultVisibleKeys={defaultVisibleKeys}
+          />
+
+          {canManage ? (
+            <Button
+              variant="secondary"
+              onClick={() => setFieldsDialogOpen(true)}
+              title="Customize placement and add/edit user profile fields"
+            >
+              Customize fields
+            </Button>
+          ) : null}
+
+          {canManage ? (
+            <Button onClick={() => setDialog({ mode: "create" })}>New account</Button>
+          ) : null}
+        </div>
       </div>
 
       <DataTable
@@ -213,6 +297,7 @@ export default function UsersPage() {
           setSort(next);
           setPage(1);
         }}
+        onReorderColumns={reorderColumns}
         pagination={meta}
         onPageChange={setPage}
         empty={
@@ -253,6 +338,21 @@ export default function UsersPage() {
         }
       />
 
+      {fieldsDialogOpen ? (
+        <UserFieldsDialog
+          table={tableData?.data}
+          columns={tableData?.data?.columns ?? []}
+          onClose={() => setFieldsDialogOpen(false)}
+          onColumnsChanged={(deletedKey) => {
+            if (deletedKey) {
+              removeColumnFromPreferences(`custom_${deletedKey}`);
+            }
+            reloadTableMeta();
+            reload();
+          }}
+        />
+      ) : null}
+
       {dialog?.mode === "password" ? (
         <ResetPasswordDialog
           user={dialog.user}
@@ -268,7 +368,7 @@ export default function UsersPage() {
         <UserDialog
           user={dialog.user ?? null}
           roles={roles}
-          customColumns={customColumns}
+          customColumns={allCustomColumns}
           onClose={() => setDialog(null)}
           onSaved={(saved) => {
             setDialog(null);
@@ -284,3 +384,4 @@ export default function UsersPage() {
     </div>
   );
 }
+

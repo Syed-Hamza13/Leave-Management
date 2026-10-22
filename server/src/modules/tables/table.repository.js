@@ -403,6 +403,18 @@ export async function updateColumn(connection, columnId, patch) {
   return true;
 }
 
+export async function deleteColumnPermanently(connection, columnId) {
+  const [result] = await connection.execute(
+    `
+      DELETE FROM column_definitions
+      WHERE id = ? AND is_system = 0
+    `,
+    [columnId]
+  );
+
+  return result.affectedRows > 0;
+}
+
 export async function applyColumnOrder(connection, tableId, orderedIds) {
   for (let index = 0; index < orderedIds.length; index += 1) {
     await connection.execute(

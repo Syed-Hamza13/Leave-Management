@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import Badge from "../../components/ui/Badge.jsx";
 import Button from "../../components/ui/Button.jsx";
+import ColumnVisibilityManager from "../../components/ui/ColumnVisibilityManager.jsx";
 import ConfirmDialog from "../../components/ui/ConfirmDialog.jsx";
 import DataTable from "../../components/ui/DataTable.jsx";
 import EmptyState from "../../components/ui/EmptyState.jsx";
@@ -23,6 +24,15 @@ import EntityTypeDialog from "./EntityTypeDialog.jsx";
 
 const PAGE_SIZE = 25;
 
+const AVAILABLE_COLUMNS = [
+  { key: "label", label: "Entity", alwaysVisible: true },
+  { key: "description", label: "Description" },
+  { key: "entityCount", label: "Entries" },
+  { key: "status", label: "Status" },
+];
+
+const DEFAULT_VISIBLE_KEYS = AVAILABLE_COLUMNS.map((c) => c.key);
+
 export default function OrganizationPage() {
   const { can } = usePermissions();
   const { refresh: refreshMetadata } = useMetadata();
@@ -31,6 +41,7 @@ export default function OrganizationPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("active");
   const [page, setPage] = useState(1);
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState(() => DEFAULT_VISIBLE_KEYS);
 
   const [dialog, setDialog] = useState(null);
   const [archiveTarget, setArchiveTarget] = useState(null);
@@ -52,6 +63,7 @@ export default function OrganizationPage() {
       {
         key: "label",
         header: "Entity",
+        hidden: !visibleColumnKeys.includes("label"),
         render: (row) => (
           <div className="min-w-0">
             <Link
@@ -67,6 +79,7 @@ export default function OrganizationPage() {
       {
         key: "description",
         header: "Description",
+        hidden: !visibleColumnKeys.includes("description"),
         render: (row) => (
           <span className="truncate max-w-xs block text-sm text-ink-soft">
             {row.description || "—"}
@@ -77,17 +90,19 @@ export default function OrganizationPage() {
         key: "entityCount",
         header: "Entries",
         align: "right",
+        hidden: !visibleColumnKeys.includes("entityCount"),
         render: (row) => <span className="font-medium text-ink-soft">{row.entityCount}</span>,
       },
       {
         key: "status",
         header: "Status",
+        hidden: !visibleColumnKeys.includes("status"),
         render: (row) => (
           <Badge tone={row.status === "active" ? "success" : "neutral"}>{row.status}</Badge>
         ),
       },
     ],
-    []
+    [visibleColumnKeys]
   );
 
   async function confirmArchive() {
@@ -138,9 +153,19 @@ export default function OrganizationPage() {
           />
         </div>
 
-        {canManage ? (
-          <Button onClick={() => setDialog({ mode: "create" })}>+ New entity</Button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <ColumnVisibilityManager
+            columns={AVAILABLE_COLUMNS}
+            visibleKeys={visibleColumnKeys}
+            onChangeVisibleKeys={setVisibleColumnKeys}
+            storageKey="columns:organization-types"
+            defaultVisibleKeys={DEFAULT_VISIBLE_KEYS}
+          />
+
+          {canManage ? (
+            <Button onClick={() => setDialog({ mode: "create" })}>+ New entity</Button>
+          ) : null}
+        </div>
       </div>
 
       <DataTable

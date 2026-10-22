@@ -23,6 +23,7 @@ import {
   nextColumnSortOrder,
   insertColumn,
   updateColumn,
+  deleteColumnPermanently,
   applyColumnOrder,
   countMappingsForTable,
   countRecordsForTable,
@@ -493,8 +494,31 @@ export async function updateColumnDefinition(tableId, columnId, patch, actor) {
   return findColumnById(columnId);
 }
 
-export async function archiveColumn(tableId, columnId, actor) {
+export async function deleteColumn(tableId, columnId, { permanent = false } = {}, actor) {
   const column = await assertColumnEditable(tableId, columnId);
+
+  if (permanent) {
+    const table = await getTable(tableId, { includeColumns: false });
+    const resolvedTableId = table.id;
+
+    await withTransaction(async (connection) => {
+      await deleteColumnPermanently(connection, columnId);
+      await bumpSchemaVersion(connection, resolvedTableId);
+
+      await recordAudit({
+        connection,
+        actorUserId: actor?.userId ?? null,
+        action: "table.column.delete",
+        entityType: "column",
+        entityId: columnId,
+        summary: { tableId: resolvedTableId, key: column.key, permanent: true },
+        ipAddress: actor?.ipAddress ?? null,
+        userAgent: actor?.userAgent ?? null,
+      });
+    });
+
+    return { id: columnId, deleted: true, permanent: true };
+  }
 
   if (column.status === "archived") {
     return column;
@@ -502,6 +526,9 @@ export async function archiveColumn(tableId, columnId, actor) {
 
   return updateColumnDefinition(tableId, columnId, { status: "archived" }, actor);
 }
+
+export const archiveColumn = (tableId, columnId, actor) =>
+  deleteColumn(tableId, columnId, { permanent: false }, actor);
 
 export async function reorderTableColumns(tableId, columnIds, actor) {
   const table = await getTable(tableId, { includeColumns: false });

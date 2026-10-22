@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import Badge from "../../components/ui/Badge.jsx";
 import Button from "../../components/ui/Button.jsx";
+import ColumnVisibilityManager from "../../components/ui/ColumnVisibilityManager.jsx";
 import ConfirmDialog from "../../components/ui/ConfirmDialog.jsx";
 import DataTable from "../../components/ui/DataTable.jsx";
 import EmptyState from "../../components/ui/EmptyState.jsx";
@@ -113,6 +114,47 @@ export default function EntityTypePage() {
 
   const { run: runDelete, pending: deleting } = useMutation();
 
+  const availableColumns = useMemo(() => {
+    const list = [];
+    if (profileColumns.length > 0) {
+      profileColumns.forEach((col, index) => {
+        list.push({
+          key: `col_${col.key}`,
+          label: col.label,
+          alwaysVisible: index === 0,
+        });
+      });
+    } else {
+      list.push({
+        key: "name",
+        label: `${entityType?.label || "Entity"} Name`,
+        alwaysVisible: true,
+      });
+    }
+
+    list.push({
+      key: "status",
+      label: "Status",
+    });
+
+    return list;
+  }, [profileColumns, entityType]);
+
+  const defaultVisibleKeys = useMemo(
+    () => availableColumns.map((c) => c.key),
+    [availableColumns]
+  );
+
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState(() => defaultVisibleKeys);
+
+  useEffect(() => {
+    setVisibleColumnKeys((prev) => {
+      const allKeySet = new Set(availableColumns.map((c) => c.key));
+      const valid = prev.filter((k) => allKeySet.has(k));
+      return valid.length > 0 ? valid : availableColumns.map((c) => c.key);
+    });
+  }, [availableColumns]);
+
   const columns = useMemo(() => {
     const list = [];
 
@@ -123,6 +165,7 @@ export default function EntityTypePage() {
         list.push({
           key: `col_${col.key}`,
           header: col.label,
+          hidden: !visibleColumnKeys.includes(`col_${col.key}`),
           render: (row) => {
             const rawVal = row.profile?.values?.[col.key] ?? (index === 0 ? row.name : null);
             const formatted = formatRecordValue(rawVal, {
@@ -143,6 +186,7 @@ export default function EntityTypePage() {
       list.push({
         key: "name",
         header: `${entityType?.label || "Entity"} Name`,
+        hidden: !visibleColumnKeys.includes("name"),
         render: (row) => <span className="font-semibold text-ink">{row.name}</span>,
       });
     }
@@ -150,13 +194,14 @@ export default function EntityTypePage() {
     list.push({
       key: "status",
       header: "Status",
+      hidden: !visibleColumnKeys.includes("status"),
       render: (row) => (
         <Badge tone={row.status === "active" ? "success" : "neutral"}>{row.status}</Badge>
       ),
     });
 
     return list;
-  }, [profileColumns, optionsFor, getDataType, entityType]);
+  }, [profileColumns, optionsFor, getDataType, entityType, visibleColumnKeys]);
 
   async function confirmEntityArchive() {
     const target = entityArchiveTarget;
@@ -307,6 +352,16 @@ export default function EntityTypePage() {
                   { value: "active", label: "Active" },
                   { value: "archived", label: "Archived" },
                 ]}
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <ColumnVisibilityManager
+                columns={availableColumns}
+                visibleKeys={visibleColumnKeys}
+                onChangeVisibleKeys={setVisibleColumnKeys}
+                storageKey={`columns:entity-type:${entityTypeId}`}
+                defaultVisibleKeys={defaultVisibleKeys}
               />
             </div>
           </div>

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import Button from "./Button.jsx";
 import EmptyState from "./EmptyState.jsx";
 import Pagination from "./Pagination.jsx";
@@ -39,11 +40,15 @@ export default function DataTable({
   empty,
   sort = null,
   onSortChange,
+  onReorderColumns = null,
   actions,
   pagination = null,
   onPageChange,
   className = "",
 }) {
+  const [draggedColKey, setDraggedColKey] = useState(null);
+  const [dragOverColKey, setDragOverColKey] = useState(null);
+
   const visible = columns.filter((column) => column.hidden !== true);
   const span = visible.length + (actions ? 1 : 0);
   const keyOf =
@@ -67,11 +72,55 @@ export default function DataTable({
               {visible.map((column) => {
                 const isSorted = sort?.key === column.key;
                 const align = ALIGN[column.align] ?? ALIGN.left;
+                const canReorder = Boolean(onReorderColumns && !column.alwaysVisible && !column.isFixed);
+                const isDragging = draggedColKey === column.key;
+                const isOver = dragOverColKey === column.key && draggedColKey !== column.key;
 
                 return (
                   <th
                     key={column.key}
                     scope="col"
+                    draggable={canReorder}
+                    onDragStart={
+                      canReorder
+                        ? (e) => {
+                            setDraggedColKey(column.key);
+                            e.dataTransfer.effectAllowed = "move";
+                            e.dataTransfer.setData("text/plain", column.key);
+                          }
+                        : undefined
+                    }
+                    onDragOver={
+                      canReorder
+                        ? (e) => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = "move";
+                            if (dragOverColKey !== column.key) {
+                              setDragOverColKey(column.key);
+                            }
+                          }
+                        : undefined
+                    }
+                    onDrop={
+                      canReorder
+                        ? (e) => {
+                            e.preventDefault();
+                            if (draggedColKey && draggedColKey !== column.key) {
+                              onReorderColumns(draggedColKey, column.key);
+                            }
+                            setDraggedColKey(null);
+                            setDragOverColKey(null);
+                          }
+                        : undefined
+                    }
+                    onDragEnd={
+                      canReorder
+                        ? () => {
+                            setDraggedColKey(null);
+                            setDragOverColKey(null);
+                          }
+                        : undefined
+                    }
                     aria-sort={
                       isSorted
                         ? sort.direction === "asc"
@@ -80,29 +129,45 @@ export default function DataTable({
                         : "none"
                     }
                     style={column.width ? { width: column.width } : undefined}
-                    className={`whitespace-nowrap px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-soft ${align}`}
+                    className={`whitespace-nowrap px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-soft transition-colors ${align} ${
+                      isDragging ? "opacity-30 bg-surface-sunken" : ""
+                    } ${
+                      isOver ? "border-l-2 border-brand bg-brand/5" : ""
+                    } ${canReorder ? "cursor-grab active:cursor-grabbing hover:bg-surface-sunken/80" : ""}`}
+                    title={canReorder ? "Drag column header to reorder" : undefined}
                   >
-                    {column.sortable && onSortChange ? (
-                      <button
-                        type="button"
-                        onClick={() => onSortChange(nextSort(sort, column.key))}
-                        className="inline-flex items-center rounded hover:text-ink"
-                      >
-                        {column.header}
-                        <SortIndicator
-                          direction={isSorted ? sort.direction : null}
-                        />
-                        <span className="sr-only">
-                          {isSorted
-                            ? sort.direction === "asc"
-                              ? ", sorted ascending, activate to sort descending"
-                              : ", sorted descending, activate to clear sorting"
-                            : ", activate to sort ascending"}
+                    <div className="inline-flex items-center gap-1.5">
+                      {canReorder ? (
+                        <span
+                          className="opacity-0 group-hover:opacity-60 text-ink-muted hover:opacity-100"
+                          aria-hidden="true"
+                        >
+                          ⋮
                         </span>
-                      </button>
-                    ) : (
-                      column.header
-                    )}
+                      ) : null}
+
+                      {column.sortable && onSortChange ? (
+                        <button
+                          type="button"
+                          onClick={() => onSortChange(nextSort(sort, column.key))}
+                          className="inline-flex items-center rounded hover:text-ink"
+                        >
+                          {column.header}
+                          <SortIndicator
+                            direction={isSorted ? sort.direction : null}
+                          />
+                          <span className="sr-only">
+                            {isSorted
+                              ? sort.direction === "asc"
+                                ? ", sorted ascending, activate to sort descending"
+                                : ", sorted descending, activate to clear sorting"
+                              : ", activate to sort ascending"}
+                          </span>
+                        </button>
+                      ) : (
+                        column.header
+                      )}
+                    </div>
                   </th>
                 );
               })}

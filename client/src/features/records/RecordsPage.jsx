@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import Badge from "../../components/ui/Badge.jsx";
 import Button from "../../components/ui/Button.jsx";
 import ColumnFilter from "../../components/ui/ColumnFilter.jsx";
+import ColumnVisibilityManager from "../../components/ui/ColumnVisibilityManager.jsx";
 import ConfirmDialog from "../../components/ui/ConfirmDialog.jsx";
 import DataTable from "../../components/ui/DataTable.jsx";
 import EmptyState from "../../components/ui/EmptyState.jsx";
@@ -153,6 +154,30 @@ export default function RecordsPage() {
     setPage(1);
   }
 
+  const availableColumns = useMemo(
+    () => [
+      ...browsable.map((c, index) => ({ key: c.key, label: c.label, alwaysVisible: index === 0 })),
+      { key: "status", label: "Status" },
+      { key: "createdAt", label: "Created" },
+    ],
+    [browsable]
+  );
+
+  const defaultVisibleKeys = useMemo(
+    () => availableColumns.map((c) => c.key),
+    [availableColumns]
+  );
+
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState(() => defaultVisibleKeys);
+
+  useEffect(() => {
+    setVisibleColumnKeys((prev) => {
+      const allKeySet = new Set(availableColumns.map((c) => c.key));
+      const valid = prev.filter((k) => allKeySet.has(k));
+      return valid.length > 0 ? valid : availableColumns.map((c) => c.key);
+    });
+  }, [availableColumns]);
+
   const tableColumns = useMemo(
     () => [
       ...browsable.map((column) => {
@@ -162,6 +187,7 @@ export default function RecordsPage() {
           key: column.key,
           header: column.label,
           sortable: true,
+          hidden: !visibleColumnKeys.includes(column.key),
           render: (row) => (
             <span className="text-ink-soft">
               {formatRecordValue(row.values?.[column.key], {
@@ -176,6 +202,7 @@ export default function RecordsPage() {
         key: "status",
         header: "Status",
         sortable: true,
+        hidden: !visibleColumnKeys.includes("status"),
         render: (row) => (
           <Badge tone={row.status === "active" ? "success" : "neutral"}>{row.status}</Badge>
         ),
@@ -184,6 +211,7 @@ export default function RecordsPage() {
         key: "createdAt",
         header: "Created",
         sortable: true,
+        hidden: !visibleColumnKeys.includes("createdAt"),
         render: (row) => (
           <span className="whitespace-nowrap text-xs text-ink-muted">
             {row.createdAt ? String(row.createdAt).slice(0, 10) : "—"}
@@ -191,7 +219,7 @@ export default function RecordsPage() {
         ),
       },
     ],
-    [browsable, getDataType, optionsFor]
+    [browsable, getDataType, optionsFor, visibleColumnKeys]
   );
 
   async function confirmArchive() {
@@ -278,6 +306,14 @@ export default function RecordsPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <ColumnVisibilityManager
+            columns={availableColumns}
+            visibleKeys={visibleColumnKeys}
+            onChangeVisibleKeys={setVisibleColumnKeys}
+            storageKey={`columns:records-table:${tableId}`}
+            defaultVisibleKeys={defaultVisibleKeys}
+          />
+
           <Link to="/records">
             <Button variant="ghost">All tables</Button>
           </Link>

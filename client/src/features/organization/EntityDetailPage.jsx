@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import Badge from "../../components/ui/Badge.jsx";
 import Button from "../../components/ui/Button.jsx";
+import ColumnVisibilityManager from "../../components/ui/ColumnVisibilityManager.jsx";
 import ConfirmDialog from "../../components/ui/ConfirmDialog.jsx";
 import DataTable from "../../components/ui/DataTable.jsx";
 import EmptyState from "../../components/ui/EmptyState.jsx";
@@ -158,6 +159,26 @@ function SectionPanel({ configuration, entityId, entityActive }) {
     [columns]
   );
 
+  const availableColumns = useMemo(
+    () => browsable.map((c, index) => ({ key: c.key, label: c.label, alwaysVisible: index === 0 })),
+    [browsable]
+  );
+
+  const defaultVisibleKeys = useMemo(
+    () => availableColumns.map((c) => c.key),
+    [availableColumns]
+  );
+
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState(() => defaultVisibleKeys);
+
+  useEffect(() => {
+    setVisibleColumnKeys((prev) => {
+      const allKeySet = new Set(availableColumns.map((c) => c.key));
+      const valid = prev.filter((k) => allKeySet.has(k));
+      return valid.length > 0 ? valid : availableColumns.map((c) => c.key);
+    });
+  }, [availableColumns]);
+
   const { optionsFor } = useEntryOptions(columns);
 
   const rows = data?.data ?? [];
@@ -170,6 +191,7 @@ function SectionPanel({ configuration, entityId, entityActive }) {
         return {
           key: column.key,
           header: column.label,
+          hidden: !visibleColumnKeys.includes(column.key),
           render: (row) => (
             <span className="text-ink-soft">
               {formatRecordValue(row.values?.[column.key], {
@@ -180,7 +202,7 @@ function SectionPanel({ configuration, entityId, entityActive }) {
           ),
         };
       }),
-    [browsable, getDataType, optionsFor]
+    [browsable, getDataType, optionsFor, visibleColumnKeys]
   );
 
   async function confirmArchive() {
@@ -225,11 +247,23 @@ function SectionPanel({ configuration, entityId, entityActive }) {
           </span>
         </h2>
 
-        {canCreate ? (
-          <Button size="sm" onClick={() => setDialog({ mode: "create" })}>
-            Add to {configuration.label.toLowerCase()}
-          </Button>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {availableColumns.length > 0 ? (
+            <ColumnVisibilityManager
+              columns={availableColumns}
+              visibleKeys={visibleColumnKeys}
+              onChangeVisibleKeys={setVisibleColumnKeys}
+              storageKey={`columns:entity-section:${configuration.id}`}
+              defaultVisibleKeys={defaultVisibleKeys}
+            />
+          ) : null}
+
+          {canCreate ? (
+            <Button size="sm" onClick={() => setDialog({ mode: "create" })}>
+              Add to {configuration.label.toLowerCase()}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <DataTable

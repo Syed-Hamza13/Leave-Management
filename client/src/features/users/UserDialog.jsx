@@ -310,27 +310,24 @@ export default function UserDialog({
         ) : null}
 
         {customColumns.length > 0 ? (
-          <fieldset className="space-y-3 border-t border-line pt-4">
-            <legend className="text-sm font-medium text-ink">Custom Profile Fields</legend>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {customColumns.map((col) => (
-                <FieldRenderer
-                  key={col.key}
-                  field={col}
-                  value={draft.values?.[col.key]}
-                  onChange={(key, next) =>
-                    setDraft((curr) => ({
-                      ...curr,
-                      values: { ...curr.values, [key]: next },
-                    }))
-                  }
-                  error={errors[col.key]}
-                  options={optionsFor(col)}
-                  recordOptions={optionsFor(col)}
-                />
-              ))}
-            </div>
-          </fieldset>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {customColumns.map((col) => (
+              <FieldRenderer
+                key={col.key}
+                field={col}
+                value={draft.values?.[col.key]}
+                onChange={(key, next) =>
+                  setDraft((curr) => ({
+                    ...curr,
+                    values: { ...curr.values, [key]: next },
+                  }))
+                }
+                error={errors[col.key]}
+                options={optionsFor(col)}
+                recordOptions={optionsFor(col)}
+              />
+            ))}
+          </div>
         ) : null}
 
         <fieldset className="space-y-2 border-t border-line pt-4">
