@@ -535,9 +535,15 @@ export default function EntityDetailPage() {
 
   const entityType = typeData?.data ?? entity?.entityType ?? null;
 
-  const profileConfiguration = configurations.find((entry) => entry.scope === "profile") ?? null;
+  const profileConfiguration =
+    configurations.find((entry) => entry.scope === "profile") ??
+    configurations[0] ??
+    null;
   const sectionConfigurations = configurations.filter(
-    (entry) => entry.scope === "section" && entry.isActive
+    (entry) =>
+      entry.scope === "section" &&
+      entry.isActive &&
+      Number(entry.id) !== Number(profileConfiguration?.id)
   );
 
   const { run: runArchive, pending: archiving } = useMutation();

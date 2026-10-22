@@ -586,17 +586,19 @@ async function assertParentEntity(entityType, parentEntityId, selfId = null) {
 }
 
 async function findProfileConfiguration(entityTypeId) {
-  const profiles = await findConfigurationsByTypeId(entityTypeId, { scope: "profile" });
+  const configs = await findConfigurationsByTypeId(entityTypeId);
 
-  const active = profiles.find((configuration) => configuration.isActive);
+  const activeProfile = configs.find(
+    (configuration) => configuration.scope === "profile" && configuration.isActive
+  );
+  if (activeProfile) return activeProfile;
 
-  if (!active) {
-    throw conflict("This entity type has no active profile configuration.", {
-      code: "PROFILE_NOT_CONFIGURED",
-    });
-  }
+  const anyActive = configs.find((configuration) => configuration.isActive);
+  if (anyActive) return anyActive;
 
-  return active;
+  throw conflict("This entity type has no active configuration.", {
+    code: "PROFILE_NOT_CONFIGURED",
+  });
 }
 
 export async function createEntity(payload, actor) {

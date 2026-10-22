@@ -63,6 +63,7 @@ export default {
       fn: async ({ session, assert, isolate }) => {
         await session.goto("/admin/forms");
         await session.clickButton("New form");
+        await session.openDialog("New form");
         await session.fill("form-label", "");
         await session.fill("form-key", isolate.key("empty_form"));
         await session.submitDialog();
