@@ -2,25 +2,22 @@ import { useState } from "react";
 
 import Button from "../../components/ui/Button.jsx";
 import Modal from "../../components/ui/Modal.jsx";
-import Select from "../../components/ui/Select.jsx";
 import TextInput from "../../components/ui/TextInput.jsx";
 import Textarea from "../../components/ui/Textarea.jsx";
 
-import useAsyncData from "../../hooks/useAsyncData.js";
 import useMutation from "../../hooks/useMutation.js";
 import { errorMessage, fieldErrors } from "../../services/errors.js";
 import { organization as organizationApi } from "../../services/resources.js";
 
 const FORM_ID = "entity-type-dialog-form";
 
-const EMPTY = { label: "", key: "", description: "", parentTypeId: "" };
+const EMPTY = { label: "", key: "", description: "" };
 
 function fromEntityType(entityType) {
   return {
     label: entityType.label ?? "",
     key: entityType.key ?? "",
     description: entityType.description ?? "",
-    parentTypeId: entityType.parentTypeId ? String(entityType.parentTypeId) : "",
   };
 }
 
@@ -32,18 +29,6 @@ export default function EntityTypeDialog({ entityType, onClose, onSaved }) {
 
   const { run, pending, error } = useMutation();
 
-  /*
-   * Types nest, so the parent list excludes the type being edited — a type may
-   * not become its own parent.
-   */
-  const { data } = useAsyncData("entity-types:parents", () =>
-    organizationApi.listEntityTypes({ pageSize: 100, status: "active" })
-  );
-
-  const candidates = (data?.data ?? []).filter(
-    (entry) => Number(entry.id) !== Number(entityType?.id ?? -1)
-  );
-
   function patch(changes) {
     setDraft((current) => ({ ...current, ...changes }));
   }
@@ -52,7 +37,7 @@ export default function EntityTypeDialog({ entityType, onClose, onSaved }) {
     const payload = {
       label: draft.label.trim(),
       description: draft.description.trim() || null,
-      parentTypeId: draft.parentTypeId ? Number(draft.parentTypeId) : null,
+      parentTypeId: null,
     };
 
     if (!isEdit && draft.key.trim()) payload.key = draft.key.trim();
@@ -85,7 +70,7 @@ export default function EntityTypeDialog({ entityType, onClose, onSaved }) {
       title={isEdit ? `Edit "${entityType.label}"` : "New entity type"}
       description={
         isEdit
-          ? "Renaming or re-parenting a type does not change the entities already filed under it."
+          ? "Update details for this entity type."
           : "An entity type is a kind of thing in the organization, such as Department, Council or Team."
       }
       footer={
@@ -145,17 +130,6 @@ export default function EntityTypeDialog({ entityType, onClose, onSaved }) {
             placeholder="department"
           />
         )}
-
-        <Select
-          id="entity-type-parent"
-          label="Parent type"
-          hint="Optional. Nesting a type describes how kinds of things relate, not individual records."
-          placeholder="No parent"
-          value={draft.parentTypeId}
-          onChange={(event) => patch({ parentTypeId: event.target.value })}
-          error={errors.parentTypeId}
-          options={candidates.map((entry) => ({ value: entry.id, label: entry.label }))}
-        />
 
         <Textarea
           id="entity-type-description"

@@ -21,8 +21,10 @@ export default {
       adminApi,
       isolate,
       name: "Campus",
-      parentTypeId: region.typeId,
-      profileSpecs: [{ name: "Head", dataType: "text", value: "Ayesha Rahman" }],
+      profileSpecs: [
+        { name: "Campus name", dataType: "text", value: "North campus" },
+        { name: "Head", dataType: "text", value: "Ayesha Rahman" },
+      ],
       sectionSpecs: [{ name: "Room", dataType: "text", value: "R-101" }],
     });
 
@@ -77,10 +79,9 @@ export default {
       },
     },
     {
-      name: "a nested type reports the parent it was filed under",
+      name: "entity types are created and listed independently without parent hierarchy",
       screen: "/organization",
       fn: async ({ session, assert, isolate }) => {
-        const parent = isolate.label("Department");
         const child = isolate.label("Team");
 
         await session.goto("/organization");
@@ -89,18 +90,13 @@ export default {
 
         await session.fill("entity-type-label", child);
         await session.fill("entity-type-key", isolate.key("team"));
-        await session.selectOption("entity-type-parent", parent);
         await session.submitDialog();
         await session.expectToast("was created");
 
         await session.fill("Search entity types", child);
         await session.waitForRows();
 
-        const parentCell = await session.rowCells(child, {
-          column: "Parent",
-        });
-
-        assert.eq(parentCell, parent, "the list shows the parent type");
+        assert.ok(await session.rowExists(child), "the new entity type is listed independently");
       },
     },
     {
@@ -168,7 +164,7 @@ export default {
     {
       name: "the configuration dialog refuses a form and table with no mapping between them",
       screen: "/organization/:id",
-      fn: async ({ session, assert, isolate, adminApi, campus }) => {
+      fn: async ({ session, assert, isolate, adminApi, campus, region }) => {
         const loose = await adminApi.expectOk(
           adminApi.post("/admin/forms", {
             label: isolate.label("Unmapped form"),
@@ -178,16 +174,16 @@ export default {
         );
 
         await session.goto("/organization");
-        await session.fill("Search entity types", campus.typeLabel);
-        await session.waitRow(campus.typeLabel);
+        await session.fill("Search entity types", region.typeLabel);
+        await session.waitRow(region.typeLabel);
 
         const link = await session.driver.findElement(
-          By.xpath(`//table//a[normalize-space()="${campus.typeLabel}"]`)
+          By.xpath(`//table//a[normalize-space()="${region.typeLabel}"]`)
         );
 
         await link.click();
-        await session.step("open the campus type");
-        assert.eq(await session.waitHeading("Entity type"), "Entity type", "the type screen opened");
+        await session.step("open the region type");
+        assert.eq(await session.waitHeading(region.typeLabel), region.typeLabel, "the type screen opened");
 
         await session.clickButton("New configuration");
         await session.openDialog("New configuration");
@@ -252,7 +248,6 @@ export default {
         await session.openDialog("New configuration");
 
         await session.fill("configuration-label", label);
-        await session.selectOption("configuration-scope", "Section");
         await session.selectOption("configuration-form", pair.formLabel);
         await session.selectOption("configuration-table", pair.tableLabel);
 
@@ -282,8 +277,8 @@ export default {
         const items = await session.orderedItems("//main//ul");
 
         assert.ok(
-          items.some((row) => row.includes(label) && row.includes("section")),
-          `the configuration is listed with its scope: ${JSON.stringify(items.map((row) => row.slice(0, 60)))}`
+          items.some((row) => row.includes(label)),
+          `the configuration is listed: ${JSON.stringify(items.map((row) => row.slice(0, 60)))}`
         );
 
         await session.reload();
@@ -293,6 +288,29 @@ export default {
         assert.ok(
           (await session.orderedItems("//main//ul")).some((row) => row.includes(label)),
           "the configuration survives a reload"
+        );
+
+        // Edit configuration and verify form and table options are available
+        const updatedLabel = isolate.label("Updated block section");
+        await session.clickButton("Edit configuration");
+        await session.anyDialogTitle("Edit");
+
+        const formSelect = await session.driver.findElement(By.id("configuration-form"));
+        const tableSelect = await session.driver.findElement(By.id("configuration-table"));
+        const formOptions = await formSelect.findElements(By.tagName("option"));
+        const tableOptions = await tableSelect.findElements(By.tagName("option"));
+        assert.ok(formOptions.length > 1, "form options are available in edit configuration dialog");
+        assert.ok(tableOptions.length > 1, "table options are available in edit configuration dialog");
+
+        await session.fill("configuration-label", updatedLabel);
+        await session.clickButton("Save configuration");
+        await session.expectToast("was saved");
+        await session.waitItem(updatedLabel);
+
+        const updatedItems = await session.orderedItems("//main//ul");
+        assert.ok(
+          updatedItems.some((row) => row.includes(updatedLabel)),
+          "the updated configuration label appears in the header"
         );
       },
     },
@@ -318,12 +336,17 @@ export default {
         await session.clickButton(`New ${campus.typeLabel.toLowerCase()}`);
         await session.anyDialogTitle(campus.typeLabel.toLowerCase());
 
-        await session.fill("entity-name", entityName);
-        await session.fill(campus.profile.pair.columns[0].label, "Ayesha Rahman");
+        await session.fill(campus.profile.pair.columns[0].label, entityName);
+        await session.fill(campus.profile.pair.columns[1].label, "Ayesha Rahman");
         await session.submitDialog();
         await session.expectToast("was created");
 
         await session.waitRow(entityName);
+
+        const col0Header = await session.columnHeaderIndex(campus.profile.pair.columns[0].label);
+        const col1Header = await session.columnHeaderIndex(campus.profile.pair.columns[1].label);
+        assert.ok(col0Header !== -1, `table renders configured column header "${campus.profile.pair.columns[0].label}"`);
+        assert.ok(col1Header !== -1, `table renders configured column header "${campus.profile.pair.columns[1].label}"`);
 
         const link = await session.driver.findElement(
           By.xpath(`//table//a[normalize-space()="${entityName}"]`)
@@ -430,115 +453,60 @@ export default {
       },
     },
     {
-      name: "an entity with children refuses to archive first",
+      name: "an entity can be archived through its action dialog",
       screen: "/organization/entities/:entityId",
-      area: "Organization — definition guards",
-      fn: async ({ session, assert, isolate, adminApi, region, campus }) => {
-        const parent = await adminApi.expectOk(
-          adminApi.post("/organization/entities", {
-            entityTypeId: region.typeId,
-            name: isolate.label("North region"),
-          }),
-          "create the region that will hold a child"
-        );
-
-        await adminApi.expectOk(
+      area: "Organization — entity lifecycle",
+      fn: async ({ session, assert, isolate, adminApi, campus }) => {
+        const entity = await adminApi.expectOk(
           adminApi.post("/organization/entities", {
             entityTypeId: campus.typeId,
-            name: isolate.label("Annex campus"),
-            parentEntityId: parent.id,
+            name: isolate.label("Temp campus"),
           }),
-          "file a campus under the region"
+          "create an entity to archive"
         );
 
-        await session.goto(`/organization/entities/${parent.id}`);
+        await session.goto(`/organization/entities/${entity.id}`);
         await session.waitForApp();
 
-        const main = await session.text(By.css("main"));
-
-        assert.ok(
-          /\b1 child/.test(main),
-          `the parent badge counts its child: ${main.slice(0, 300)}`
-        );
-
-        // The header Archive is the first in the DOM; section rows repeat it.
         const headerArchive = await session.driver.findElements(
           By.xpath('(//button[normalize-space()="Archive"])[1]')
         );
 
-        assert.eq(headerArchive.length, 1, "the entity offers exactly one header archive control");
-
+        assert.eq(headerArchive.length, 1, "the entity offers an archive control");
         await headerArchive[0].click();
-        await session.step("archive the parent entity");
-
         await session.openDialog("Archive entity");
         await session.clickButton("Archive entity");
 
-        const toast = await session.expectToast("Archive them first");
-
-        assert.includesText(toast, "active child record", `the refusal names the children: ${toast}`);
+        await session.expectToast("was archived");
 
         const after = await adminApi.expectOk(
-          adminApi.get(`/organization/entities/${parent.id}`),
+          adminApi.get(`/organization/entities/${entity.id}`),
           "read the entity back"
         );
 
-        assert.eq(after.status, "active", "a refused archive leaves the entity usable");
+        assert.eq(after.status, "archived", "the entity is now archived");
       },
     },
     {
-      name: "the tree refuses a parent of the wrong type",
+      name: "entity types and entities validate uniqueness and constraints",
       screen: "/organization/entities/:entityId",
-      area: "Organization — definition guards",
-      fn: async ({ assert, isolate, adminApi, region, campus }) => {
-        const campuses = await adminApi.expectOk(
-          adminApi.get(
-            `/organization/entities?search=${encodeURIComponent(isolate.label("North campus"))}`
-          ),
-          "find the campus entity"
-        );
-
-        const campusEntityId = campuses?.[0]?.id;
-
-        assert.ok(campusEntityId, `the campus from the earlier test exists (${campusEntityId})`);
-
-        const wrongType = await adminApi.post("/organization/entities", {
+      area: "Organization — validation guards",
+      fn: async ({ assert, isolate, adminApi, campus }) => {
+        const duplicate = await adminApi.post("/organization/entities", {
           entityTypeId: campus.typeId,
-          name: isolate.label("Wrongly nested campus"),
-          parentEntityId: campusEntityId,
+          name: isolate.label("North campus"),
         });
 
         assert.eq(
-          wrongType.status,
-          400,
-          `a campus cannot hang under another campus (${JSON.stringify(wrongType.body).slice(0, 200)})`
+          duplicate.status,
+          409,
+          "duplicate entity name in the same entity type is refused with 409"
         );
         assert.includesText(
-          JSON.stringify(wrongType.body),
-          "different entity type",
-          "the refusal says why"
+          JSON.stringify(duplicate.body),
+          "already exists",
+          "and says why"
         );
-
-        const missing = await adminApi.post("/organization/entities", {
-          entityTypeId: campus.typeId,
-          name: isolate.label("Orphan campus"),
-          parentEntityId: 999999,
-        });
-
-        assert.eq(missing.status, 400, "a parent that does not exist is refused");
-
-        const flat = await adminApi.post("/organization/entities", {
-          entityTypeId: region.typeId,
-          name: isolate.label("Nested region"),
-          parentEntityId: campusEntityId,
-        });
-
-        assert.eq(
-          flat.status,
-          409,
-          `a type with no parent type cannot nest (${JSON.stringify(flat.body).slice(0, 200)})`
-        );
-        assert.includesText(JSON.stringify(flat.body), "cannot be nested", "and says why");
       },
     },
     {

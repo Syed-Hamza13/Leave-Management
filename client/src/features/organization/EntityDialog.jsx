@@ -71,10 +71,21 @@ export default function EntityDialog({
     event.preventDefault();
     setErrors({});
 
-    const entityName = name.trim() || entity?.name || "";
+    let entityName = name.trim();
+    if (!entityName && values) {
+      const firstStr = Object.values(values).find(
+        (v) => typeof v === "string" && v.trim().length > 0
+      );
+      if (firstStr) {
+        entityName = String(firstStr).trim();
+      }
+    }
+    if (!entityName && isEdit) {
+      entityName = entity?.name || "";
+    }
 
     const payload = {
-      name: entityName,
+      name: entityName || undefined,
       parentEntityId: null,
     };
 
@@ -143,25 +154,12 @@ export default function EntityDialog({
           </p>
         ) : null}
 
-        <TextInput
-          id="entity-name"
-          label={`${entityType?.label || "Entity"} Name`}
-          required
-          autoFocus
-          data-autofocus
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          error={errors.name}
-          maxLength={190}
-          placeholder={`Enter ${entityType?.label?.toLowerCase() || "entity"} name…`}
-        />
-
         {formLoading ? (
           <div className="flex items-center justify-center py-10">
             <LoadingState label="Loading form fields…" />
           </div>
         ) : fields.length > 0 ? (
-          <div className="space-y-4 border-t border-line pt-4">
+          <div className="space-y-4">
             {fields.map((field) => {
               const options = optionsFor(field);
 
@@ -192,7 +190,20 @@ export default function EntityDialog({
               );
             })}
           </div>
-        ) : null}
+        ) : (
+          <TextInput
+            id="entity-name"
+            label={`${entityType?.label || "Entity"} Name`}
+            required
+            autoFocus
+            data-autofocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            error={errors.name}
+            maxLength={190}
+            placeholder={`Enter ${entityType?.label?.toLowerCase() || "entity"} name…`}
+          />
+        )}
       </form>
     </Modal>
   );

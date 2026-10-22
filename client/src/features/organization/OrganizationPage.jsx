@@ -27,7 +27,6 @@ const PAGE_SIZE = 25;
 
 const AVAILABLE_COLUMNS = [
   { key: "label", label: "Entity type", alwaysVisible: true },
-  { key: "parentType", label: "Parent" },
   { key: "description", label: "Description" },
   { key: "configurationCount", label: "Configurations" },
   { key: "entityCount", label: "Entities" },
@@ -90,17 +89,6 @@ export default function OrganizationPage() {
           <code className="ml-2 font-mono text-xs text-ink-muted">{row.key}</code>
         </div>
       ),
-    });
-
-    map.set("parentType", {
-      key: "parentType",
-      header: "Parent",
-      render: (row) =>
-        row.parentType ? (
-          <span className="text-sm text-ink-soft">{row.parentType.label}</span>
-        ) : (
-          <span className="text-xs text-ink-muted">—</span>
-        ),
     });
 
     map.set("description", {

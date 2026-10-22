@@ -592,10 +592,6 @@ export default function EntityDetailPage() {
             <div className="mt-1 flex flex-wrap items-center gap-2.5">
               <h2 className="text-lg font-bold text-ink">{entity.name}</h2>
               <Badge tone={entity.status === "active" ? "success" : "neutral"}>{entity.status}</Badge>
-
-              <Badge tone="neutral">
-                {entity.childCount} {entity.childCount === 1 ? "child" : "children"}
-              </Badge>
             </div>
           </div>
 

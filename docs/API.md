@@ -322,6 +322,28 @@ The password hash is never returned. Setting a password or deactivating an accou
 }
 ```
 
+### Organization — `/api/v1/organization`
+
+| Method | Path | Permission | Description |
+|---|---|---|---|
+| `GET` | `/entity-types` | `ORGANIZATION_VIEW` | List entity types with pagination and hierarchy info |
+| `POST` | `/entity-types` | `ORGANIZATION_MANAGE` | Create a new entity type (`label`, `key`, `parentTypeId`) |
+| `GET` | `/entity-types/:entityTypeId` | `ORGANIZATION_VIEW` | Get entity type details including linked configurations |
+| `PATCH` | `/entity-types/:entityTypeId` | `ORGANIZATION_MANAGE` | Update entity type label, description, parent, or status |
+| `POST` | `/entity-types/:entityTypeId/configurations` | `ORGANIZATION_MANAGE` | Bind a Form and Table via Mapping to this type (`label`, `formId`, `tableId`, `mappingId`) |
+| `PATCH` | `/configurations/:configurationId` | `ORGANIZATION_MANAGE` | Update configuration (`label`, `formId`, `tableId`, `mappingId`, `sortOrder`, `isActive`) |
+| `DELETE` | `/configurations/:configurationId` | `ORGANIZATION_MANAGE` | Remove configuration from entity type |
+| `GET` | `/entities` | `ORGANIZATION_VIEW` | List entities (filterable by `entityTypeId`, `search`, `status`) |
+| `POST` | `/entities` | `ORGANIZATION_MANAGE` | Create entity with optional profile values |
+| `GET` | `/entities/:entityId` | `ORGANIZATION_VIEW` | Get entity details with profile values and sections |
+| `PATCH` | `/entities/:entityId` | `ORGANIZATION_MANAGE` | Update entity name or profile values |
+| `DELETE` | `/entities/:entityId` | `ORGANIZATION_MANAGE` | Archive an entity (blocked if active children exist) |
+| `GET` | `/entities/:entityId/members` | `ORGANIZATION_VIEW` | List members assigned to an entity |
+| `POST` | `/entities/:entityId/members` | `ORGANIZATION_MANAGE` | Assign user to entity with role (`member`, `lead`, `manager`) |
+| `PATCH` | `/entities/:entityId/members/:userId` | `ORGANIZATION_MANAGE` | Update member role or status |
+| `DELETE` | `/entities/:entityId/members/:userId` | `ORGANIZATION_MANAGE` | Remove member from entity |
+| `GET` | `/users/:userId/memberships` | `ORGANIZATION_VIEW` | List all entity memberships for a user |
+
 ---
 
 ## 6. Error code index

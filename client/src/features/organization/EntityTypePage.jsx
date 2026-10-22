@@ -17,9 +17,12 @@ import useColumnPreferences from "../../hooks/useColumnPreferences.js";
 import useMutation from "../../hooks/useMutation.js";
 import { PERMISSIONS } from "../../lib/permissions.js";
 import { errorMessage } from "../../services/errors.js";
-import { organization as organizationApi } from "../../services/resources.js";
+import { organization as organizationApi, tables as tablesApi } from "../../services/resources.js";
 
+import { useMetadata } from "../metadata/MetadataContext.js";
 import { usePermissions } from "../permissions/PermissionsContext.js";
+import { formatRecordValue } from "../records/recordValues.js";
+import useEntryOptions from "../records/useEntryOptions.js";
 
 import ConfigurationDialog from "./ConfigurationDialog.jsx";
 import EntityDialog from "./EntityDialog.jsx";
@@ -27,18 +30,10 @@ import EntityMembersModal from "./EntityMembersModal.jsx";
 
 const PAGE_SIZE = 25;
 
-const AVAILABLE_COLUMNS = [
-  { key: "name", label: "Entity", alwaysVisible: true },
-  { key: "parentEntity", label: "Parent" },
-  { key: "childCount", label: "Children" },
-  { key: "status", label: "Status" },
-];
-
-const DEFAULT_VISIBLE_KEYS = AVAILABLE_COLUMNS.map((c) => c.key);
-
 export default function EntityTypePage() {
   const { entityTypeId } = useParams();
   const { can } = usePermissions();
+  const { getDataType } = useMetadata();
   const toast = useToast();
 
   const canManage = can(PERMISSIONS.ORGANIZATION_MANAGE);
@@ -63,6 +58,24 @@ export default function EntityTypePage() {
     organizationApi.getEntityType(entityTypeId)
   );
 
+  const entityType = typeData?.data ?? null;
+  const configurations = useMemo(() => entityType?.configurations ?? [], [entityType]);
+  const activeConfiguration = configurations[0] ?? null;
+  const tableId = activeConfiguration?.table?.id ?? null;
+
+  const { data: tableData, reload: reloadTable } = useAsyncData(
+    `entity-type-table:${tableId ?? "none"}`,
+    () => (tableId ? tablesApi.get(tableId) : Promise.resolve(null))
+  );
+
+  const configuredTable = tableData?.data ?? null;
+  const tableColumns = useMemo(
+    () => (configuredTable?.columns ?? []).filter((c) => !c.isSystem && c.isVisible),
+    [configuredTable]
+  );
+
+  const { optionsFor } = useEntryOptions(tableColumns);
+
   const { data, loading, error, reload } = useAsyncData(
     `entities:${entityTypeId}:${page}:${search}:${status}`,
     () =>
@@ -75,15 +88,35 @@ export default function EntityTypePage() {
       })
   );
 
-  const entityType = typeData?.data ?? null;
-  const configurations = useMemo(() => entityType?.configurations ?? [], [entityType]);
-
-  const profileConfiguration = configurations.find((entry) => entry.scope === "profile") ?? null;
+  const profileConfiguration = configurations.find((entry) => entry.scope === "profile") ?? configurations[0] ?? null;
 
   const rows = data?.data ?? [];
   const meta = data?.meta ?? null;
 
   const { run: runDelete, pending: deleting } = useMutation();
+
+  const availableColumns = useMemo(() => {
+    if (tableColumns.length > 0) {
+      return [
+        ...tableColumns.map((col, index) => ({
+          key: col.key,
+          label: col.label,
+          alwaysVisible: index === 0,
+        })),
+        { key: "status", label: "Status" },
+      ];
+    }
+
+    return [
+      { key: "name", label: entityType?.label || "Entity", alwaysVisible: true },
+      { key: "status", label: "Status" },
+    ];
+  }, [tableColumns, entityType]);
+
+  const defaultVisibleKeys = useMemo(
+    () => availableColumns.map((c) => c.key),
+    [availableColumns]
+  );
 
   const {
     orderedColumns,
@@ -92,45 +125,67 @@ export default function EntityTypePage() {
     reorderColumns,
     resetPreferences,
   } = useColumnPreferences({
-    storageKey: `columns:entity-type-records:${entityTypeId}`,
-    columns: AVAILABLE_COLUMNS,
-    defaultVisibleKeys: DEFAULT_VISIBLE_KEYS,
+    storageKey: tableId
+      ? `columns:entity-type-records:${entityTypeId}:${tableId}`
+      : `columns:entity-type-records:${entityTypeId}`,
+    columns: availableColumns,
+    defaultVisibleKeys,
   });
 
   const columnDefinitionMap = useMemo(() => {
     const map = new Map();
 
-    map.set("name", {
-      key: "name",
-      header: "Entity",
-      alwaysVisible: true,
-      render: (row) => (
-        <Link
-          to={`/organization/entities/${row.id}`}
-          className="font-medium text-ink hover:text-brand hover:underline"
-        >
-          {row.name}
-        </Link>
-      ),
-    });
+    if (tableColumns.length > 0) {
+      tableColumns.forEach((column, index) => {
+        const type = getDataType(column.dataType);
+        const isPrimary = index === 0;
 
-    map.set("parentEntity", {
-      key: "parentEntity",
-      header: "Parent",
-      render: (row) =>
-        row.parentEntity ? (
-          <span className="text-sm text-ink-soft">{row.parentEntity.name}</span>
-        ) : (
-          <span className="text-xs text-ink-muted">Top of the tree</span>
+        map.set(column.key, {
+          key: column.key,
+          header: column.label,
+          alwaysVisible: isPrimary,
+          render: (row) => {
+            const raw = row.profile?.values?.[column.key] ?? row.values?.[column.key];
+            const formatted =
+              raw !== undefined && raw !== null && String(raw).trim() !== ""
+                ? formatRecordValue(raw, {
+                    storage: type?.storage ?? "string",
+                    options: optionsFor(column),
+                  })
+                : isPrimary
+                ? row.name
+                : "—";
+
+            if (isPrimary) {
+              return (
+                <Link
+                  to={`/organization/entities/${row.id}`}
+                  className="font-medium text-ink hover:text-brand hover:underline"
+                >
+                  {formatted || row.name || "—"}
+                </Link>
+              );
+            }
+
+            return <span className="text-ink-soft">{formatted}</span>;
+          },
+        });
+      });
+    } else {
+      map.set("name", {
+        key: "name",
+        header: entityType?.label || "Entity",
+        alwaysVisible: true,
+        render: (row) => (
+          <Link
+            to={`/organization/entities/${row.id}`}
+            className="font-medium text-ink hover:text-brand hover:underline"
+          >
+            {row.name}
+          </Link>
         ),
-    });
-
-    map.set("childCount", {
-      key: "childCount",
-      header: "Children",
-      align: "right",
-      render: (row) => <span className="text-ink-soft">{row.childCount}</span>,
-    });
+      });
+    }
 
     map.set("status", {
       key: "status",
@@ -141,7 +196,7 @@ export default function EntityTypePage() {
     });
 
     return map;
-  }, []);
+  }, [tableColumns, entityType, getDataType, optionsFor]);
 
   const columns = useMemo(() => {
     return orderedColumns.map((col) => {
@@ -208,23 +263,31 @@ export default function EntityTypePage() {
 
   return (
     <div className="space-y-6">
-      {/* Top Header Card */}
-      <div className="rounded-card border border-line bg-surface p-5 shadow-sm">
+      {/* Unified Entity Type Header - flush edge-to-edge with no outer margins */}
+      <header className="-mx-4 -mt-6 mb-6 border-b border-line bg-surface px-4 py-4 md:-mx-6 md:px-6 md:py-5 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="min-w-0 space-y-2">
-            <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs text-ink-muted">
-              <Link to="/organization" className="hover:text-brand hover:underline">
-                Organization
-              </Link>
-              <span aria-hidden="true">/</span>
-              <span className="font-medium text-ink-soft">{entityType.label}</span>
+          <div className="min-w-0 space-y-1.5">
+            <nav aria-label="Breadcrumb">
+              <ol className="flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
+                <li>
+                  <Link to="/organization" className="font-medium text-ink-muted hover:text-brand hover:underline">
+                    Organization
+                  </Link>
+                </li>
+                <li aria-hidden="true" className="text-ink-muted">/</li>
+                <li>
+                  <span aria-current="page" className="font-semibold text-ink-soft">
+                    {entityType.label}
+                  </span>
+                </li>
+              </ol>
             </nav>
 
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
               <h1 className="text-2xl font-bold tracking-tight text-ink">{entityType.label}</h1>
 
               {entityType.key && entityType.key !== entityType.label?.toLowerCase() ? (
-                <code className="rounded bg-surface-sunken px-2 py-0.5 font-mono text-xs text-ink-muted">
+                <code className="rounded bg-surface-sunken px-2 py-0.5 font-mono text-xs font-medium text-ink-muted border border-line/60">
                   {entityType.key}
                 </code>
               ) : null}
@@ -236,34 +299,32 @@ export default function EntityTypePage() {
               <Badge tone="neutral">
                 {meta?.total ?? rows.length} {((meta?.total ?? rows.length) === 1) ? "entry" : "entries"}
               </Badge>
-
-              {entityType.parentType ? (
-                <span className="text-xs text-ink-muted">
-                  Under{" "}
-                  <Link
-                    to={`/organization/${entityType.parentType.id}`}
-                    className="font-medium text-ink hover:text-brand hover:underline"
-                  >
-                    {entityType.parentType.label}
-                  </Link>
-                </span>
-              ) : null}
             </div>
 
             {entityType.description ? (
-              <p className="text-sm text-ink-soft">{entityType.description}</p>
+              <p className="max-w-2xl text-sm text-ink-soft">{entityType.description}</p>
             ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
             {canManage ? (
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => setConfigDialog({ mode: "create" })}
-              >
-                New configuration
-              </Button>
+              configurations.length === 0 ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setConfigDialog({ mode: "create" })}
+                >
+                  New configuration
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setConfigDialog({ mode: "edit", configuration: activeConfiguration })}
+                >
+                  Edit configuration
+                </Button>
+              )
             ) : null}
 
             {entityType.status === "active" ? (
@@ -276,102 +337,69 @@ export default function EntityTypePage() {
             ) : null}
           </div>
         </div>
-      </div>
 
-      {/* Configurations Section */}
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-ink">Configurations</h2>
-            <p className="text-xs text-ink-soft">
-              Forms and tables linked to {entityType.label.toLowerCase()} for profiles and section records.
-            </p>
-          </div>
+        {/* Integrated Configuration Strip */}
+        {configurations.length > 0 ? (
+          <div className="mt-4 border-t border-line/60 pt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-ink-muted uppercase tracking-wider text-[11px]">
+                Configuration
+              </span>
 
-          {canManage ? (
-            <Button size="sm" onClick={() => setConfigDialog({ mode: "create" })}>
-              New configuration
-            </Button>
-          ) : null}
-        </div>
-
-        {configurations.length === 0 ? (
-          <EmptyState
-            title="Nothing is configured yet"
-            description="Give this type a profile configuration so entities can carry their own details."
-            action={
-              canManage ? (
-                <Button onClick={() => setConfigDialog({ mode: "create" })}>
-                  New configuration
-                </Button>
-              ) : null
-            }
-          />
-        ) : (
-          <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-            {configurations.map((configuration) => (
-              <li key={configuration.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-sm font-medium text-ink">
-                      {configuration.label}
+              <ul className="flex flex-wrap items-center gap-2">
+                {configurations.map((configuration) => (
+                  <li
+                    key={configuration.id}
+                    className="flex flex-wrap items-center gap-2 text-ink-soft"
+                  >
+                    <span className="font-semibold text-ink">{configuration.label}</span>
+                    <span className="inline-flex items-center gap-1 rounded border border-line/60 bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-soft">
+                      <span className="text-ink-muted">Form:</span> {configuration.form?.label || "—"}
                     </span>
+                    <span className="text-ink-muted">→</span>
+                    <span className="inline-flex items-center gap-1 rounded border border-line/60 bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-soft">
+                      <span className="text-ink-muted">Table:</span> {configuration.table?.label || "—"}
+                    </span>
+                    {configuration.sortOrder != null ? (
+                      <span className="text-[11px] text-ink-muted">
+                        (order {configuration.sortOrder})
+                      </span>
+                    ) : null}
+                    {!configuration.isActive ? (
+                      <Badge tone="warning" size="sm">Inactive</Badge>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
 
-                    <Badge tone={configuration.scope === "profile" ? "brand" : "neutral"}>
-                      {configuration.scope}
-                    </Badge>
-
-                    {!configuration.isActive ? <Badge tone="warning">Inactive</Badge> : null}
-                  </p>
-
-                  <p className="mt-0.5 text-xs text-ink-muted">
-                    {configuration.form.label} → {configuration.table.label}
-                    <span className="ml-2">order {configuration.sortOrder}</span>
-                  </p>
-                </div>
-
-                {configuration.isActive &&
-                entityType.status === "active" &&
-                (configuration.scope === "profile" || canViewRecords) ? (
-                  configuration.scope === "profile" ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setEntityDialog({ mode: "create" })}
-                    >
-                      New {entityType.label.toLowerCase()}
-                    </Button>
-                  ) : (
-                    <Link to={`/records/${configuration.table.id}`}>
-                      <Button variant="secondary" size="sm">Open records</Button>
-                    </Link>
-                  )
-                ) : null}
-
-                {canManage ? (
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setConfigDialog({ mode: "edit", configuration })}
-                    >
-                      Edit
-                    </Button>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setConfigDeleteTarget(configuration)}
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+            {canManage && activeConfiguration ? (
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfigDialog({ mode: "edit", configuration: activeConfiguration })}
+                >
+                  Edit
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfigDeleteTarget(activeConfiguration)}
+                >
+                  Remove
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          canManage && (
+            <div className="mt-4 border-t border-line/60 pt-3 flex items-center justify-between gap-2 text-xs text-ink-muted">
+              <span>No form and table linked yet. Click &ldquo;New configuration&rdquo; to link a form and table to this entity.</span>
+            </div>
+          )
         )}
-      </section>
+      </header>
 
       {/* Main Records Table Section */}
       <section className="space-y-4">
@@ -411,15 +439,13 @@ export default function EntityTypePage() {
               onChangeVisibleKeys={setVisibleColumnKeys}
               onReorderColumns={reorderColumns}
               onReset={resetPreferences}
-              storageKey={`columns:entity-type-records:${entityTypeId}`}
-              defaultVisibleKeys={DEFAULT_VISIBLE_KEYS}
+              storageKey={
+                tableId
+                  ? `columns:entity-type-records:${entityTypeId}:${tableId}`
+                  : `columns:entity-type-records:${entityTypeId}`
+              }
+              defaultVisibleKeys={defaultVisibleKeys}
             />
-
-            {canManage && entityType.status === "active" ? (
-              <Button size="sm" onClick={() => setEntityDialog({ mode: "create" })}>
-                New {entityType.label.toLowerCase()}
-              </Button>
-            ) : null}
           </div>
         </div>
 
@@ -493,6 +519,7 @@ export default function EntityTypePage() {
       {configDialog ? (
         <ConfigurationDialog
           entityTypeId={entityType.id}
+          entityType={entityType}
           configuration={configDialog.configuration ?? null}
           onClose={() => setConfigDialog(null)}
           onSaved={(saved) => {
@@ -503,6 +530,8 @@ export default function EntityTypePage() {
                 : `“${saved?.label ?? "Configuration"}” was saved.`
             );
             reloadType();
+            reload();
+            reloadTable();
           }}
         />
       ) : null}

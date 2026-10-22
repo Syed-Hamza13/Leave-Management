@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import Badge from "../../components/ui/Badge.jsx";
 import Button from "../../components/ui/Button.jsx";
@@ -10,16 +10,15 @@ import TextInput from "../../components/ui/TextInput.jsx";
 import useAsyncData from "../../hooks/useAsyncData.js";
 import useMutation from "../../hooks/useMutation.js";
 import { errorMessage, fieldErrors } from "../../services/errors.js";
-import { mappings as mappingsApi, organization as organizationApi } from "../../services/resources.js";
+import {
+  mappings as mappingsApi,
+  metadata as metadataApi,
+  organization as organizationApi,
+} from "../../services/resources.js";
 
 import { useMetadata } from "../metadata/MetadataContext.js";
 
 const FORM_ID = "configuration-dialog-form";
-
-const SCOPES = [
-  { value: "profile", label: "Profile — the entity's own details" },
-  { value: "section", label: "Section — a list of records under the entity" },
-];
 
 function toNumberOrNull(text) {
   const trimmed = String(text).trim();
@@ -33,6 +32,7 @@ function toNumberOrNull(text) {
 
 export default function ConfigurationDialog({
   entityTypeId,
+  entityType = null,
   configuration = null,
   onClose,
   onSaved,
@@ -40,8 +40,11 @@ export default function ConfigurationDialog({
   const isEdit = Boolean(configuration);
   const { lookups } = useMetadata();
 
+  const { data: lookupsData } = useAsyncData("configuration-dialog-lookups", () =>
+    metadataApi.lookups()
+  );
+
   const [draft, setDraft] = useState(() => ({
-    scope: configuration?.scope ?? "section",
     label: configuration?.label ?? "",
     formId: configuration ? String(configuration.form.id) : "",
     tableId: configuration ? String(configuration.table.id) : "",
@@ -52,6 +55,33 @@ export default function ConfigurationDialog({
 
   const { run, pending, error } = useMutation();
 
+  const allForms = lookupsData?.data?.forms ?? lookups.forms ?? [];
+  const allTables = (lookupsData?.data?.tables ?? lookups.tables ?? []).filter(
+    (table) => table.storageKind === "managed"
+  );
+
+  const formOptions = useMemo(() => {
+    const list = [...allForms];
+    if (configuration?.form && !list.some((f) => String(f.id) === String(configuration.form.id))) {
+      list.unshift(configuration.form);
+    }
+    return list.map((form) => ({
+      value: String(form.id),
+      label: form.fieldCount !== undefined ? `${form.label} (${form.fieldCount} fields)` : form.label,
+    }));
+  }, [allForms, configuration]);
+
+  const tableOptions = useMemo(() => {
+    const list = [...allTables];
+    if (configuration?.table && !list.some((t) => String(t.id) === String(configuration.table.id))) {
+      list.unshift(configuration.table);
+    }
+    return list.map((table) => ({
+      value: String(table.id),
+      label: table.columnCount !== undefined ? `${table.label} (${table.columnCount} columns)` : table.label,
+    }));
+  }, [allTables, configuration]);
+
   /*
    * A configuration points at a mapping, never at loose columns, so the mapping
    * is resolved from the chosen pair and shown here as the thing being selected.
@@ -59,17 +89,31 @@ export default function ConfigurationDialog({
   const pair =
     draft.formId && draft.tableId ? { formId: Number(draft.formId), tableId: Number(draft.tableId) } : null;
 
+  const samePairAsCurrent = Boolean(
+    configuration &&
+    pair &&
+    Number(pair.formId) === Number(configuration.form?.id) &&
+    Number(pair.tableId) === Number(configuration.table?.id)
+  );
+
   const { data: compatibilityData, loading: compatibilityLoading } = useAsyncData(
     `configuration-pair:${pair?.formId ?? "none"}:${pair?.tableId ?? "none"}`,
     () =>
       pair
         ? mappingsApi.compatibility(pair.formId, pair.tableId)
-        : Promise.resolve(null)
+        : Promise.resolve(null),
+    {
+      initialData: samePairAsCurrent && configuration?.mapping?.id
+        ? { data: { mappingId: configuration.mapping.id, entries: [] } }
+        : null,
+    }
   );
 
-  const compatibility = compatibilityData?.data ?? null;
-
-  const managedTables = (lookups.tables ?? []).filter((table) => table.storageKind === "managed");
+  const compatibility =
+    compatibilityData?.data ??
+    (samePairAsCurrent && configuration?.mapping?.id
+      ? { mappingId: configuration.mapping.id, entries: [] }
+      : null);
 
   function patch(changes) {
     setDraft((current) => ({ ...current, ...changes }));
@@ -90,7 +134,8 @@ export default function ConfigurationDialog({
 
       if (order !== null) payload.sortOrder = order;
     } else {
-      payload.scope = draft.scope;
+      const hasProfile = (entityType?.configurations ?? []).some((c) => c.scope === "profile");
+      payload.scope = hasProfile ? "section" : "profile";
     }
 
     return payload;
@@ -161,28 +206,6 @@ export default function ConfigurationDialog({
           </p>
         ) : null}
 
-        {isEdit ? (
-          <div>
-            <p className="text-sm font-medium text-ink">Scope</p>
-            <p className="mt-0.5 text-xs text-ink-soft">
-              {configuration.scope === "profile"
-                ? "Profile — one record per entity."
-                : "Section — a list of records under each entity."}{" "}
-              The scope cannot change once the configuration exists.
-            </p>
-          </div>
-        ) : (
-          <Select
-            id="configuration-scope"
-            label="Scope"
-            required
-            value={draft.scope}
-            onChange={(event) => patch({ scope: event.target.value })}
-            error={errors.scope}
-            options={SCOPES}
-          />
-        )}
-
         <TextInput
           id="configuration-label"
           label="Label"
@@ -192,7 +215,7 @@ export default function ConfigurationDialog({
           onChange={(event) => patch({ label: event.target.value })}
           error={errors.label}
           maxLength={160}
-          placeholder={draft.scope === "profile" ? "Details" : "Members"}
+          placeholder="e.g. Details, Department Info, or Records"
         />
 
         <Select
@@ -203,10 +226,7 @@ export default function ConfigurationDialog({
           value={draft.formId}
           onChange={(event) => patch({ formId: event.target.value })}
           error={errors.formId}
-          options={(lookups.forms ?? []).map((form) => ({
-            value: form.id,
-            label: `${form.label} (${form.fieldCount} fields)`,
-          }))}
+          options={formOptions}
         />
 
         <Select
@@ -217,10 +237,7 @@ export default function ConfigurationDialog({
           value={draft.tableId}
           onChange={(event) => patch({ tableId: event.target.value })}
           error={errors.tableId}
-          options={managedTables.map((table) => ({
-            value: table.id,
-            label: `${table.label} (${table.columnCount} columns)`,
-          }))}
+          options={tableOptions}
         />
 
         <p className="flex flex-wrap items-center gap-2 text-xs text-ink-soft">

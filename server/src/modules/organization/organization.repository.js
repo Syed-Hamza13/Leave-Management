@@ -168,6 +168,7 @@ function mapEntity(row) {
           status: row.profile_status,
         }
       : null,
+    values: row.profile_record_id ? parseJsonColumn(row.profile_data, {}) : {},
     createdBy: row.created_by,
     updatedBy: row.updated_by,
     createdAt: row.created_at,
@@ -529,11 +530,11 @@ function buildEntityFilters(query = {}) {
   }
 
   if (query.search) {
-    conditions.push("(e.name LIKE ? OR et.label LIKE ?)");
+    conditions.push("(e.name LIKE ? OR et.label LIKE ? OR pr.data LIKE ?)");
 
     const pattern = `%${query.search}%`;
 
-    params.push(pattern, pattern);
+    params.push(pattern, pattern, pattern);
   }
 
   return {
@@ -566,6 +567,7 @@ export async function countEntities(query) {
       SELECT COUNT(*) AS total
       FROM organization_entities e
       INNER JOIN organization_entity_types et ON et.id = e.entity_type_id
+      LEFT JOIN table_records pr ON pr.id = e.profile_record_id
       ${where}
     `,
     params

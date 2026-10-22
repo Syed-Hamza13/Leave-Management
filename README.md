@@ -79,9 +79,12 @@ The platform allows administrators to tailor every business workflow without dev
 - Custom attributes are configured as user column definitions, maintaining strict separation from core authentication fields (`email`, `password_hash`).
 
 ### 5. Organization Structure & Memberships
-- Define hierarchical entity types (`organization_entity_types`) with parent/child relationships protected by cycle-detection algorithms (`PARENT_TYPE_CYCLE`, `HIERARCHY_TOO_DEEP`).
-- Configure entity profiles and section tables.
-- Manage user memberships (`organization_entity_members`) with explicit roles (`member`, `lead`, `manager`).
+- Define clean, independent entity types (`organization_entity_types`) such as Teams, Departments, or Units.
+- **Unified Single Header**: Zero outer margins, edge-to-edge layout integrating breadcrumb, status, key, entry metrics, and primary actions.
+- **Single Configuration & Full Editability**: Each entity type has at most one linked Form & Table configuration. When unconfigured, administrators can link a pair (`New configuration`); once configured, the action seamlessly shifts to `Edit configuration` (which provides live dropdowns of all available active forms and managed tables to switch or re-map configurations) or remove. Upon saving, the header strip, table columns, and entry form dialog instantly adapt to the newly configured form & table.
+- **Dynamic Configured Table Columns**: Rather than a static or hardcoded "Entity" column, the entity screen dynamically renders the real columns from the configured logical table (e.g. `Team Name`, `Description`, `Lead`), with individual data-type formatting, deep JSON payload search (`pr.data`), and full column visibility/reordering preferences.
+- Form & Table mappings (`entity_type_configurations`) bind forms and managed tables directly to entities without artificial scope complexity.
+- Manage user memberships (`organization_entity_members`) directly from entity lists and detail pages with explicit roles (`member`, `lead`, `manager`).
 
 ### 6. Interactive Data Grids & Column Customization
 - Excel-style filtering with type-specific operators (`contains`, `equals`, `greater_than`, `is_one_of` facets).
