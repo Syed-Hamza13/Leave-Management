@@ -83,6 +83,8 @@ async function loadEntities(entityTypeId = null) {
   const options = entities.map((entity) => ({
     value: entity.id,
     label: entity.name,
+    name: entity.name,
+    entityTypeName: entity.entityType?.label ?? null,
   }));
 
   return { options, total: response?.meta?.total ?? options.length };
@@ -103,6 +105,8 @@ async function loadUsers() {
     return {
       value: user.id,
       label,
+      name: name || user.email,
+      email: user.email,
     };
   });
 

@@ -8,6 +8,7 @@ import Select from "./Select.jsx";
 import TextInput from "./TextInput.jsx";
 import Textarea from "./Textarea.jsx";
 import Toggle from "./Toggle.jsx";
+import ReferencePicker from "./ReferencePicker.jsx";
 
 /*
  * A stored pattern is authored by an administrator, not by a browser, so an
@@ -34,84 +35,6 @@ function toNumber(text) {
   const parsed = Number(trimmed);
 
   return Number.isFinite(parsed) ? parsed : trimmed;
-}
-
-function ReferencePicker({ id, label, hint, error, required, disabled, options, multiple, value, onChange }) {
-  if (!options) {
-    return (
-      <TextInput
-        id={id}
-        label={label}
-        hint="Options for this relation could not be loaded."
-        error={error}
-        value=""
-        disabled
-      />
-    );
-  }
-
-  if (!multiple) {
-    return (
-      <Select
-        id={id}
-        label={label}
-        hint={hint}
-        error={error}
-        required={required}
-        disabled={disabled}
-        placeholder="Select a record…"
-        value={value === null || value === undefined ? "" : String(value)}
-        onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))}
-        options={options}
-      />
-    );
-  }
-
-  const selected = Array.isArray(value) ? value.map((entry) => Number(entry)) : [];
-
-  return (
-    <FormField id={id} label={label} hint={hint} error={error} required={required}>
-      <ul
-        id={id}
-        className="max-h-48 space-y-0.5 overflow-y-auto rounded-control border border-line-strong bg-surface p-1.5"
-      >
-        {options.length === 0 ? (
-          <li className="px-2 py-3 text-xs text-ink-muted">No records to choose from.</li>
-        ) : null}
-
-        {options.map((option, index) => {
-          const optionValue = Number(option.value);
-          const optionId = `${id}-opt-${index}`;
-
-          return (
-            <li key={optionId}>
-              <label
-                htmlFor={optionId}
-                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-ink hover:bg-surface-sunken"
-              >
-                <input
-                  id={optionId}
-                  type="checkbox"
-                  disabled={disabled}
-                  className="h-4 w-4 shrink-0 rounded border-line-strong accent-brand"
-                  checked={selected.includes(optionValue)}
-                  onChange={(event) =>
-                    onChange(
-                      event.target.checked
-                        ? [...selected, optionValue]
-                        : selected.filter((entry) => entry !== optionValue)
-                    )
-                  }
-                />
-
-                <span className="truncate">{option.label ?? option.value}</span>
-              </label>
-            </li>
-          );
-        })}
-      </ul>
-    </FormField>
-  );
 }
 
 /*
@@ -269,6 +192,7 @@ export default function FieldRenderer({
       return (
         <ReferencePicker
           id={fieldId}
+          dataType={field.dataType}
           label={field.label}
           hint={hint}
           error={error}
