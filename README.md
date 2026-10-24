@@ -73,11 +73,12 @@ The platform allows administrators to tailor every business workflow without dev
 - **Record References**: Link records across logical tables with configurable cardinality (single vs multi-select) and live relation integrity validation.
 - **Entity References (`entity_reference`)**: Relate records to specific organization entities (teams, departments, units) with entity type badges.
 - **User References (`user_reference`)**: Connect records directly to active user accounts with colorful gradient avatar initials, full display names, and email addresses.
-- **Searchable Combobox & Dropdown Popovers**:
-  - In multi-select mode, user and organization entity references avoid bulky, permanent checklist boxes in entry dialogs; instead, they render as compact, modern form controls with type-specific icons and chevron indicators.
-  - Clicking or focusing opens a floating **Dropdown Popover** with an auto-focused **real-time search bar** to filter candidates by name, email, or entity type instantly.
-  - Selected candidates appear as **compact, removable chips** inside the input control with user avatar badges or building icons, individual remove (`×`) buttons, and a global clear button.
-  - Includes selection counter badges (`X selected`), quick actions (**"Select all" / "Select matching"**, **"Clear"**), and accessible dismissal via click-outside, `Escape`, or the "Done" button.
+- **Searchable Dropdown Popovers (Select2 / Ant Design Style)**:
+  - In multi-select mode, user and organization entity references render as a clean, single-height trigger field displaying selected chips with avatar badges, a global clear button, and a chevron arrow.
+  - Clicking the field opens a sleek floating dropdown with a dedicated search input at the very top (matching classic searchable pickers).
+  - Typing in the search input filters candidate options in real time.
+  - Selecting an option toggles it, adds its chip to the top field, and automatically clears the search text so the user can immediately search and select the next item without lingering text.
+  - Candidate options retain their rich presentation with avatars, full display names, email addresses, and entity badges.
 
 ### 4. Custom User Profile Attributes
 - Extend standard user accounts with arbitrary custom fields (`user_profile_values`).

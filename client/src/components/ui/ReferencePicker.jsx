@@ -97,7 +97,11 @@ function SingleReferencePicker({
 
 /**
  * Dropdown popover multi-select for user_reference and entity_reference.
- * Keeps form compact and opens a floating search popover when clicked.
+ * Modeled after classic searchable dropdowns (Select2 / Ant Design):
+ * - Clean trigger box showing selected chips or placeholder with chevron arrow.
+ * - Clicking opens a floating dropdown containing a dedicated search input at the top.
+ * - Selecting an option toggles it, adds its chip above, and resets the search input
+ *   so subsequent searches start clean without lingering text.
  */
 function DropdownMultiReferencePicker({
   id,
@@ -114,7 +118,6 @@ function DropdownMultiReferencePicker({
 }) {
   const containerRef = useRef(null);
   const searchInputRef = useRef(null);
-  const searchInputId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -145,26 +148,27 @@ function DropdownMultiReferencePicker({
     function handleClickOutside(event) {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
         setIsOpen(false);
+        setSearchTerm("");
       }
     }
     function handleKeyDown(event) {
       if (event.key === "Escape" && isOpen) {
         setIsOpen(false);
+        setSearchTerm("");
       }
     }
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
       document.addEventListener("keydown", handleKeyDown);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (isOpen && searchInputRef.current) {
-      searchInputRef.current.focus();
+      // Auto-focus search input when dropdown opens
+      const timer = setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 30);
+      return () => {
+        clearTimeout(timer);
+        document.removeEventListener("mousedown", handleClickOutside);
+        document.removeEventListener("keydown", handleKeyDown);
+      };
     }
   }, [isOpen]);
 
@@ -188,6 +192,9 @@ function DropdownMultiReferencePicker({
     } else {
       onChange([...selected, num]);
     }
+    // Clear search term after selection so next search starts clean
+    setSearchTerm("");
+    searchInputRef.current?.focus();
   }
 
   function handleRemove(optionValue, e) {
@@ -199,12 +206,15 @@ function DropdownMultiReferencePicker({
   function handleClearAll(e) {
     e.stopPropagation();
     onChange([]);
+    setSearchTerm("");
   }
 
   function handleSelectAllVisible() {
     const visibleValues = filteredOptions.map((o) => Number(o.value));
     const combined = Array.from(new Set([...selected, ...visibleValues]));
     onChange(combined);
+    setSearchTerm("");
+    searchInputRef.current?.focus();
   }
 
   const defaultPlaceholder =
@@ -221,7 +231,7 @@ function DropdownMultiReferencePicker({
   return (
     <FormField id={id} label={label} hint={hint} error={error} required={required}>
       <div ref={containerRef} className="relative">
-        {/* Trigger Input Box */}
+        {/* Main Trigger Box (Clean, single uniform input field with chips) */}
         <div
           id={id}
           role="combobox"
@@ -237,7 +247,7 @@ function DropdownMultiReferencePicker({
               setIsOpen(true);
             }
           }}
-          className={`flex min-h-[42px] w-full cursor-pointer items-center justify-between gap-2 rounded-xl border bg-surface px-3 py-1.5 text-xs transition-all duration-150 ${
+          className={`flex min-h-[42px] w-full cursor-pointer items-center justify-between gap-2 rounded-xl border bg-surface px-3 py-1.5 text-xs transition-all duration-150 select-none ${
             disabled
               ? "cursor-not-allowed opacity-60 bg-surface-sunken"
               : isOpen
@@ -304,6 +314,7 @@ function DropdownMultiReferencePicker({
                     {!disabled ? (
                       <button
                         type="button"
+                        tabIndex={-1}
                         onClick={(e) => handleRemove(opt.value, e)}
                         aria-label={`Remove ${opt.label}`}
                         className="rounded p-0.5 text-brand hover:bg-brand/15 focus:outline-none"
@@ -324,6 +335,7 @@ function DropdownMultiReferencePicker({
             {selected.length > 0 && !disabled ? (
               <button
                 type="button"
+                tabIndex={-1}
                 onClick={handleClearAll}
                 title="Clear all selections"
                 aria-label="Clear all selections"
@@ -347,54 +359,50 @@ function DropdownMultiReferencePicker({
 
         {/* Floating Dropdown Popover */}
         {isOpen ? (
-          <div className="absolute left-0 right-0 top-full z-40 mt-1.5 overflow-hidden rounded-xl border border-line-subtle bg-surface shadow-2xl ring-1 ring-black/5">
-            {/* Search Header */}
-            <div className="flex items-center gap-2 border-b border-line-subtle bg-surface-sunken/40 px-3 py-2">
-              <svg className="h-4 w-4 shrink-0 text-ink-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+          <div className="absolute left-0 right-0 top-full z-40 mt-1 overflow-hidden rounded-xl border border-line-subtle bg-surface shadow-2xl ring-1 ring-black/5 animate-fade-in">
+            {/* Top Search Field inside dropdown (like user's reference image) */}
+            <div className="border-b border-line-subtle bg-surface p-2">
+              <div className="relative flex items-center">
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder={searchPlaceholder}
+                  className="w-full rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-xs text-ink placeholder:text-ink-muted transition-colors focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 />
-              </svg>
-              <input
-                ref={searchInputRef}
-                id={searchInputId}
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder={searchPlaceholder}
-                className="w-full bg-transparent text-xs text-ink placeholder:text-ink-muted focus:outline-none"
-              />
-              {searchTerm ? (
-                <button
-                  type="button"
-                  onClick={() => setSearchTerm("")}
-                  aria-label="Clear search"
-                  className="rounded p-0.5 text-ink-muted hover:bg-surface hover:text-ink"
-                >
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              ) : null}
+                {searchTerm ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchTerm("");
+                      searchInputRef.current?.focus();
+                    }}
+                    aria-label="Clear search"
+                    className="absolute right-2.5 text-ink-muted hover:text-ink"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             {/* Counts & Quick Actions Sub-bar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-subtle/70 bg-surface px-3 py-1.5 text-xs">
-              <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-subtle/70 bg-surface-sunken/40 px-3 py-1.5 text-xs">
+              <div className="flex items-center gap-1.5 text-[11px] text-ink-muted">
                 {selected.length > 0 ? (
-                  <span className="inline-flex items-center rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-semibold text-brand">
+                  <span className="inline-flex items-center rounded-full bg-brand-soft px-2 py-0.5 font-semibold text-brand">
                     {selected.length} selected
                   </span>
                 ) : (
-                  <span className="text-ink-muted">
+                  <span>
                     {safeOptions.length} {dataType === "user_reference" ? "user(s)" : "available"}
                   </span>
                 )}
                 {searchTerm && filteredOptions.length !== safeOptions.length ? (
-                  <span className="text-[11px] text-ink-muted">
+                  <span>
                     ({filteredOptions.length} match{filteredOptions.length === 1 ? "" : "es"})
                   </span>
                 ) : null}
@@ -404,6 +412,7 @@ function DropdownMultiReferencePicker({
                 {filteredOptions.length > 0 ? (
                   <button
                     type="button"
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={handleSelectAllVisible}
                     className="font-medium text-brand hover:underline"
                   >
@@ -413,7 +422,12 @@ function DropdownMultiReferencePicker({
                 {selected.length > 0 ? (
                   <button
                     type="button"
-                    onClick={() => onChange([])}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      onChange([]);
+                      setSearchTerm("");
+                      searchInputRef.current?.focus();
+                    }}
                     className="font-medium text-ink-muted hover:text-danger"
                   >
                     Clear
@@ -433,7 +447,11 @@ function DropdownMultiReferencePicker({
                   No matches found for “{searchTerm}”.
                   <button
                     type="button"
-                    onClick={() => setSearchTerm("")}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setSearchTerm("");
+                      searchInputRef.current?.focus();
+                    }}
                     className="ml-2 font-medium text-brand hover:underline"
                   >
                     Clear filter
@@ -450,6 +468,7 @@ function DropdownMultiReferencePicker({
                     <li key={option.value ?? optionId}>
                       <label
                         htmlFor={optionId}
+                        onMouseDown={(e) => e.preventDefault()}
                         className={`group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors duration-150 ${
                           isChecked
                             ? "bg-brand-soft/30 text-ink"
@@ -530,18 +549,6 @@ function DropdownMultiReferencePicker({
                 })
               )}
             </ul>
-
-            {/* Footer with Done button */}
-            <div className="flex items-center justify-between border-t border-line-subtle bg-surface-sunken/40 px-3 py-2 text-xs text-ink-muted">
-              <span>Press Esc or click outside to close</span>
-              <button
-                type="button"
-                onClick={() => setIsOpen(false)}
-                className="rounded-md bg-brand px-3 py-1 font-semibold text-white shadow-2xs hover:bg-brand-strong transition-colors"
-              >
-                Done
-              </button>
-            </div>
           </div>
         ) : null}
       </div>
