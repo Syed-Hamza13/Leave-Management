@@ -11,6 +11,7 @@ const FOCUSABLE =
  */
 export default function Modal({
   open,
+  isOpen,
   onClose,
   title,
   description,
@@ -18,13 +19,14 @@ export default function Modal({
   footer,
   children,
 }) {
+  const visible = open ?? isOpen;
   const panelRef = useRef(null);
   const restoreRef = useRef(null);
   const titleId = useId();
   const descriptionId = useId();
 
   useEffect(() => {
-    if (!open) return undefined;
+    if (!visible) return undefined;
 
     restoreRef.current = document.activeElement;
 
@@ -83,9 +85,9 @@ export default function Modal({
       document.body.style.overflow = previousOverflow;
       restoreRef.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [visible, onClose]);
 
-  if (!open) return null;
+  if (!visible) return null;
 
   const widths = {
     sm: "max-w-md",

@@ -36,6 +36,26 @@ export const PERMISSIONS = {
   RECORDS_CREATE: "records.create",
   RECORDS_UPDATE: "records.update",
   RECORDS_DELETE: "records.delete",
+
+  LEAVE_VIEW: "leave.view",
+  LEAVE_APPLY: "leave.apply",
+  LEAVE_CANCEL: "leave.cancel",
+  LEAVE_APPROVE: "leave.approve",
+  LEAVE_REJECT: "leave.reject",
+  LEAVE_CALENDAR_VIEW: "leave.calendar.view",
+  LEAVE_POLICIES_VIEW: "leave.policies.view",
+  LEAVE_POLICIES_MANAGE: "leave.policies.manage",
+  LEAVE_TYPES_VIEW: "leave.types.view",
+  LEAVE_TYPES_MANAGE: "leave.types.manage",
+  LEAVE_RULES_VIEW: "leave.rules.view",
+  LEAVE_RULES_MANAGE: "leave.rules.manage",
+  LEAVE_WORKFLOWS_VIEW: "leave.workflows.view",
+  LEAVE_WORKFLOWS_MANAGE: "leave.workflows.manage",
+  LEAVE_BALANCES_VIEW: "leave.balances.view",
+  LEAVE_BALANCES_MANAGE: "leave.balances.manage",
+  LEAVE_CALENDARS_VIEW: "leave.calendars.view",
+  LEAVE_CALENDARS_MANAGE: "leave.calendars.manage",
+  LEAVE_REPORTS_VIEW: "leave.reports.view",
 };
 
 export const PERMISSION_LIST = Object.entries(PERMISSIONS).map(([name, key]) => ({
@@ -73,6 +93,14 @@ export const ROLE_PERMISSIONS = {
     PERMISSIONS.RECORDS_VIEW,
     PERMISSIONS.RECORDS_CREATE,
     PERMISSIONS.RECORDS_UPDATE,
+    PERMISSIONS.LEAVE_VIEW,
+    PERMISSIONS.LEAVE_APPLY,
+    PERMISSIONS.LEAVE_CANCEL,
+    PERMISSIONS.LEAVE_APPROVE,
+    PERMISSIONS.LEAVE_REJECT,
+    PERMISSIONS.LEAVE_CALENDAR_VIEW,
+    PERMISSIONS.LEAVE_BALANCES_VIEW,
+    PERMISSIONS.LEAVE_REPORTS_VIEW,
   ],
 
   [ROLES.EMPLOYEE]: [
@@ -80,6 +108,10 @@ export const ROLE_PERMISSIONS = {
     PERMISSIONS.ORGANIZATION_VIEW,
     PERMISSIONS.RECORDS_VIEW,
     PERMISSIONS.RECORDS_CREATE,
+    PERMISSIONS.LEAVE_VIEW,
+    PERMISSIONS.LEAVE_APPLY,
+    PERMISSIONS.LEAVE_CANCEL,
+    PERMISSIONS.LEAVE_CALENDAR_VIEW,
   ],
 };
 

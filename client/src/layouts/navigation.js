@@ -9,6 +9,16 @@ import { PERMISSIONS } from "../lib/permissions.js";
  */
 export const NAV_GROUPS = [
   {
+    label: "Leave",
+    items: [
+      { to: "/leave", label: "Leave Overview", permission: PERMISSIONS.LEAVE_VIEW, end: true },
+      { to: "/leave/my-leaves", label: "My Leaves", permission: PERMISSIONS.LEAVE_VIEW },
+      { to: "/leave/apply", label: "Apply Leave", permission: PERMISSIONS.LEAVE_APPLY },
+      { to: "/leave/approvals", label: "Approvals", permission: PERMISSIONS.LEAVE_APPROVE },
+      { to: "/leave/calendar", label: "Team Calendar", permission: PERMISSIONS.LEAVE_CALENDAR_VIEW },
+    ],
+  },
+  {
     label: "Records",
     items: [
       { to: "/records", label: "Browse records", permission: PERMISSIONS.RECORDS_VIEW },
@@ -23,6 +33,15 @@ export const NAV_GROUPS = [
       { to: "/admin/tables", label: "Tables", permission: PERMISSIONS.TABLES_VIEW },
       { to: "/admin/mappings", label: "Form mappings", permission: PERMISSIONS.MAPPINGS_VIEW },
       { to: "/admin/users", label: "Users", permission: PERMISSIONS.USERS_VIEW },
+    ],
+  },
+  {
+    label: "Leave Management",
+    items: [
+      { to: "/admin/leave/policies", label: "Policies & Rules", permission: PERMISSIONS.LEAVE_POLICIES_VIEW },
+      { to: "/admin/leave/balances", label: "Employee Balances", permission: PERMISSIONS.LEAVE_BALANCES_VIEW },
+      { to: "/admin/leave/calendars", label: "Calendars & Holidays", permission: PERMISSIONS.LEAVE_CALENDARS_VIEW },
+      { to: "/admin/leave/reports", label: "Reports & Register", permission: PERMISSIONS.LEAVE_REPORTS_VIEW },
     ],
   },
   {

@@ -28,6 +28,16 @@ import SettingsPage from "../features/settings/SettingsPage.jsx";
 import TableDetailPage from "../features/tables/TableDetailPage.jsx";
 import TablesPage from "../features/tables/TablesPage.jsx";
 import UsersPage from "../features/users/UsersPage.jsx";
+import LeaveDashboardPage from "../features/leave/LeaveDashboardPage.jsx";
+import MyLeavesPage from "../features/leave/MyLeavesPage.jsx";
+import ApplyLeavePage from "../features/leave/ApplyLeavePage.jsx";
+import LeaveApprovalsPage from "../features/leave/LeaveApprovalsPage.jsx";
+import LeaveCalendarPage from "../features/leave/LeaveCalendarPage.jsx";
+import PoliciesPage from "../features/leave/admin/PoliciesPage.jsx";
+import PolicyEditorPage from "../features/leave/admin/PolicyEditorPage.jsx";
+import BalancesPage from "../features/leave/admin/BalancesPage.jsx";
+import CalendarsPage from "../features/leave/admin/CalendarsPage.jsx";
+import LeaveReportsPage from "../features/leave/admin/LeaveReportsPage.jsx";
 
 import { PERMISSIONS } from "../lib/permissions.js";
 
@@ -332,6 +342,136 @@ const router = createBrowserRouter([
                     title: "Audit trail",
                     description:
                       "Every administrative action is recorded with its actor, object and a summary of the change.",
+                  },
+                }),
+              },
+
+              {
+                path: "leave",
+                ...screen({
+                  permission: PERMISSIONS.LEAVE_VIEW,
+                  label: "Viewing leave dashboard",
+                  element: <LeaveDashboardPage />,
+                  handle: {
+                    title: "Leave Dashboard",
+                    description: "Manage your leave quota balances, track requests, and check upcoming absences.",
+                  },
+                }),
+              },
+
+              {
+                path: "leave/my-leaves",
+                ...screen({
+                  permission: PERMISSIONS.LEAVE_VIEW,
+                  label: "Viewing personal leave applications",
+                  element: <MyLeavesPage />,
+                  handle: {
+                    title: "My Leave Applications",
+                    description: "History of all submitted, approved, and pending leave requests.",
+                  },
+                }),
+              },
+
+              {
+                path: "leave/apply",
+                ...screen({
+                  permission: PERMISSIONS.LEAVE_APPLY,
+                  label: "Applying for leave",
+                  element: <ApplyLeavePage />,
+                  handle: {
+                    title: "Apply for Leave",
+                    description: "Guided application with live duration calculation and rule compliance preview.",
+                  },
+                }),
+              },
+
+              {
+                path: "leave/approvals",
+                ...screen({
+                  permission: PERMISSIONS.LEAVE_APPROVE,
+                  label: "Reviewing leave approvals",
+                  element: <LeaveApprovalsPage />,
+                  handle: {
+                    title: "Approval Queue",
+                    description: "Review and action pending absence requests assigned to you.",
+                  },
+                }),
+              },
+
+              {
+                path: "leave/calendar",
+                ...screen({
+                  permission: PERMISSIONS.LEAVE_CALENDAR_VIEW,
+                  label: "Viewing team calendar",
+                  element: <LeaveCalendarPage />,
+                  handle: {
+                    title: "Team Absence Calendar",
+                    description: "Overview of scheduled leaves and gazetted institutional holidays.",
+                  },
+                }),
+              },
+
+              {
+                path: "admin/leave/policies",
+                ...screen({
+                  permission: PERMISSIONS.LEAVE_POLICIES_VIEW,
+                  label: "Viewing leave policies",
+                  element: <PoliciesPage />,
+                  handle: {
+                    title: "Leave Policies",
+                    description: "Versioned leave policy sets governing institutional absence rules.",
+                  },
+                }),
+              },
+
+              {
+                path: "admin/leave/policies/:id",
+                ...screen({
+                  permission: PERMISSIONS.LEAVE_POLICIES_MANAGE,
+                  label: "Configuring leave policy",
+                  element: <PolicyEditorPage />,
+                  handle: {
+                    title: "Policy Configuration",
+                    description: "Configure leave types, evaluation rules, and tiered approval workflows.",
+                  },
+                }),
+              },
+
+              {
+                path: "admin/leave/balances",
+                ...screen({
+                  permission: PERMISSIONS.LEAVE_BALANCES_VIEW,
+                  label: "Viewing employee balances",
+                  element: <BalancesPage />,
+                  handle: {
+                    title: "Employee Leave Balances",
+                    description: "Audit quota ledgers and perform manual administrative balance adjustments.",
+                  },
+                }),
+              },
+
+              {
+                path: "admin/leave/calendars",
+                ...screen({
+                  permission: PERMISSIONS.LEAVE_CALENDARS_VIEW,
+                  label: "Viewing calendars and holidays",
+                  element: <CalendarsPage />,
+                  handle: {
+                    title: "Calendars & Holidays",
+                    description: "Weekly working days and institutional holiday schedules.",
+                  },
+                }),
+              },
+
+              {
+                path: "admin/leave/reports",
+                ...screen({
+                  permission: PERMISSIONS.LEAVE_REPORTS_VIEW,
+                  label: "Viewing leave reports",
+                  element: <LeaveReportsPage />,
+                  handle: {
+                    title: "Leave Reports",
+                    description: "Monthly leave registers and annual quota summary reports.",
                   },
                 }),
               },

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ToastContext } from "./ToastContext.js";
+import { ToastContext, useToast } from "./ToastContext.js";
+
+export { useToast };
 
 const TONES = {
   success: "border-l-success bg-success-soft text-success",
@@ -79,6 +81,7 @@ export default function ToastProvider({ children }) {
     () => ({
       push,
       dismiss,
+      notify: ({ tone = "info", message } = {}) => push(message, tone),
       success: (message, duration) => push(message, "success", duration),
       info: (message, duration) => push(message, "info", duration),
       warning: (message, duration) => push(message, "warning", duration),

@@ -500,6 +500,7 @@ export class Session {
         }
 
         await first.clear().catch(() => {});
+        await first.sendKeys(Key.CONTROL, "a", Key.BACK_SPACE).catch(() => {});
 
         // Clearing a controlled input re-renders it, so the value is typed into a
         // freshly located element.

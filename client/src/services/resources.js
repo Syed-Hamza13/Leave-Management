@@ -193,3 +193,59 @@ export const auth = {
 export const audit = {
   events: (params) => api(`/admin/audit/events${toQuery(params)}`),
 };
+
+export const leave = {
+  dashboard: () => api("/leave/dashboard"),
+  balances: () => api("/leave/balances"),
+  balanceLedger: (balanceId) => api(`/leave/balances/${balanceId}/ledger`),
+  calculate: (payload) => post("/leave/calculate", payload),
+  submit: (payload) => post("/leave/applications", payload),
+  myApplications: (params) => api(`/leave/applications${toQuery(params)}`),
+  getApplication: (id) => api(`/leave/applications/${id}`),
+  cancel: (id, payload) => post(`/leave/applications/${id}/cancel`, payload),
+  calendar: (params) => api(`/leave/calendar${toQuery(params)}`),
+  types: () => api("/leave/types"),
+
+  pendingApprovals: () => api("/leave/approvals/pending"),
+  approve: (id, payload) => post(`/leave/approvals/${id}/approve`, payload),
+  reject: (id, payload) => post(`/leave/approvals/${id}/reject`, payload),
+};
+
+export const adminLeave = {
+  listPolicies: () => api("/admin/leave/policies"),
+  getPolicy: (id) => api(`/admin/leave/policies/${id}`),
+  createPolicy: (payload) => post("/admin/leave/policies", payload),
+  updatePolicy: (id, payload) => patch(`/admin/leave/policies/${id}`, payload),
+  publishPolicy: (id) => post(`/admin/leave/policies/${id}/publish`, {}),
+  archivePolicy: (id) => post(`/admin/leave/policies/${id}/archive`, {}),
+
+  listTypes: (policyId) => api(`/admin/leave/types${toQuery({ policyId })}`),
+  createType: (payload) => post("/admin/leave/types", payload),
+  updateType: (id, payload) => patch(`/admin/leave/types/${id}`, payload),
+  archiveType: (id) => api(`/admin/leave/types/${id}`, { method: "DELETE" }),
+
+  listRules: (params) => api(`/admin/leave/rules${toQuery(params)}`),
+  createRule: (payload) => post("/admin/leave/rules", payload),
+  updateRule: (id, payload) => patch(`/admin/leave/rules/${id}`, payload),
+  deleteRule: (id) => api(`/admin/leave/rules/${id}`, { method: "DELETE" }),
+
+  listWorkflows: (policyId) => api(`/admin/leave/workflows${toQuery({ policyId })}`),
+  createWorkflow: (payload) => post("/admin/leave/workflows", payload),
+  updateWorkflow: (id, payload) => patch(`/admin/leave/workflows/${id}`, payload),
+  deleteWorkflow: (id) => api(`/admin/leave/workflows/${id}`, { method: "DELETE" }),
+  addWorkflowStep: (workflowId, payload) => post(`/admin/leave/workflows/${workflowId}/steps`, payload),
+  deleteWorkflowStep: (stepId) => api(`/admin/leave/workflows/steps/${stepId}`, { method: "DELETE" }),
+
+  listCalendars: () => api("/admin/leave/calendars"),
+  createCalendar: (payload) => post("/admin/leave/calendars", payload),
+  updateCalendar: (id, payload) => patch(`/admin/leave/calendars/${id}`, payload),
+  listHolidays: (calendarId) => api(`/admin/leave/holidays${toQuery({ calendarId })}`),
+  addHoliday: (payload) => post("/admin/leave/holidays", payload),
+  deleteHoliday: (id) => api(`/admin/leave/holidays/${id}`, { method: "DELETE" }),
+
+  listBalances: (params) => api(`/admin/leave/balances${toQuery(params)}`),
+  adjustBalance: (payload) => post("/admin/leave/balances/adjust", payload),
+
+  summaryReport: () => api("/admin/leave/reports/summary"),
+  monthlyRegister: (params) => api(`/admin/leave/reports/register${toQuery(params)}`),
+};

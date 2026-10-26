@@ -14,6 +14,8 @@ import audit from "./12-audit.js";
 import slice from "./13-vertical-slice.js";
 import dataTypes from "./14-data-types.js";
 import resilience from "./15-resilience.js";
+import leaveNavigation from "./17-leave-navigation.js";
+import leaveWorkflow from "./18-leave-workflow.js";
 import security from "./16-security.js";
 
 export const suites = [
@@ -32,6 +34,8 @@ export const suites = [
   audit,
   slice,
   dataTypes,
+  leaveNavigation,
+  leaveWorkflow,
   resilience,
   // Runs last: it sends hostile payloads, so it stays away from the suites that
   // still need a clean budget and untouched definitions.
