@@ -28,6 +28,7 @@ import SettingsPage from "../features/settings/SettingsPage.jsx";
 import TableDetailPage from "../features/tables/TableDetailPage.jsx";
 import TablesPage from "../features/tables/TablesPage.jsx";
 import UsersPage from "../features/users/UsersPage.jsx";
+import LeaveSectionPage from "../features/leave/LeaveSectionPage.jsx";
 
 import { PERMISSIONS } from "../lib/permissions.js";
 
@@ -306,6 +307,79 @@ const router = createBrowserRouter([
                   label: "Configuring an entity",
                   element: <EntityTypeConfigPage />,
                 }),
+              },
+
+              {
+                path: "leave/policies",
+                ...screen({
+                  permission: PERMISSIONS.RECORDS_VIEW,
+                  label: "Viewing leave policies",
+                  element: (
+                    <LeaveSectionPage
+                      sectionKey="leave-policy"
+                      title="Leave Policy"
+                      description="Configure policies and view policy records."
+                      singularLabel="Policy"
+                    />
+                  ),
+                }),
+              },
+              {
+                path: "leave/policy",
+                element: <Navigate to="/leave/policies" replace />,
+              },
+              {
+                path: "leave/balances",
+                ...screen({
+                  permission: PERMISSIONS.RECORDS_VIEW,
+                  label: "Viewing leave balances",
+                  element: (
+                    <LeaveSectionPage
+                      sectionKey="leave-balance"
+                      title="Leave Balance"
+                      description="Track and manage employee leave balances."
+                      singularLabel="Balance"
+                    />
+                  ),
+                }),
+              },
+              {
+                path: "leave/balance",
+                element: <Navigate to="/leave/balances" replace />,
+              },
+              {
+                path: "leave/rules",
+                ...screen({
+                  permission: PERMISSIONS.RECORDS_VIEW,
+                  label: "Viewing leave rules",
+                  element: (
+                    <LeaveSectionPage
+                      sectionKey="leave-rules"
+                      title="Leave Rules"
+                      description="Set up and manage rules for leave eligibility and accrual."
+                      singularLabel="Rule"
+                    />
+                  ),
+                }),
+              },
+              {
+                path: "leave/workflows",
+                ...screen({
+                  permission: PERMISSIONS.RECORDS_VIEW,
+                  label: "Viewing leave workflows",
+                  element: (
+                    <LeaveSectionPage
+                      sectionKey="leave-workflow"
+                      title="Leave Workflow"
+                      description="Configure approval workflows and routing for leave requests."
+                      singularLabel="Workflow"
+                    />
+                  ),
+                }),
+              },
+              {
+                path: "leave/workflow",
+                element: <Navigate to="/leave/workflows" replace />,
               },
 
               {

@@ -274,6 +274,14 @@ A record accepts at most **200** values, revalidated against the live column def
 | `GET` / `POST` | `/entities/:entityId/members` | `ORGANIZATION_VIEW` / `ORGANIZATION_MANAGE` — list or add members (`{ userId, role }`) |
 | `PATCH` / `DELETE` | `/entities/:entityId/members/:userId` | `ORGANIZATION_MANAGE` — update role (`{ role }`) or remove membership |
 
+### Sections & Modules (Leave Management) — `/api/v1/sections`
+
+| Method | Path | Permission |
+|---|---|---|
+| `GET` | `/:sectionKey/configuration` | `RECORDS_VIEW` \| `FORMS_VIEW` — returns hydrated Form, Table, and Mapping triple |
+| `POST` | `/:sectionKey/configuration` | `FORMS_MANAGE` \| `TABLES_MANAGE` — saves `{ label, formId, tableId, mappingId, isActive }` |
+| `DELETE` | `/:sectionKey/configuration` | `FORMS_MANAGE` \| `TABLES_MANAGE` — unlinks the configuration for that section |
+
 ### Authorization — `/api/v1/authorization`
 
 | Method | Path | Permission |

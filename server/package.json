@@ -11,6 +11,7 @@
     "start": "node src/server.js",
     "create-user": "node scripts/create-user.js",
     "test-api": "node scripts/test-api.js",
+    "test-smtp": "node scripts/test-smtp.js",
     "migrate": "node scripts/migrate.js",
     "reset-password": "node scripts/reset-password.js"
   },

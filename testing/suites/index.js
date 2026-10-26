@@ -15,6 +15,7 @@ import slice from "./13-vertical-slice.js";
 import dataTypes from "./14-data-types.js";
 import resilience from "./15-resilience.js";
 import security from "./16-security.js";
+import leaveSections from "./17-leave-sections.js";
 
 export const suites = [
   smoke,
@@ -32,6 +33,7 @@ export const suites = [
   audit,
   slice,
   dataTypes,
+  leaveSections,
   resilience,
   // Runs last: it sends hostile payloads, so it stays away from the suites that
   // still need a clean budget and untouched definitions.

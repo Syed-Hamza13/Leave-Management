@@ -128,7 +128,7 @@ The complete contract is in **`docs/API.md`** — transport conventions, respons
 
 ### 3.1 Administration navigation
 
-The authenticated application shell should provide a persistent left navigation with top-level **Administration**, **Organization**, and **Settings** groups. The shell owns navigation state, active route styling, responsive collapse behavior, page header/breadcrumb, and the main content outlet. Do not duplicate sidebars or page chrome across feature pages.
+The authenticated application shell provides a persistent left navigation with interactive collapsible dropdown sections (**Records**, **Administration**, **Organization**, and **Settings**). Each group header acts as a toggle with chevron indicator and category icon; clicking a section header opens/closes its dropdown sub-items. Navigating to an active route automatically expands its parent group so active context is maintained. The shell owns navigation state, active route styling, responsive mobile drawer collapse behavior, page header/breadcrumb, and the main content outlet. Do not duplicate sidebars or page chrome across feature pages.
 
 **Status — implemented.** `client/src/layouts/AppShell.jsx` renders the three groups plus Records from `navigation.js`, filters each item by the signed-in user's permissions, collapses to a labelled menu below the `md` breakpoint, and owns the page header. `client/src/app/router.jsx` supplies each screen's title, description and breadcrumb through its route `handle`, so no feature page repeats page chrome. Hiding an item is presentation only; the same permission is enforced on the API.
 
@@ -167,8 +167,26 @@ Do not equate “creating a Team entity type” with creating a new MySQL table.
 - **Users** (`/admin/users`, `server/src/modules/users/`): paginated, searchable, role-filtered, sortable list; create with role assignment; profile edit; **deactivation is the policy** — there is no hard delete for accounts, because records and audit rows reference `users.id`. Setting a password writes an Argon2id hash and closes that account's sessions. Guards: `EMAIL_TAKEN`, `SELF_DEACTIVATION_BLOCKED`, `LAST_ADMINISTRATOR_PROTECTED`.
 - **Custom User Profile Attributes:** Fully implemented. Administrators can configure custom columns on the `users` table via the Table Builder. `UserDialog.jsx` and `UsersPage.jsx` dynamically render and edit these custom profile fields, which are validated against live column definitions on the server and persisted in `user_profile_values`.
 - **Passwords are never form values.** They are set only through `POST /api/v1/admin/users` or `PUT /api/v1/admin/users/:userId/password`, are never returned by any read endpoint, and the audit summary redacts any key matching the secret pattern. The generic record builders cannot target the `users` auth columns at all (`SYSTEM_TABLE_READONLY`, `SYSTEM_COLUMN_LOCKED`).
-- **Settings** (`/admin/settings`, `server/src/modules/settings/`): SMTP stored in `app_settings` with the credential encrypted as an AES-256-GCM envelope under `ENCRYPTION_KEY`. Reads report `passwordConfigured` and never the value. `POST /smtp/test` opens a socket, negotiates STARTTLS/TLS and attempts auth, then disconnects — it queues no mail, echoes no password, and is rate limited separately.
+- **Settings** (`/admin/settings`, `server/src/modules/settings/`): SMTP stored in `app_settings` with the credential encrypted as an AES-256-GCM envelope under `ENCRYPTION_KEY`. Reads report `passwordConfigured` and never the value. `POST /smtp/test` opens a socket, negotiates STARTTLS/TLS, authenticates, and then disconnects via `quitSafely` — it queues no mail, echoes no password, and is rate limited separately. Authentication occurs before `QUIT` to prevent early socket termination or `221` status code collision. Unit test coverage is available via `npm run test-smtp`.
 - **Authorization** is a separate module with its own tables (`roles`, `permissions`, `role_permissions`, `user_roles`) and the `requirePermission` guard; the client mirrors the catalogue only to decide navigation.
+
+### 3.4 Leave Management & Section Configuration
+
+Leave Management provides 4 operational sub-sections accessible via the interactive collapsible left navigation under **Leave Management**:
+1. **Leave Policy** (`/leave/policies`): Manage leave policy specifications and rules.
+2. **Leave Balance** (`/leave/balances`): Track and administer employee leave balances.
+3. **Leave Rules** (`/leave/rules`): Define eligibility, accrual, and leave constraints.
+4. **Leave Workflow** (`/leave/workflows`): Configure routing and approval steps.
+
+**Section Configuration Pattern:**
+Every section mirrors the metadata-driven configuration architecture established in the Organization module:
+- **Unconfigured State:** If no Form/Table mapping is assigned yet, the screen displays a clean empty state and prompt banner with "New configuration".
+- **Configuration Modal (`SectionConfigDialog.jsx`):** Allows administrators to select any active Form and managed Table. The dialog queries `mappingsApi.compatibility(formId, tableId)` in real time, validating that an active mapping exists between the selected Form and Table before saving.
+- **Configured State:** Displays a unified header with record count, status badge, and an integrated configuration strip showing `Configuration: [label] | Form: [form] → Table: [table]` along with "Edit" and "Remove" actions.
+- **Dynamic Data Table:** Renders columns directly from the configured table (`tablesApi.get(tableId)`), supports live text search, status filtering (active/archived), and column visibility reordering preferences (`ColumnVisibilityManager`).
+- **Record Entry & Editing:** "New <item>" opens `RecordDialog` pinned to the configured Form (`fixedFormId`) and Table, creating and editing records with live client and server validation.
+- **API & Persistence:** Backed by `/api/v1/sections/:sectionKey/configuration` (`GET`, `POST`, `DELETE`) storing settings in `app_settings` with full audit event trail (`section.configuration.save`, `section.configuration.delete`).
+- **Automated Test Coverage:** Verified by Selenium E2E suite `testing/suites/17-leave-sections.js` (4/4 passed).
 
 ## 4. Recommended architecture and data safety
 

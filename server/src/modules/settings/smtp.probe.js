@@ -114,6 +114,15 @@ function send(socket, text) {
   });
 }
 
+async function quitSafely(socket, timeoutMs = 2000) {
+  try {
+    await send(socket, "QUIT");
+    await readReply(socket, timeoutMs);
+  } catch {
+    // Ignore errors during graceful shutdown
+  }
+}
+
 function openSocket({ host, port, secure, timeoutMs }) {
   return new Promise((resolve, reject) => {
     const socket = secure
@@ -252,9 +261,10 @@ export async function probeSmtp({ host, port, secure, username, password, authMo
       authAccepted: null,
     };
 
-    await send(socket, "QUIT").catch(() => undefined);
-
-    if (authMode === "none") return result;
+    if (authMode === "none") {
+      await quitSafely(socket);
+      return result;
+    }
 
     if (!username || !password) {
       throw probeFailure(
@@ -283,6 +293,8 @@ export async function probeSmtp({ host, port, secure, username, password, authMo
       );
 
       result.authAccepted = true;
+
+      await quitSafely(socket);
 
       return result;
     }
@@ -314,6 +326,8 @@ export async function probeSmtp({ host, port, secure, username, password, authMo
     );
 
     result.authAccepted = true;
+
+    await quitSafely(socket);
 
     return result;
   } finally {

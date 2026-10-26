@@ -26,6 +26,7 @@ import { createAuthorizationRoutes } from "./modules/authorization/authorization
 import { createAuditRoutes } from "./modules/audit/audit.routes.js";
 import { createUserRoutes } from "./modules/users/user.routes.js";
 import { createSettingsRoutes } from "./modules/settings/settings.routes.js";
+import { createSectionRoutes } from "./modules/sections/sectionConfig.routes.js";
 
 export function createApp() {
   const app = express();
@@ -72,6 +73,7 @@ export function createApp() {
   app.use("/api/v1/authorization", createAuthorizationRoutes());
   app.use("/api/v1/tables", createRecordRoutes());
   app.use("/api/v1/organization", createOrganizationRoutes());
+  app.use("/api/v1/sections", createSectionRoutes());
 
   app.use(notFound);
   app.use(errorHandler);

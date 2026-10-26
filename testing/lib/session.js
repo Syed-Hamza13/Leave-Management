@@ -135,6 +135,19 @@ export class Session {
       config.timeouts.element
     );
 
+    if (!(await link.isDisplayed())) {
+      const toggle = await this.driver
+        .findElement(
+          By.xpath(`//div[@data-nav-group][.//a[normalize-space()="${label}"]]//button[@data-nav-toggle]`)
+        )
+        .catch(() => null);
+
+      if (toggle) {
+        await toggle.click();
+        await this.driver.wait(until.elementIsVisible(link), config.timeouts.element);
+      }
+    }
+
     await link.click();
     await this.step(`navigate to ${label}`);
   }

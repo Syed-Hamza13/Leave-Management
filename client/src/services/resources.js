@@ -193,3 +193,10 @@ export const auth = {
 export const audit = {
   events: (params) => api(`/admin/audit/events${toQuery(params)}`),
 };
+
+export const sections = {
+  getConfiguration: (sectionKey) => api(`/sections/${sectionKey}/configuration`),
+  saveConfiguration: (sectionKey, payload) => post(`/sections/${sectionKey}/configuration`, payload),
+  deleteConfiguration: (sectionKey) =>
+    api(`/sections/${sectionKey}/configuration`, { method: "DELETE" }),
+};

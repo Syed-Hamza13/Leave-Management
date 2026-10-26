@@ -72,7 +72,7 @@ export default {
         await session.goto("/");
 
         const card = await session.driver.wait(
-          until.elementLocated(By.xpath('//a[contains(normalize-space(),"Fields")]')),
+          until.elementLocated(By.xpath('//main//a[contains(normalize-space(),"Fields")]')),
           8000
         );
 
