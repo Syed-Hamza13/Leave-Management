@@ -4,7 +4,6 @@ import Button from "../../components/ui/Button.jsx";
 import FieldRenderer from "../../components/ui/FieldRenderer.jsx";
 import { LoadingState } from "../../components/ui/LoadingState.jsx";
 import Modal from "../../components/ui/Modal.jsx";
-import TextInput from "../../components/ui/TextInput.jsx";
 import { useToast } from "../../components/ui/ToastContext.js";
 
 import useAsyncData from "../../hooks/useAsyncData.js";
@@ -31,7 +30,6 @@ export default function EntityDialog({
   const isEdit = Boolean(entity);
   const toast = useToast();
 
-  const [name, setName] = useState(entity?.name ?? "");
   const [draftValues, setDraftValues] = useState(null);
   const [errors, setErrors] = useState({});
 
@@ -71,8 +69,8 @@ export default function EntityDialog({
     event.preventDefault();
     setErrors({});
 
-    let entityName = name.trim();
-    if (!entityName && values) {
+    let entityName = entity?.name || "";
+    if (values) {
       const firstStr = Object.values(values).find(
         (v) => typeof v === "string" && v.trim().length > 0
       );
@@ -80,18 +78,12 @@ export default function EntityDialog({
         entityName = String(firstStr).trim();
       }
     }
-    if (!entityName && isEdit) {
-      entityName = entity?.name || "";
-    }
 
     const payload = {
       name: entityName || undefined,
       parentEntityId: null,
+      values: { ...values },
     };
-
-    if (fields.length > 0 || !isEdit) {
-      payload.values = { ...values };
-    }
 
     const outcome = await run(() =>
       isEdit
@@ -137,7 +129,7 @@ export default function EntityDialog({
             type="submit"
             form={FORM_ID}
             loading={pending}
-            disabled={formLoading || pending}
+            disabled={formLoading || pending || fields.length === 0}
           >
             {isEdit ? "Save changes" : `Add ${entityType?.label || "entry"}`}
           </Button>
@@ -191,18 +183,9 @@ export default function EntityDialog({
             })}
           </div>
         ) : (
-          <TextInput
-            id="entity-name"
-            label={`${entityType?.label || "Entity"} Name`}
-            required
-            autoFocus
-            data-autofocus
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            error={errors.name}
-            maxLength={190}
-            placeholder={`Enter ${entityType?.label?.toLowerCase() || "entity"} name…`}
-          />
+          <div className="rounded-control border border-line bg-surface-sunken p-4 text-center text-sm text-ink-muted">
+            No form fields configured for this entity type. Please configure a form with fields first.
+          </div>
         )}
       </form>
     </Modal>
