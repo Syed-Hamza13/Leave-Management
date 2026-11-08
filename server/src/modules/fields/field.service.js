@@ -12,7 +12,11 @@ import {
 } from "../../lib/dataTypes.js";
 import { recordAudit } from "../audit/audit.service.js";
 import { findDropdownById } from "../dropdowns/dropdown.repository.js";
-import { findTableById } from "../tables/table.repository.js";
+import {
+  findTableById,
+  updateColumn,
+  bumpSchemaVersion,
+} from "../tables/table.repository.js";
 import {
   findFields,
   countFields,
@@ -21,6 +25,7 @@ import {
   insertField,
   updateField,
   countFieldUsageInForms,
+  findConnectedColumnsForField,
 } from "./field.repository.js";
 
 export async function listFields(query) {
@@ -260,14 +265,104 @@ export async function updateFieldDefinition(fieldId, patch, actor) {
  * historical data, and the definition can be reactivated, so no user-entered
  * value is ever destroyed by an administration action.
  */
-export async function archiveField(fieldId, actor) {
+export async function archiveField(fieldId, { archiveConnectedColumns = false } = {}, actor) {
   const current = await getField(fieldId);
 
   if (current.status === "archived") {
     return current;
   }
 
-  return updateFieldDefinition(fieldId, { status: "archived" }, actor);
+  await withTransaction(async (connection) => {
+    await updateField(
+      connection,
+      fieldId,
+      { status: "archived" },
+      actor?.userId ?? null
+    );
+
+    await recordAudit({
+      connection,
+      actorUserId: actor?.userId ?? null,
+      action: "field.archive",
+      entityType: "field",
+      entityId: fieldId,
+      summary: { changedKeys: ["status"] },
+      ipAddress: actor?.ipAddress ?? null,
+      userAgent: actor?.userAgent ?? null,
+    });
+
+    if (archiveConnectedColumns) {
+      const connected = await findConnectedColumnsForField(fieldId);
+      for (const item of connected) {
+        if (item.columnStatus === "active") {
+          await updateColumn(connection, item.columnId, { status: "archived" });
+          await bumpSchemaVersion(connection, item.tableId);
+          await recordAudit({
+            connection,
+            actorUserId: actor?.userId ?? null,
+            action: "table.column.archive",
+            entityType: "column",
+            entityId: item.columnId,
+            summary: { tableId: item.tableId, archivedViaFieldId: fieldId },
+            ipAddress: actor?.ipAddress ?? null,
+            userAgent: actor?.userAgent ?? null,
+          });
+        }
+      }
+    }
+  });
+
+  return getField(fieldId);
+}
+
+export async function restoreField(fieldId, { restoreConnectedColumns = false } = {}, actor) {
+  const current = await getField(fieldId);
+
+  if (current.status === "active") {
+    return current;
+  }
+
+  await withTransaction(async (connection) => {
+    await updateField(
+      connection,
+      fieldId,
+      { status: "active" },
+      actor?.userId ?? null
+    );
+
+    await recordAudit({
+      connection,
+      actorUserId: actor?.userId ?? null,
+      action: "field.restore",
+      entityType: "field",
+      entityId: fieldId,
+      summary: { changedKeys: ["status"] },
+      ipAddress: actor?.ipAddress ?? null,
+      userAgent: actor?.userAgent ?? null,
+    });
+
+    if (restoreConnectedColumns) {
+      const connected = await findConnectedColumnsForField(fieldId);
+      for (const item of connected) {
+        if (item.columnStatus === "archived") {
+          await updateColumn(connection, item.columnId, { status: "active" });
+          await bumpSchemaVersion(connection, item.tableId);
+          await recordAudit({
+            connection,
+            actorUserId: actor?.userId ?? null,
+            action: "table.column.restore",
+            entityType: "column",
+            entityId: item.columnId,
+            summary: { tableId: item.tableId, restoredViaFieldId: fieldId },
+            ipAddress: actor?.ipAddress ?? null,
+            userAgent: actor?.userAgent ?? null,
+          });
+        }
+      }
+    }
+  });
+
+  return getField(fieldId);
 }
 
 export async function getFieldUsage(fieldId) {
@@ -277,3 +372,5 @@ export async function getFieldUsage(fieldId) {
 
   return { formCount };
 }
+
+export { findConnectedColumnsForField };

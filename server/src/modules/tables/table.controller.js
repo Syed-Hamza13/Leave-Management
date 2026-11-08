@@ -21,8 +21,10 @@ import {
   updateColumnDefinition,
   deleteColumn,
   archiveColumn,
+  restoreColumn,
   reorderTableColumns,
   getTableUsage,
+  findConnectedFieldsForColumn,
 } from "./table.service.js";
 
 function actorFrom(req) {
@@ -152,8 +154,52 @@ export async function archiveColumnHandler(req, res, next) {
   try {
     const { tableId, columnId } = columnIdParamSchema.parse(req.params);
     const permanent = req.query.permanent === "true" || req.query.permanent === true;
+    const archiveConnectedFields =
+      req.query.archiveConnectedFields === "true" ||
+      req.query.archiveConnectedFields === true ||
+      req.body?.archiveConnectedFields === true;
 
-    return ok(res, await deleteColumn(tableId, columnId, { permanent }, actorFrom(req)));
+    return ok(
+      res,
+      await deleteColumn(
+        tableId,
+        columnId,
+        { permanent, archiveConnectedFields },
+        actorFrom(req)
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function restoreColumnHandler(req, res, next) {
+  try {
+    const { tableId, columnId } = columnIdParamSchema.parse(req.params);
+    const restoreConnectedFields =
+      req.body?.restoreConnectedFields === true ||
+      req.query.restoreConnectedFields === "true" ||
+      req.query.restoreConnectedFields === true;
+
+    return ok(
+      res,
+      await restoreColumn(
+        tableId,
+        columnId,
+        { restoreConnectedFields },
+        actorFrom(req)
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function columnConnectedHandler(req, res, next) {
+  try {
+    const { columnId } = columnIdParamSchema.parse(req.params);
+
+    return ok(res, await findConnectedFieldsForColumn(columnId));
   } catch (error) {
     return next(error);
   }

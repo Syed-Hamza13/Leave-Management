@@ -518,3 +518,59 @@ export async function countUsersForTable() {
 
   return Number(rows[0]?.total || 0);
 }
+
+export async function findConnectedFieldsForColumn(columnId) {
+  const [rows] = await db.execute(
+    `
+      SELECT
+        fc.mapping_id,
+        m.status AS mapping_status,
+        m.table_id,
+        t.label AS table_label,
+        t.table_key,
+        f.id AS form_id,
+        f.label AS form_label,
+        f.form_key,
+        fd.id AS field_id,
+        fd.field_key,
+        fd.label AS field_label,
+        fd.status AS field_status
+      FROM field_column_mappings fc
+      INNER JOIN column_definitions c ON c.id = fc.column_id
+      INNER JOIN form_fields ff ON ff.id = fc.form_field_id
+      INNER JOIN field_definitions fd ON fd.id = ff.field_id
+      INNER JOIN form_definitions f ON f.id = ff.form_id
+      INNER JOIN table_definitions t ON t.id = c.table_id
+      INNER JOIN form_table_mappings m ON m.id = fc.mapping_id
+      WHERE fc.column_id = ?
+    `,
+    [columnId]
+  );
+
+  const existing = rows.map((r) => ({
+    mappingId: r.mapping_id,
+    mappingStatus: r.mapping_status,
+    tableId: r.table_id,
+    tableLabel: r.table_label,
+    tableKey: r.table_key,
+    formId: r.form_id,
+    formLabel: r.form_label,
+    formKey: r.form_key,
+    fieldId: r.field_id,
+    fieldKey: r.field_key,
+    fieldLabel: r.field_label,
+    fieldStatus: r.field_status,
+    isInForm: true,
+  }));
+
+  if (existing.length > 0) return existing;
+
+  const col = await findColumnById(columnId);
+  const archived = col?.config?.archivedFormMappings || [];
+
+  return archived.map((item) => ({
+    ...item,
+    isInForm: false,
+  }));
+}
+

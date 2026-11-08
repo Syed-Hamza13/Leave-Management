@@ -55,9 +55,12 @@ export const fields = {
   list: (params) => api(`/admin/fields${toQuery(params)}`),
   get: (fieldId) => api(`/admin/fields/${fieldId}`),
   usage: (fieldId) => api(`/admin/fields/${fieldId}/usage`),
+  connected: (fieldId) => api(`/admin/fields/${fieldId}/connected`),
   create: (payload) => post("/admin/fields", payload),
   update: (fieldId, payload) => patch(`/admin/fields/${fieldId}`, payload),
-  archive: (fieldId) => api(`/admin/fields/${fieldId}`, { method: "DELETE" }),
+  archive: (fieldId, params) =>
+    api(`/admin/fields/${fieldId}${toQuery(params)}`, { method: "DELETE" }),
+  restore: (fieldId, payload = {}) => post(`/admin/fields/${fieldId}/restore`, payload),
 };
 
 export const dropdowns = {
@@ -100,11 +103,14 @@ export const tables = {
     put(`/admin/tables/${tableId}/columns/order`, { columnIds }),
   updateColumn: (tableId, columnId, payload) =>
     patch(`/admin/tables/${tableId}/columns/${columnId}`, payload),
-  deleteColumn: (tableId, columnId, { permanent = false } = {}) =>
-    api(
-      `/admin/tables/${tableId}/columns/${columnId}${permanent ? "?permanent=true" : ""}`,
-      { method: "DELETE" }
-    ),
+  deleteColumn: (tableId, columnId, params = {}) =>
+    api(`/admin/tables/${tableId}/columns/${columnId}${toQuery(params)}`, {
+      method: "DELETE",
+    }),
+  restoreColumn: (tableId, columnId, payload = {}) =>
+    post(`/admin/tables/${tableId}/columns/${columnId}/restore`, payload),
+  columnConnected: (tableId, columnId) =>
+    api(`/admin/tables/${tableId}/columns/${columnId}/connected`),
 };
 
 export const mappings = {

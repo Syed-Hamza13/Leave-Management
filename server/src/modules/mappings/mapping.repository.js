@@ -79,6 +79,8 @@ const SELECT_ENTRIES = `
     c.config AS column_config,
     c.is_system AS column_is_system,
     c.is_required AS column_is_required,
+    c.relation_table_id AS column_relation_table_id,
+    c.relation_policy AS column_relation_policy,
     c.status AS column_status
   FROM field_column_mappings fc
   INNER JOIN form_fields ff ON ff.id = fc.form_field_id
@@ -116,6 +118,8 @@ export function mapMappingEntry(row) {
       config: parseJsonColumn(row.column_config, {}),
       isSystem: Boolean(row.column_is_system),
       isRequired: Boolean(row.column_is_required),
+      relationTableId: row.column_relation_table_id,
+      relationPolicy: row.column_relation_policy,
       status: row.column_status,
     },
   };

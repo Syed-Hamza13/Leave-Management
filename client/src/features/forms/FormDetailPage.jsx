@@ -12,7 +12,11 @@ import useAsyncData from "../../hooks/useAsyncData.js";
 import useMutation from "../../hooks/useMutation.js";
 import { PERMISSIONS } from "../../lib/permissions.js";
 import { errorMessage } from "../../services/errors.js";
-import { forms as formsApi } from "../../services/resources.js";
+import {
+  forms as formsApi,
+  fields as fieldsApi,
+  tables as tablesApi,
+} from "../../services/resources.js";
 
 import { useMetadata } from "../metadata/MetadataContext.js";
 import { usePermissions } from "../permissions/PermissionsContext.js";
@@ -40,6 +44,8 @@ export default function FormDetailPage() {
   const [dropIndex, setDropIndex] = useState(null);
   const [dialog, setDialog] = useState(null);
   const [removeTarget, setRemoveTarget] = useState(null);
+  const [connectedColumns, setConnectedColumns] = useState([]);
+  const [alsoArchiveColumn, setAlsoArchiveColumn] = useState(false);
 
   const { run, pending } = useMutation();
 
@@ -84,8 +90,29 @@ export default function FormDetailPage() {
     reorder(source, target);
   }
 
+  async function handleOpenRemove(target) {
+    setRemoveTarget(target);
+    setAlsoArchiveColumn(false);
+    setConnectedColumns([]);
+    try {
+      const res = await fieldsApi.connected(target.fieldId);
+      const matching = (res.data ?? []).filter(
+        (c) => Number(c.formId) === Number(formId) && c.columnStatus === "active"
+      );
+      setConnectedColumns(matching);
+    } catch {
+      setConnectedColumns([]);
+    }
+  }
+
   async function confirmRemove() {
     const target = removeTarget;
+
+    if (alsoArchiveColumn && connectedColumns.length > 0) {
+      for (const col of connectedColumns) {
+        await tablesApi.deleteColumn(col.tableId, col.columnId);
+      }
+    }
 
     const remaining = formFields.filter(
       (entry) => Number(entry.formFieldId) !== Number(target.formFieldId)
@@ -96,9 +123,14 @@ export default function FormDetailPage() {
     );
 
     setRemoveTarget(null);
+    setConnectedColumns([]);
 
     if (outcome.ok) {
-      toast.success(`“${target.label}” was removed from this form.`);
+      toast.success(
+        alsoArchiveColumn && connectedColumns.length > 0
+          ? `“${target.label}” and mapped table columns were removed/archived.`
+          : `“${target.label}” was removed from this form.`
+      );
       reload();
       return;
     }
@@ -261,7 +293,7 @@ export default function FormDetailPage() {
                         Settings
                       </Button>
 
-                      <Button variant="ghost" size="sm" onClick={() => setRemoveTarget(entry)}>
+                      <Button variant="ghost" size="sm" onClick={() => handleOpenRemove(entry)}>
                         Remove
                       </Button>
                     </div>
@@ -302,10 +334,45 @@ export default function FormDetailPage() {
         open={Boolean(removeTarget)}
         title="Remove field from form"
         message={`Remove “${removeTarget?.label ?? ""}” from this form?`}
-        detail="The field definition is kept and stays available to other forms. Only this form stops asking for it."
+        detail={
+          <div className="space-y-3">
+            <p>
+              The field definition is kept and stays available to other forms. Only this form stops asking for it.
+            </p>
+            {connectedColumns.length > 0 ? (
+              <div className="rounded-control border border-line bg-surface-sunken p-3 text-xs space-y-2">
+                <p className="font-medium text-ink">
+                  This field is mapped to {connectedColumns.length === 1 ? "a table column" : `${connectedColumns.length} table columns`}:
+                </p>
+                <ul className="list-disc list-inside text-ink-soft space-y-1">
+                  {connectedColumns.map((c) => (
+                    <li key={c.mappingId}>
+                      <strong className="text-ink">{c.columnLabel}</strong> in table{" "}
+                      <strong className="text-ink">{c.tableLabel}</strong>
+                    </li>
+                  ))}
+                </ul>
+                <label className="flex items-center gap-2 pt-1 font-medium text-ink cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={alsoArchiveColumn}
+                    onChange={(e) => setAlsoArchiveColumn(e.target.checked)}
+                    className="rounded border-line-strong text-brand focus:ring-brand"
+                  />
+                  <span>
+                    Also archive mapped table {connectedColumns.length === 1 ? "column" : "columns"}
+                  </span>
+                </label>
+              </div>
+            ) : null}
+          </div>
+        }
         confirmLabel="Remove from form"
         loading={pending}
-        onCancel={() => setRemoveTarget(null)}
+        onCancel={() => {
+          setRemoveTarget(null);
+          setConnectedColumns([]);
+        }}
         onConfirm={confirmRemove}
       />
     </div>

@@ -43,7 +43,13 @@ export default function ConfirmDialog({
       <div className="space-y-2 text-sm text-ink-soft">
         <p className="text-ink">{message}</p>
 
-        {detail ? <p>{detail}</p> : null}
+        {detail ? (
+          typeof detail === "string" ? (
+            <p>{detail}</p>
+          ) : (
+            <div>{detail}</div>
+          )
+        ) : null}
       </div>
     </Modal>
   );

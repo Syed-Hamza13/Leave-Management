@@ -155,7 +155,10 @@ function SectionPanel({ configuration, entityId, entityActive }) {
   const table = tableData?.data ?? null;
   const columns = useMemo(() => table?.columns ?? [], [table]);
   const browsable = useMemo(
-    () => columns.filter((column) => !column.isSystem && column.isVisible),
+    () =>
+      columns.filter(
+        (column) => !column.isSystem && column.isVisible && column.status === "active"
+      ),
     [columns]
   );
 

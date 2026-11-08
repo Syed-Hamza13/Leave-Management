@@ -9,6 +9,8 @@ import {
   createFieldHandler,
   updateFieldHandler,
   archiveFieldHandler,
+  restoreFieldHandler,
+  fieldConnectedHandler,
   fieldUsageHandler,
 } from "./field.controller.js";
 
@@ -51,6 +53,18 @@ export function createFieldRoutes() {
     "/:fieldId",
     requirePermission(PERMISSIONS.FIELDS_MANAGE),
     archiveFieldHandler
+  );
+
+  router.post(
+    "/:fieldId/restore",
+    requirePermission(PERMISSIONS.FIELDS_MANAGE),
+    restoreFieldHandler
+  );
+
+  router.get(
+    "/:fieldId/connected",
+    requirePermission(PERMISSIONS.FIELDS_MANAGE),
+    fieldConnectedHandler
   );
 
   return router;

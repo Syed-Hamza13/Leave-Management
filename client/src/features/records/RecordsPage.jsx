@@ -80,7 +80,10 @@ export default function RecordsPage() {
   const columns = useMemo(() => table?.columns ?? [], [table]);
 
   const browsable = useMemo(
-    () => columns.filter((column) => !column.isSystem && column.isVisible),
+    () =>
+      columns.filter(
+        (column) => !column.isSystem && column.isVisible && column.status === "active"
+      ),
     [columns]
   );
 

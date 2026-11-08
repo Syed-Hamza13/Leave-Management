@@ -12,6 +12,8 @@ import {
   archiveRecordById,
   buildRecordDescriptors,
   countActiveRecordsInTable,
+  countActiveUsers,
+  countActiveOrganizationEntities,
   countRecords,
   findActiveOrganizationEntity,
   findFacetValues,
@@ -123,9 +125,11 @@ function validateValues({ columnsByKey, values, mode, keyAliases }) {
     if (result.requiresReferenceCheck) {
       checks.push({
         kind: "reference",
+        dataType: column.dataType,
         key: reportKey(key),
         label: column.label,
         targetTableId: column.relationTableId ?? column.config?.targetTableId ?? null,
+        entityTypeId: column.config?.entityTypeId ?? null,
         value: result.value,
       });
     }
@@ -234,16 +238,45 @@ async function runIntegrityChecks(checks) {
       continue;
     }
 
-    if (!check.targetTableId) {
-      fieldError(errors, check.key, `${check.label} is not configured with a target table.`);
+    if (check.kind === "reference") {
+      const ids = Array.isArray(check.value) ? check.value : [check.value];
+
+      if (check.dataType === "user_reference") {
+        const found = await countActiveUsers(ids);
+        if (found !== ids.length) {
+          fieldError(
+            errors,
+            check.key,
+            `${check.label} points at a user that does not exist or is inactive.`
+          );
+        }
+        continue;
+      }
+
+      if (check.dataType === "entity_reference") {
+        const found = await countActiveOrganizationEntities(ids, check.entityTypeId);
+        if (found !== ids.length) {
+          fieldError(
+            errors,
+            check.key,
+            `${check.label} points at an organization entity that does not exist or is inactive.`
+          );
+        }
+        continue;
+      }
+
+      if (!check.targetTableId) {
+        fieldError(errors, check.key, `${check.label} is not configured with a target table.`);
+        continue;
+      }
+
+      const found = await countActiveRecordsInTable(check.targetTableId, ids);
+
+      if (found !== ids.length) {
+        fieldError(errors, check.key, `${check.label} points at a record that does not exist.`);
+      }
+
       continue;
-    }
-
-    const ids = Array.isArray(check.value) ? check.value : [check.value];
-    const found = await countActiveRecordsInTable(check.targetTableId, ids);
-
-    if (found !== ids.length) {
-      fieldError(errors, check.key, `${check.label} points at a record that does not exist.`);
     }
   }
 

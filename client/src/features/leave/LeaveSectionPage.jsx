@@ -86,7 +86,10 @@ export default function LeaveSectionPage({
 
   const configuredTable = tableData?.data ?? null;
   const tableColumns = useMemo(
-    () => (configuredTable?.columns ?? []).filter((c) => !c.isSystem && c.isVisible),
+    () =>
+      (configuredTable?.columns ?? []).filter(
+        (c) => !c.isSystem && c.isVisible && c.status === "active"
+      ),
     [configuredTable]
   );
 

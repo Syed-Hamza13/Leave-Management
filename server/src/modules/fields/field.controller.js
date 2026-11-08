@@ -12,7 +12,9 @@ import {
   createField,
   updateFieldDefinition,
   archiveField,
+  restoreField,
   getFieldUsage,
+  findConnectedColumnsForField,
 } from "./field.service.js";
 
 function actorFrom(req) {
@@ -76,8 +78,42 @@ export async function updateFieldHandler(req, res, next) {
 export async function archiveFieldHandler(req, res, next) {
   try {
     const { fieldId } = fieldIdParamSchema.parse(req.params);
+    const archiveConnectedColumns =
+      req.query.archiveConnectedColumns === "true" ||
+      req.query.archiveConnectedColumns === true ||
+      req.body?.archiveConnectedColumns === true;
 
-    return ok(res, await archiveField(fieldId, actorFrom(req)));
+    return ok(
+      res,
+      await archiveField(fieldId, { archiveConnectedColumns }, actorFrom(req))
+    );
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function restoreFieldHandler(req, res, next) {
+  try {
+    const { fieldId } = fieldIdParamSchema.parse(req.params);
+    const restoreConnectedColumns =
+      req.body?.restoreConnectedColumns === true ||
+      req.query.restoreConnectedColumns === "true" ||
+      req.query.restoreConnectedColumns === true;
+
+    return ok(
+      res,
+      await restoreField(fieldId, { restoreConnectedColumns }, actorFrom(req))
+    );
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function fieldConnectedHandler(req, res, next) {
+  try {
+    const { fieldId } = fieldIdParamSchema.parse(req.params);
+
+    return ok(res, await findConnectedColumnsForField(fieldId));
   } catch (error) {
     return next(error);
   }

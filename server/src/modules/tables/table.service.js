@@ -8,6 +8,11 @@ import {
 import { assertDataType, normalizeTypeConfig } from "../../lib/dataTypes.js";
 import { recordAudit } from "../audit/audit.service.js";
 import { findDropdownById } from "../dropdowns/dropdown.repository.js";
+import { updateField } from "../fields/field.repository.js";
+import {
+  findFormFieldsByFormId,
+  replaceFormFields,
+} from "../forms/form.repository.js";
 import {
   findTables,
   countTables,
@@ -31,6 +36,7 @@ import {
   countEntityConfigurationsForTable,
   countProfileValuesForColumn,
   countUsersForTable,
+  findConnectedFieldsForColumn,
 } from "./table.repository.js";
 
 export async function listTables(query) {
@@ -494,7 +500,7 @@ export async function updateColumnDefinition(tableId, columnId, patch, actor) {
   return findColumnById(columnId);
 }
 
-export async function deleteColumn(tableId, columnId, { permanent = false } = {}, actor) {
+export async function deleteColumn(tableId, columnId, { permanent = false, archiveConnectedFields = false } = {}, actor) {
   const column = await assertColumnEditable(tableId, columnId);
 
   if (permanent) {
@@ -524,11 +530,167 @@ export async function deleteColumn(tableId, columnId, { permanent = false } = {}
     return column;
   }
 
-  return updateColumnDefinition(tableId, columnId, { status: "archived" }, actor);
+  await withTransaction(async (connection) => {
+    await updateColumn(connection, columnId, { status: "archived" });
+    await bumpSchemaVersion(connection, column.tableId);
+
+    await recordAudit({
+      connection,
+      actorUserId: actor?.userId ?? null,
+      action: "table.column.archive",
+      entityType: "column",
+      entityId: columnId,
+      summary: { tableId: column.tableId, key: column.key },
+      ipAddress: actor?.ipAddress ?? null,
+      userAgent: actor?.userAgent ?? null,
+    });
+
+    const connected = await findConnectedFieldsForColumn(columnId);
+    if (connected.length > 0) {
+      const currentConfig = column.config || {};
+      await updateColumn(connection, columnId, {
+        config: {
+          ...currentConfig,
+          archivedFormMappings: connected,
+        },
+      });
+
+      if (archiveConnectedFields) {
+        // Remove the field from the specific form(s), NOT archiving the global field definition!
+        for (const item of connected) {
+          await connection.execute(
+            `DELETE FROM form_fields WHERE form_id = ? AND field_id = ?`,
+            [item.formId, item.fieldId]
+          );
+
+          await recordAudit({
+            connection,
+            actorUserId: actor?.userId ?? null,
+            action: "form.field.remove",
+            entityType: "form",
+            entityId: item.formId,
+            summary: {
+              fieldId: item.fieldId,
+              removedViaColumnArchive: columnId,
+            },
+            ipAddress: actor?.ipAddress ?? null,
+            userAgent: actor?.userAgent ?? null,
+          });
+        }
+      }
+    }
+  });
+
+  return findColumnById(columnId);
+}
+
+export async function restoreColumn(tableId, columnId, { restoreConnectedFields = false } = {}, actor) {
+  const column = await findColumnById(columnId);
+  if (!column || Number(column.tableId) !== Number(tableId)) {
+    throw notFound("Column not found.", { code: "COLUMN_NOT_FOUND" });
+  }
+
+  if (column.status === "active") {
+    return column;
+  }
+
+  await withTransaction(async (connection) => {
+    const col = await findColumnById(columnId);
+    const archivedMappings = col?.config?.archivedFormMappings || [];
+
+    const cleanedConfig = { ...(col?.config || {}) };
+    delete cleanedConfig.archivedFormMappings;
+
+    await updateColumn(connection, columnId, {
+      status: "active",
+      config: cleanedConfig,
+    });
+    await bumpSchemaVersion(connection, column.tableId);
+
+    await recordAudit({
+      connection,
+      actorUserId: actor?.userId ?? null,
+      action: "table.column.restore",
+      entityType: "column",
+      entityId: columnId,
+      summary: { tableId: column.tableId, key: column.key },
+      ipAddress: actor?.ipAddress ?? null,
+      userAgent: actor?.userAgent ?? null,
+    });
+
+    if (restoreConnectedFields && archivedMappings.length > 0) {
+      for (const item of archivedMappings) {
+        // Check if the field is currently in the form
+        const [existing] = await connection.execute(
+          `SELECT id FROM form_fields WHERE form_id = ? AND field_id = ? LIMIT 1`,
+          [item.formId, item.fieldId]
+        );
+
+        let formFieldId = existing[0]?.id;
+
+        // If not in the form, re-add it to form_fields (without touching other fields)
+        if (!formFieldId) {
+          const [maxOrder] = await connection.execute(
+            `SELECT COALESCE(MAX(sort_order), 0) + 10 AS next_order FROM form_fields WHERE form_id = ?`,
+            [item.formId]
+          );
+          const nextOrder = maxOrder[0]?.next_order ?? 10;
+
+          const [ins] = await connection.execute(
+            `INSERT INTO form_fields (form_id, field_id, sort_order) VALUES (?, ?, ?)`,
+            [item.formId, item.fieldId, nextOrder]
+          );
+          formFieldId = ins.insertId;
+        }
+
+        // Ensure field definition itself is active
+        await connection.execute(
+          `UPDATE field_definitions SET status = 'active', archived_at = NULL WHERE id = ?`,
+          [item.fieldId]
+        );
+
+        // Reconnect mapping in field_column_mappings
+        if (formFieldId && item.mappingId) {
+          const [mapRows] = await connection.execute(
+            `SELECT id FROM form_table_mappings WHERE id = ? LIMIT 1`,
+            [item.mappingId]
+          );
+          if (mapRows.length > 0) {
+            await connection.execute(
+              `DELETE FROM field_column_mappings WHERE mapping_id = ? AND (form_field_id = ? OR column_id = ?)`,
+              [item.mappingId, formFieldId, columnId]
+            );
+            await connection.execute(
+              `INSERT INTO field_column_mappings (mapping_id, form_field_id, column_id) VALUES (?, ?, ?)`,
+              [item.mappingId, formFieldId, columnId]
+            );
+          }
+        }
+
+        await recordAudit({
+          connection,
+          actorUserId: actor?.userId ?? null,
+          action: "form.field.restore",
+          entityType: "form",
+          entityId: item.formId,
+          summary: {
+            fieldId: item.fieldId,
+            restoredViaColumnRestore: columnId,
+          },
+          ipAddress: actor?.ipAddress ?? null,
+          userAgent: actor?.userAgent ?? null,
+        });
+      }
+    }
+  });
+
+  return findColumnById(columnId);
 }
 
 export const archiveColumn = (tableId, columnId, actor) =>
   deleteColumn(tableId, columnId, { permanent: false }, actor);
+
+export { findConnectedFieldsForColumn };
 
 export async function reorderTableColumns(tableId, columnIds, actor) {
   const table = await getTable(tableId, { includeColumns: false });

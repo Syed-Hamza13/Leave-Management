@@ -323,6 +323,46 @@ export async function findActiveOrganizationEntity(entityId) {
   return rows[0] || null;
 }
 
+export async function countActiveUsers(userIds) {
+  if (!userIds || userIds.length === 0) return 0;
+
+  const placeholders = userIds.map(() => "?").join(", ");
+  const [rows] = await db.execute(
+    `
+      SELECT COUNT(DISTINCT id) AS total
+      FROM users
+      WHERE status = 'active' AND id IN (${placeholders})
+    `,
+    userIds
+  );
+
+  return Number(rows[0]?.total || 0);
+}
+
+export async function countActiveOrganizationEntities(entityIds, entityTypeId = null) {
+  if (!entityIds || entityIds.length === 0) return 0;
+
+  const placeholders = entityIds.map(() => "?").join(", ");
+  const conditions = ["status = 'active'", `id IN (${placeholders})`];
+  const params = [...entityIds];
+
+  if (entityTypeId) {
+    conditions.push("entity_type_id = ?");
+    params.push(entityTypeId);
+  }
+
+  const [rows] = await db.execute(
+    `
+      SELECT COUNT(DISTINCT id) AS total
+      FROM organization_entities
+      WHERE ${conditions.join(" AND ")}
+    `,
+    params
+  );
+
+  return Number(rows[0]?.total || 0);
+}
+
 /*
  * Distinct values for one column, bounded and paginated so a filter dropdown
  * never asks the browser to hold an unbounded value list.

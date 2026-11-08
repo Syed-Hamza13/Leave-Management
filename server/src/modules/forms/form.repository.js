@@ -264,39 +264,66 @@ export async function findFormFieldsByFormId(formId) {
 }
 
 export async function replaceFormFields(connection, formId, entries) {
-  await connection.execute(
-    `
-      DELETE FROM form_fields
-      WHERE form_id = ?
-    `,
+  if (!entries || entries.length === 0) {
+    await connection.execute(
+      `
+        DELETE FROM form_fields
+        WHERE form_id = ?
+      `,
+      [formId]
+    );
+    return;
+  }
+
+  const [currentRows] = await connection.execute(
+    `SELECT id, field_id FROM form_fields WHERE form_id = ?`,
     [formId]
   );
+  const currentMap = new Map(currentRows.map((r) => [Number(r.field_id), r.id]));
+  const incomingFieldIds = new Set(entries.map((e) => Number(e.fieldId)));
 
-  if (entries.length === 0) return;
+  const toDelete = currentRows.filter((r) => !incomingFieldIds.has(Number(r.field_id)));
+  if (toDelete.length > 0) {
+    const deleteIds = toDelete.map((r) => r.id);
+    const placeholders = deleteIds.map(() => "?").join(", ");
+    await connection.execute(
+      `DELETE FROM form_fields WHERE id IN (${placeholders})`,
+      deleteIds
+    );
+  }
 
-  const values = entries
-    .map(() => "(?, ?, ?, ?, ?, ?, ?)")
-    .join(", ");
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index];
+    const sortOrder = (index + 1) * 10;
+    const isRequired =
+      entry.isRequired === undefined || entry.isRequired === null
+        ? null
+        : entry.isRequired
+          ? 1
+          : 0;
+    const label = entry.label ?? null;
+    const helpText = entry.helpText ?? null;
+    const config = entry.config ? stringifyJsonColumn(entry.config) : null;
 
-  const params = entries.flatMap((entry, index) => [
-    formId,
-    entry.fieldId,
-    (index + 1) * 10,
-    entry.isRequired === undefined || entry.isRequired === null ? null : entry.isRequired ? 1 : 0,
-    entry.label ?? null,
-    entry.helpText ?? null,
-    entry.config ? stringifyJsonColumn(entry.config) : null,
-  ]);
-
-  await connection.execute(
-    `
-      INSERT INTO form_fields
-        (form_id, field_id, sort_order, is_required_override, label_override,
-         help_text_override, config_override)
-      VALUES ${values}
-    `,
-    params
-  );
+    const existingId = currentMap.get(Number(entry.fieldId));
+    if (existingId) {
+      await connection.execute(
+        `UPDATE form_fields
+         SET sort_order = ?, is_required_override = ?, label_override = ?,
+             help_text_override = ?, config_override = ?
+         WHERE id = ?`,
+        [sortOrder, isRequired, label, helpText, config, existingId]
+      );
+    } else {
+      await connection.execute(
+        `INSERT INTO form_fields
+         (form_id, field_id, sort_order, is_required_override, label_override,
+          help_text_override, config_override)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [formId, entry.fieldId, sortOrder, isRequired, label, helpText, config]
+      );
+    }
+  }
 }
 
 export async function countMappingsForForm(formId) {

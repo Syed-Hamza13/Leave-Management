@@ -14,6 +14,8 @@ import {
   addColumnHandler,
   updateColumnHandler,
   archiveColumnHandler,
+  restoreColumnHandler,
+  columnConnectedHandler,
   reorderColumnsHandler,
 } from "./table.controller.js";
 
@@ -73,6 +75,18 @@ export function createTableRoutes() {
     "/:tableId/columns/:columnId",
     requirePermission(PERMISSIONS.TABLES_MANAGE),
     archiveColumnHandler
+  );
+
+  router.post(
+    "/:tableId/columns/:columnId/restore",
+    requirePermission(PERMISSIONS.TABLES_MANAGE),
+    restoreColumnHandler
+  );
+
+  router.get(
+    "/:tableId/columns/:columnId/connected",
+    requirePermission(PERMISSIONS.TABLES_MANAGE),
+    columnConnectedHandler
   );
 
   return router;

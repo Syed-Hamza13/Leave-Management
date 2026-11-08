@@ -84,21 +84,19 @@ export async function getActiveMappingWithEntries(formId, tableId) {
 
   const entries = await findEntriesByMappingId(mapping.id);
 
-  const stale = entries.filter(
+  /*
+   * Only active fields mapped to active columns are passed to the record processor.
+   * If a column or field was archived, its entry is gracefully omitted so active
+   * submissions continue to work smoothly without failing the entire form.
+   */
+  const usableEntries = entries.filter(
     (entry) =>
-      entry.field.status !== "active" ||
-      entry.column.status !== "active" ||
-      !isColumnMappable(entry.column, mapping.table)
+      entry.field.status === "active" &&
+      entry.column.status === "active" &&
+      isColumnMappable(entry.column, mapping.table)
   );
 
-  if (stale.length > 0) {
-    throw conflict(
-      "This mapping references definitions that are no longer usable. Ask an administrator to review it.",
-      { code: "MAPPING_STALE" }
-    );
-  }
-
-  return { ...mapping, entries };
+  return { ...mapping, entries: usableEntries };
 }
 
 async function loadMappingContext(formId, tableId) {

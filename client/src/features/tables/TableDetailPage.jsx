@@ -45,6 +45,11 @@ export default function TableDetailPage() {
   const [dropIndex, setDropIndex] = useState(null);
   const [dialog, setDialog] = useState(null);
   const [removeTarget, setRemoveTarget] = useState(null);
+  const [connectedFields, setConnectedFields] = useState([]);
+  const [archiveConnected, setArchiveConnected] = useState(false);
+  const [restoreTarget, setRestoreTarget] = useState(null);
+  const [restoreConnectedFields, setRestoreConnectedFields] = useState([]);
+  const [alsoRestoreField, setAlsoRestoreField] = useState(false);
   const [archiveTableOpen, setArchiveTableOpen] = useState(false);
 
   const { run, pending } = useMutation();
@@ -125,20 +130,78 @@ export default function TableDetailPage() {
     reorder(source, target);
   }
 
+  async function handleOpenArchive(column) {
+    setRemoveTarget(column);
+    setArchiveConnected(false);
+    setConnectedFields([]);
+    try {
+      const res = await tablesApi.columnConnected(tableId, column.id);
+      setConnectedFields(res.data ?? []);
+    } catch {
+      setConnectedFields([]);
+    }
+  }
+
+  async function handleOpenRestore(column) {
+    setRestoreTarget(column);
+    setAlsoRestoreField(false);
+    setRestoreConnectedFields([]);
+    try {
+      const res = await tablesApi.columnConnected(tableId, column.id);
+      setRestoreConnectedFields(res.data ?? []);
+    } catch {
+      setRestoreConnectedFields([]);
+    }
+  }
+
   async function confirmRemove() {
     const target = removeTarget;
 
-    const outcome = await run(() => tablesApi.deleteColumn(tableId, target.id));
+    const outcome = await run(() =>
+      tablesApi.deleteColumn(tableId, target.id, {
+        archiveConnectedFields: archiveConnected,
+      })
+    );
 
     setRemoveTarget(null);
+    setConnectedFields([]);
 
     if (outcome.ok) {
-      toast.success(`“${target.label}” was archived.`);
+      toast.success(
+        archiveConnected
+          ? `“${target.label}” was archived and removed from form.`
+          : `“${target.label}” was archived.`
+      );
       refresh();
       return;
     }
 
     toast.error(errorMessage(outcome.error, "The column could not be archived."));
+  }
+
+  async function confirmRestore() {
+    const target = restoreTarget;
+
+    const outcome = await run(() =>
+      tablesApi.restoreColumn(tableId, target.id, {
+        restoreConnectedFields: alsoRestoreField,
+      })
+    );
+
+    setRestoreTarget(null);
+    setRestoreConnectedFields([]);
+
+    if (outcome.ok) {
+      toast.success(
+        alsoRestoreField
+          ? `“${target.label}” was restored with its previous values and re-added to form.`
+          : `“${target.label}” was restored with its previous values.`
+      );
+      refresh();
+      return;
+    }
+
+    toast.error(errorMessage(outcome.error, "The column could not be restored."));
   }
 
   async function confirmArchiveTable() {
@@ -371,7 +434,7 @@ export default function TableDetailPage() {
                           Edit
                         </Button>
 
-                        <Button variant="ghost" size="sm" onClick={() => setRemoveTarget(column)}>
+                        <Button variant="ghost" size="sm" onClick={() => handleOpenArchive(column)}>
                           Archive
                         </Button>
                       </div>
@@ -429,7 +492,20 @@ export default function TableDetailPage() {
                   <code className="font-mono text-xs text-ink-muted">{column.key}</code>
                 </div>
 
-                <Badge tone="neutral">archived</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge tone="neutral">archived</Badge>
+
+                  {canManageColumns ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => handleOpenRestore(column)}
+                      disabled={pending}
+                    >
+                      Restore
+                    </Button>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>
@@ -473,11 +549,99 @@ export default function TableDetailPage() {
         open={Boolean(removeTarget)}
         title="Archive column"
         message={`Archive “${removeTarget?.label ?? ""}”?`}
-        detail="Values already stored stay in existing records, but the column leaves the table and its mappings."
+        detail={
+          <div className="space-y-3">
+            <p>
+              Values already stored stay in existing records, but the column leaves the active table.
+            </p>
+            {connectedFields.length > 0 ? (
+              <div className="rounded-control border border-line bg-surface-sunken p-3 text-xs space-y-2">
+                <p className="font-medium text-ink">
+                  This column is connected to {connectedFields.length === 1 ? "a form field" : `${connectedFields.length} form fields`}:
+                </p>
+                <ul className="list-disc list-inside text-ink-soft space-y-1">
+                  {connectedFields.map((f) => (
+                    <li key={f.mappingId}>
+                      <strong className="text-ink">{f.fieldLabel}</strong> in form{" "}
+                      <strong className="text-ink">{f.formLabel}</strong>
+                      {f.fieldStatus === "archived" ? " (already archived)" : ""}
+                    </li>
+                  ))}
+                </ul>
+                {connectedFields.some((f) => f.isInForm !== false) ? (
+                  <label className="flex items-center gap-2 pt-1 font-medium text-ink cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={archiveConnected}
+                      onChange={(e) => setArchiveConnected(e.target.checked)}
+                      className="rounded border-line-strong text-brand focus:ring-brand"
+                    />
+                    <span>
+                      Also remove mapped field from form {connectedFields.length === 1 ? `(${connectedFields[0].formLabel})` : ""}
+                    </span>
+                  </label>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        }
         confirmLabel="Archive column"
         loading={pending}
-        onCancel={() => setRemoveTarget(null)}
+        onCancel={() => {
+          setRemoveTarget(null);
+          setConnectedFields([]);
+        }}
         onConfirm={confirmRemove}
+      />
+
+      <ConfirmDialog
+        open={Boolean(restoreTarget)}
+        title="Restore column"
+        message={`Restore “${restoreTarget?.label ?? ""}”?`}
+        tone="primary"
+        detail={
+          <div className="space-y-3">
+            <p className="text-xs text-ink-soft">
+              Values stored under this column before archiving will be restored and visible again in records.
+            </p>
+            {restoreConnectedFields.length > 0 ? (
+              <div className="rounded-control border border-line bg-surface-sunken p-3 text-xs space-y-2">
+                <p className="font-medium text-ink">Previous mapping connection:</p>
+                <ul className="list-disc list-inside text-ink-soft space-y-1">
+                  {restoreConnectedFields.map((f) => (
+                    <li key={f.mappingId}>
+                      <strong className="text-ink">{f.fieldLabel}</strong> in form{" "}
+                      <strong className="text-ink">{f.formLabel}</strong>
+                      {f.fieldStatus === "archived"
+                        ? " (currently archived)"
+                        : " (currently active)"}
+                    </li>
+                  ))}
+                </ul>
+                {restoreConnectedFields.length > 0 ? (
+                  <label className="flex items-center gap-2 pt-1 font-medium text-ink cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={alsoRestoreField}
+                      onChange={(e) => setAlsoRestoreField(e.target.checked)}
+                      className="rounded border-line-strong text-brand focus:ring-brand"
+                    />
+                    <span>
+                      Also restore field to form {restoreConnectedFields.length === 1 ? `(${restoreConnectedFields[0].formLabel})` : ""} and reconnect mapping
+                    </span>
+                  </label>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        }
+        confirmLabel="Restore column"
+        loading={pending}
+        onCancel={() => {
+          setRestoreTarget(null);
+          setRestoreConnectedFields([]);
+        }}
+        onConfirm={confirmRestore}
       />
 
       <ConfirmDialog

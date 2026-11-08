@@ -242,3 +242,47 @@ export async function countFieldUsageInForms(id) {
 
   return Number(rows[0]?.total || 0);
 }
+
+export async function findConnectedColumnsForField(fieldId) {
+  const [rows] = await db.execute(
+    `
+      SELECT
+        fc.mapping_id,
+        m.status AS mapping_status,
+        m.form_id,
+        f.label AS form_label,
+        f.form_key,
+        c.id AS column_id,
+        c.table_id,
+        c.column_key,
+        c.label AS column_label,
+        c.status AS column_status,
+        t.label AS table_label,
+        t.table_key
+      FROM field_column_mappings fc
+      INNER JOIN form_fields ff ON ff.id = fc.form_field_id
+      INNER JOIN form_definitions f ON f.id = ff.form_id
+      INNER JOIN column_definitions c ON c.id = fc.column_id
+      INNER JOIN table_definitions t ON t.id = c.table_id
+      INNER JOIN form_table_mappings m ON m.id = fc.mapping_id
+      WHERE ff.field_id = ?
+    `,
+    [fieldId]
+  );
+
+  return rows.map((r) => ({
+    mappingId: r.mapping_id,
+    mappingStatus: r.mapping_status,
+    formId: r.form_id,
+    formLabel: r.form_label,
+    formKey: r.form_key,
+    columnId: r.column_id,
+    tableId: r.table_id,
+    columnKey: r.column_key,
+    columnLabel: r.column_label,
+    columnStatus: r.column_status,
+    tableLabel: r.table_label,
+    tableKey: r.table_key,
+  }));
+}
+
