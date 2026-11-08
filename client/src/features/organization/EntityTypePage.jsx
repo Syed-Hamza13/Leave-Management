@@ -26,7 +26,6 @@ import useEntryOptions from "../records/useEntryOptions.js";
 
 import ConfigurationDialog from "./ConfigurationDialog.jsx";
 import EntityDialog from "./EntityDialog.jsx";
-import EntityMembersModal from "./EntityMembersModal.jsx";
 
 const PAGE_SIZE = 25;
 
@@ -44,7 +43,6 @@ export default function EntityTypePage() {
 
   const [configDialog, setConfigDialog] = useState(null);
   const [entityDialog, setEntityDialog] = useState(null);
-  const [memberEntityTarget, setMemberEntityTarget] = useState(null);
   const [entityArchiveTarget, setEntityArchiveTarget] = useState(null);
   const [configDeleteTarget, setConfigDeleteTarget] = useState(null);
 
@@ -340,68 +338,6 @@ export default function EntityTypePage() {
             ) : null}
           </div>
         </div>
-
-        {/* Integrated Configuration Strip */}
-        {configurations.length > 0 ? (
-          <div className="mt-4 border-t border-line/60 pt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-semibold text-ink-muted uppercase tracking-wider text-[11px]">
-                Configuration
-              </span>
-
-              <ul className="flex flex-wrap items-center gap-2">
-                {configurations.map((configuration) => (
-                  <li
-                    key={configuration.id}
-                    className="flex flex-wrap items-center gap-2 text-ink-soft"
-                  >
-                    <span className="font-semibold text-ink">{configuration.label}</span>
-                    <span className="inline-flex items-center gap-1 rounded border border-line/60 bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-soft">
-                      <span className="text-ink-muted">Form:</span> {configuration.form?.label || "—"}
-                    </span>
-                    <span className="text-ink-muted">→</span>
-                    <span className="inline-flex items-center gap-1 rounded border border-line/60 bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-soft">
-                      <span className="text-ink-muted">Table:</span> {configuration.table?.label || "—"}
-                    </span>
-                    {configuration.sortOrder != null ? (
-                      <span className="text-[11px] text-ink-muted">
-                        (order {configuration.sortOrder})
-                      </span>
-                    ) : null}
-                    {!configuration.isActive ? (
-                      <Badge tone="warning" size="sm">Inactive</Badge>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {canManage && activeConfiguration ? (
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setConfigDialog({ mode: "edit", configuration: activeConfiguration })}
-                >
-                  Edit
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setConfigDeleteTarget(activeConfiguration)}
-                >
-                  Remove
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          canManage && (
-            <div className="mt-4 border-t border-line/60 pt-3 flex items-center justify-between gap-2 text-xs text-ink-muted">
-              <span>No form and table linked yet. Click &ldquo;New configuration&rdquo; to link a form and table to this entity.</span>
-            </div>
-          )
-        )}
       </header>
 
       {/* Main Content */}
@@ -512,14 +448,6 @@ export default function EntityTypePage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setMemberEntityTarget(row)}
-                    >
-                      Members
-                    </Button>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
                       onClick={() => setEntityArchiveTarget(row)}
                     >
                       Archive
@@ -538,6 +466,7 @@ export default function EntityTypePage() {
           entityTypeId={entityType.id}
           entityType={entityType}
           configuration={configDialog.configuration ?? null}
+          onDelete={canManage && activeConfiguration ? () => setConfigDeleteTarget(activeConfiguration) : null}
           onClose={() => setConfigDialog(null)}
           onSaved={(saved) => {
             setConfigDialog(null);
@@ -573,14 +502,6 @@ export default function EntityTypePage() {
         />
       ) : null}
 
-      {/* Overlay: Entity Members Modal */}
-      {memberEntityTarget ? (
-        <EntityMembersModal
-          entity={memberEntityTarget}
-          canManage={canManage}
-          onClose={() => setMemberEntityTarget(null)}
-        />
-      ) : null}
 
       {/* Confirmation Dialog: Archive Entity */}
       <ConfirmDialog

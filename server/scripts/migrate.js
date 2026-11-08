@@ -34,10 +34,50 @@ async function createMigrationsTable(connection) {
 }
 
 function calculateChecksum(sql) {
+  // Normalize line endings to LF and strip optional BOM so checksums remain
+  // consistent across Windows (CRLF), Linux/macOS (LF), and sync tools (e.g. drift).
+  const normalized = sql.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+  return crypto
+    .createHash("sha256")
+    .update(normalized, "utf8")
+    .digest("hex");
+}
+
+function calculateRawChecksum(sql) {
   return crypto
     .createHash("sha256")
     .update(sql, "utf8")
     .digest("hex");
+}
+
+function verifyChecksum(storedChecksum, sql) {
+  // 1. Canonical normalized LF checksum
+  if (storedChecksum === calculateChecksum(sql)) {
+    return true;
+  }
+
+  // 1b. Normalized trimmed (handles editors adding/removing trailing newlines)
+  const trimmed = sql.trim();
+  if (
+    storedChecksum === calculateChecksum(trimmed) ||
+    storedChecksum === calculateChecksum(trimmed + "\n") ||
+    storedChecksum === calculateChecksum(trimmed + "\r\n")
+  ) {
+    return true;
+  }
+
+  // 2. Exact raw bytes as read from disk
+  if (storedChecksum === calculateRawChecksum(sql)) {
+    return true;
+  }
+
+  // 3. Windows CRLF checksum for migrations recorded on Windows machines
+  const crlf = sql.replace(/^\uFEFF/, "").replace(/\r?\n/g, "\r\n");
+  if (storedChecksum === calculateRawChecksum(crlf)) {
+    return true;
+  }
+
+  return false;
 }
 
 async function runMigrations() {
@@ -84,7 +124,7 @@ async function runMigrations() {
       if (appliedMigrations.has(file)) {
         const storedChecksum = appliedMigrations.get(file);
 
-        if (storedChecksum !== checksum) {
+        if (!verifyChecksum(storedChecksum, sql)) {
           throw new Error(
             `Migration checksum mismatch: ${file}`
           );

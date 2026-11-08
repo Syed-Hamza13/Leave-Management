@@ -114,26 +114,3 @@ export const updateEntitySchema = z
     path: ["values"],
   });
 
-export const memberUserIdParamSchema = z.object({
-  entityId: z.coerce.number().int().positive(),
-  userId: z.coerce.number().int().positive(),
-});
-
-export const userIdParamSchema = z.object({
-  userId: z.coerce.number().int().positive(),
-});
-
-export const addEntityMemberSchema = z.object({
-  userId: z.coerce.number().int().positive(),
-  role: z.enum(["member", "lead", "manager"]).default("member"),
-});
-
-export const updateEntityMemberSchema = z
-  .object({
-    role: z.enum(["member", "lead", "manager"]).optional(),
-    status: z.enum(["active", "inactive"]).optional(),
-  })
-  .refine((payload) => Object.keys(payload).length > 0, {
-    message: "At least one field must be provided.",
-  });
-

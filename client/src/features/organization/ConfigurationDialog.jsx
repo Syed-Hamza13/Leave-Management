@@ -36,6 +36,7 @@ export default function ConfigurationDialog({
   configuration = null,
   onClose,
   onSaved,
+  onDelete = null,
 }) {
   const isEdit = Boolean(configuration);
   const { lookups } = useMetadata();
@@ -185,15 +186,34 @@ export default function ConfigurationDialog({
       title={isEdit ? `Edit “${configuration.label}”` : "New configuration"}
       description="A configuration binds a kind of entity to the form, table and mapping it uses."
       footer={
-        <>
-          <Button variant="ghost" onClick={onClose} disabled={pending}>
-            Cancel
-          </Button>
+        <div className="flex w-full items-center justify-between">
+          {isEdit && onDelete ? (
+            <Button
+              variant="danger"
+              size="sm"
+              type="button"
+              onClick={() => {
+                onClose();
+                onDelete();
+              }}
+              disabled={pending}
+            >
+              Remove
+            </Button>
+          ) : (
+            <span />
+          )}
 
-          <Button type="submit" form={FORM_ID} loading={pending}>
-            {isEdit ? "Save configuration" : "Create configuration"}
-          </Button>
-        </>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={onClose} disabled={pending}>
+              Cancel
+            </Button>
+
+            <Button type="submit" form={FORM_ID} loading={pending}>
+              {isEdit ? "Save configuration" : "Create configuration"}
+            </Button>
+          </div>
+        </div>
       }
     >
       <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-4" noValidate>

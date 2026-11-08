@@ -26,6 +26,7 @@ export default function SectionConfigDialog({
   configuration = null,
   onClose,
   onSaved,
+  onDelete = null,
 }) {
   const isEdit = Boolean(configuration);
   const { lookups } = useMetadata();
@@ -171,15 +172,34 @@ export default function SectionConfigDialog({
       title={isEdit ? `Edit “${configuration.label}”` : `Configure ${title}`}
       description="Select the Form and Table to manage records for this section."
       footer={
-        <>
-          <Button variant="ghost" onClick={onClose} disabled={pending}>
-            Cancel
-          </Button>
+        <div className="flex w-full items-center justify-between">
+          {isEdit && onDelete ? (
+            <Button
+              variant="danger"
+              size="sm"
+              type="button"
+              onClick={() => {
+                onClose();
+                onDelete();
+              }}
+              disabled={pending}
+            >
+              Remove
+            </Button>
+          ) : (
+            <span />
+          )}
 
-          <Button type="submit" form={FORM_ID} loading={pending}>
-            {isEdit ? "Save configuration" : "Save configuration"}
-          </Button>
-        </>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={onClose} disabled={pending}>
+              Cancel
+            </Button>
+
+            <Button type="submit" form={FORM_ID} loading={pending}>
+              Save configuration
+            </Button>
+          </div>
+        </div>
       }
     >
       <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-4" noValidate>

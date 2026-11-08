@@ -332,56 +332,6 @@ export default function LeaveSectionPage({
             ) : null}
           </div>
         </div>
-
-        {/* Integrated Configuration Strip */}
-        {configuration ? (
-          <div className="mt-4 border-t border-line/60 pt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-semibold text-ink-muted uppercase tracking-wider text-[11px]">
-                Configuration
-              </span>
-
-              <div className="flex flex-wrap items-center gap-2 text-ink-soft">
-                <span className="font-semibold text-ink">{configuration.label}</span>
-                <span className="inline-flex items-center gap-1 rounded border border-line/60 bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-soft">
-                  <span className="text-ink-muted">Form:</span> {configuration.form?.label || "—"}
-                </span>
-                <span className="text-ink-muted">→</span>
-                <span className="inline-flex items-center gap-1 rounded border border-line/60 bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-soft">
-                  <span className="text-ink-muted">Table:</span> {configuration.table?.label || "—"}
-                </span>
-                {!configuration.isActive ? (
-                  <Badge tone="warning" size="sm">Inactive</Badge>
-                ) : null}
-              </div>
-            </div>
-
-            {canManage ? (
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setConfigDialogOpen(true)}
-                >
-                  Edit
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setConfigDeleteOpen(true)}
-                >
-                  Remove
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          canManage && (
-            <div className="mt-4 border-t border-line/60 pt-3 flex items-center justify-between gap-2 text-xs text-ink-muted">
-              <span>No form and table linked yet. Click &ldquo;New configuration&rdquo; to link a form and table to this section.</span>
-            </div>
-          )
-        )}
       </header>
 
       {/* Main Content */}
@@ -513,6 +463,7 @@ export default function LeaveSectionPage({
           sectionKey={sectionKey}
           title={title}
           configuration={configuration}
+          onDelete={canManage && configuration ? () => setConfigDeleteOpen(true) : null}
           onClose={() => setConfigDialogOpen(false)}
           onSaved={() => {
             setConfigDialogOpen(false);

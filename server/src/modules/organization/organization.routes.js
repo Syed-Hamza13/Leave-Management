@@ -18,11 +18,6 @@ import {
   createEntityHandler,
   updateEntityHandler,
   archiveEntityHandler,
-  listEntityMembersHandler,
-  addEntityMemberHandler,
-  updateEntityMemberHandler,
-  removeEntityMemberHandler,
-  listUserMembershipsHandler,
 } from "./organization.controller.js";
 
 const VIEW = [PERMISSIONS.ORGANIZATION_VIEW];
@@ -90,21 +85,6 @@ export function createOrganizationRoutes() {
   router.patch("/entities/:entityId", requirePermission(MANAGE), updateEntityHandler);
 
   router.delete("/entities/:entityId", requirePermission(MANAGE), archiveEntityHandler);
-
-  router.get("/entities/:entityId/members", requirePermission(VIEW), listEntityMembersHandler);
-  router.post("/entities/:entityId/members", requirePermission(MANAGE), addEntityMemberHandler);
-  router.patch(
-    "/entities/:entityId/members/:userId",
-    requirePermission(MANAGE),
-    updateEntityMemberHandler
-  );
-  router.delete(
-    "/entities/:entityId/members/:userId",
-    requirePermission(MANAGE),
-    removeEntityMemberHandler
-  );
-
-  router.get("/users/:userId/memberships", requirePermission(VIEW), listUserMembershipsHandler);
 
   return router;
 }

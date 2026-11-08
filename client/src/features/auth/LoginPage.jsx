@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
+import PasswordInput from "../../components/ui/PasswordInput.jsx";
+import TextInput from "../../components/ui/TextInput.jsx";
 import TurnstileWidget from "../../components/ui/TurnstileWidget.jsx";
 import useAsyncData from "../../hooks/useAsyncData.js";
 import { auth as authApi } from "../../services/resources.js";
@@ -152,59 +154,26 @@ function LoginPage() {
           onSubmit={handleSubmit}
           className="space-y-5"
         >
-          <div>
-            <label
-              htmlFor="email"
-              className="mb-1 block text-sm font-medium text-gray-700"
-            >
-              Email
-            </label>
+          <TextInput
+            id="email"
+            type="email"
+            label="Email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
+            disabled={submitting}
+            error={fieldErrors.email?.[0]}
+          />
 
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(event) =>
-                setEmail(event.target.value)
-              }
-              autoComplete="email"
-              disabled={submitting}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-gray-500"
-            />
-
-            {fieldErrors.email?.[0] && (
-              <p className="mt-1 text-sm text-red-600">
-                {fieldErrors.email[0]}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label
-              htmlFor="password"
-              className="mb-1 block text-sm font-medium text-gray-700"
-            >
-              Password
-            </label>
-
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(event) =>
-                setPassword(event.target.value)
-              }
-              autoComplete="current-password"
-              disabled={submitting}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-gray-500"
-            />
-
-            {fieldErrors.password?.[0] && (
-              <p className="mt-1 text-sm text-red-600">
-                {fieldErrors.password[0]}
-              </p>
-            )}
-          </div>
+          <PasswordInput
+            id="password"
+            label="Password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            disabled={submitting}
+            error={fieldErrors.password?.[0]}
+          />
 
           {isTurnstileEnabled ? (
             <div className="pt-1">

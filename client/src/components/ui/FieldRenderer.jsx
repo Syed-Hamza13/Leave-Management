@@ -76,10 +76,11 @@ export default function FieldRenderer({
   switch (field.dataType) {
     case "text":
     case "email":
+    case "password":
       return (
         <TextInput
           {...shared}
-          type={field.dataType === "email" ? "email" : "text"}
+          type={field.dataType === "email" ? "email" : field.dataType === "password" ? "password" : "text"}
           value={value ?? ""}
           onChange={(event) => emit(event.target.value)}
           placeholder={config.placeholder}
