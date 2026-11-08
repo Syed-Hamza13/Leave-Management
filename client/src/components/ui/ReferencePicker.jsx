@@ -160,9 +160,9 @@ function DropdownMultiReferencePicker({
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
       document.addEventListener("keydown", handleKeyDown);
-      // Auto-focus search input when dropdown opens
+      // Auto-focus search input when dropdown opens without causing parent scroll jumps
       const timer = setTimeout(() => {
-        searchInputRef.current?.focus();
+        searchInputRef.current?.focus({ preventScroll: true });
       }, 30);
       return () => {
         clearTimeout(timer);
@@ -194,7 +194,7 @@ function DropdownMultiReferencePicker({
     }
     // Clear search term after selection so next search starts clean
     setSearchTerm("");
-    searchInputRef.current?.focus();
+    searchInputRef.current?.focus({ preventScroll: true });
   }
 
   function handleRemove(optionValue, e) {
@@ -214,7 +214,7 @@ function DropdownMultiReferencePicker({
     const combined = Array.from(new Set([...selected, ...visibleValues]));
     onChange(combined);
     setSearchTerm("");
-    searchInputRef.current?.focus();
+    searchInputRef.current?.focus({ preventScroll: true });
   }
 
   const defaultPlaceholder =
@@ -357,9 +357,9 @@ function DropdownMultiReferencePicker({
           </div>
         </div>
 
-        {/* Floating Dropdown Popover */}
+        {/* Dropdown Options Panel (In-flow so form & modal naturally expand to fit without clipping or collapse) */}
         {isOpen ? (
-          <div className="absolute left-0 right-0 top-full z-40 mt-1 overflow-hidden rounded-xl border border-line-subtle bg-surface shadow-2xl ring-1 ring-black/5 animate-fade-in">
+          <div className="mt-2 overflow-hidden rounded-xl border border-line-subtle bg-surface shadow-md ring-1 ring-black/5 animate-fade-in">
             {/* Top Search Field inside dropdown (like user's reference image) */}
             <div className="border-b border-line-subtle bg-surface p-2">
               <div className="relative flex items-center">
@@ -376,7 +376,7 @@ function DropdownMultiReferencePicker({
                     type="button"
                     onClick={() => {
                       setSearchTerm("");
-                      searchInputRef.current?.focus();
+                      searchInputRef.current?.focus({ preventScroll: true });
                     }}
                     aria-label="Clear search"
                     className="absolute right-2.5 text-ink-muted hover:text-ink"
@@ -426,7 +426,7 @@ function DropdownMultiReferencePicker({
                     onClick={() => {
                       onChange([]);
                       setSearchTerm("");
-                      searchInputRef.current?.focus();
+                      searchInputRef.current?.focus({ preventScroll: true });
                     }}
                     className="font-medium text-ink-muted hover:text-danger"
                   >
@@ -450,7 +450,7 @@ function DropdownMultiReferencePicker({
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
                       setSearchTerm("");
-                      searchInputRef.current?.focus();
+                      searchInputRef.current?.focus({ preventScroll: true });
                     }}
                     className="ml-2 font-medium text-brand hover:underline"
                   >

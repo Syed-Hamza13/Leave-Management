@@ -15,6 +15,7 @@ export default function Modal({
   title,
   description,
   size = "md",
+  minHeight,
   footer,
   children,
 }) {
@@ -110,7 +111,7 @@ export default function Modal({
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
         className={[
-          "relative z-10 my-auto w-full rounded-card border border-line bg-surface shadow-xl",
+          "relative z-10 my-auto w-full rounded-card border border-line bg-surface shadow-xl transition-all duration-200",
           widths[size] ?? widths.md,
         ].join(" ")}
       >
@@ -147,7 +148,20 @@ export default function Modal({
           </button>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
+        <div
+          className={[
+            "overflow-y-auto px-5 py-4 transition-all duration-150",
+            minHeight !== undefined
+              ? minHeight
+              : size === "sm"
+                ? "max-h-[75vh]"
+                : "min-h-[200px] sm:min-h-[260px] max-h-[82vh]",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {children}
+        </div>
 
         {footer ? (
           <div className="flex items-center justify-end gap-2 border-t border-line bg-surface-sunken px-5 py-3">
