@@ -29,6 +29,9 @@ import TableDetailPage from "../features/tables/TableDetailPage.jsx";
 import TablesPage from "../features/tables/TablesPage.jsx";
 import UsersPage from "../features/users/UsersPage.jsx";
 import LeaveSectionPage from "../features/leave/LeaveSectionPage.jsx";
+import LeaveRequestsPage from "../features/leave/LeaveRequestsPage.jsx";
+import LeaveRulesPage from "../features/leave/LeaveRulesPage.jsx";
+import LeaveWorkflowPage from "../features/leave/LeaveWorkflowPage.jsx";
 
 import { PERMISSIONS } from "../lib/permissions.js";
 
@@ -310,6 +313,14 @@ const router = createBrowserRouter([
               },
 
               {
+                path: "leave/requests",
+                ...screen({
+                  permission: PERMISSIONS.RECORDS_VIEW,
+                  label: "Viewing leave requests",
+                  element: <LeaveRequestsPage />,
+                }),
+              },
+              {
                 path: "leave/policies",
                 ...screen({
                   permission: PERMISSIONS.RECORDS_VIEW,
@@ -352,14 +363,7 @@ const router = createBrowserRouter([
                 ...screen({
                   permission: PERMISSIONS.RECORDS_VIEW,
                   label: "Viewing leave rules",
-                  element: (
-                    <LeaveSectionPage
-                      sectionKey="leave-rules"
-                      title="Leave Rules"
-                      description="Set up and manage rules for leave eligibility and accrual."
-                      singularLabel="Rule"
-                    />
-                  ),
+                  element: <LeaveRulesPage />,
                 }),
               },
               {
@@ -367,14 +371,7 @@ const router = createBrowserRouter([
                 ...screen({
                   permission: PERMISSIONS.RECORDS_VIEW,
                   label: "Viewing leave workflows",
-                  element: (
-                    <LeaveSectionPage
-                      sectionKey="leave-workflow"
-                      title="Leave Workflow"
-                      description="Configure approval workflows and routing for leave requests."
-                      singularLabel="Workflow"
-                    />
-                  ),
+                  element: <LeaveWorkflowPage />,
                 }),
               },
               {

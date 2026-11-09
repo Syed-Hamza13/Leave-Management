@@ -17,6 +17,7 @@ export const NAV_GROUPS = [
   {
     label: "Leave Management",
     items: [
+      { to: "/leave/requests", label: "Leave Requests", permission: PERMISSIONS.RECORDS_VIEW },
       { to: "/leave/policies", label: "Leave Policy", permission: PERMISSIONS.RECORDS_VIEW },
       { to: "/leave/balances", label: "Leave Balance", permission: PERMISSIONS.RECORDS_VIEW },
       { to: "/leave/rules", label: "Leave Rules", permission: PERMISSIONS.RECORDS_VIEW },

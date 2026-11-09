@@ -198,3 +198,22 @@ export const sections = {
   deleteConfiguration: (sectionKey) =>
     api(`/sections/${sectionKey}/configuration`, { method: "DELETE" }),
 };
+
+export const leave = {
+  preview: (payload) => post("/leave/preview", payload),
+  submit: (payload) => post("/leave/requests", payload),
+  myRequests: (params) => api(`/leave/my-requests${toQuery(params)}`),
+  pendingApprovals: (params) => api(`/leave/pending-approvals${toQuery(params)}`),
+  approve: (requestId, payload) => post(`/leave/requests/${requestId}/approve`, payload),
+  reject: (requestId, payload) => post(`/leave/requests/${requestId}/reject`, payload),
+  cancel: (requestId) => post(`/leave/requests/${requestId}/cancel`),
+
+  getRules: () => api("/leave/rules"),
+  saveRules: (rules) => post("/leave/rules", { rules }),
+
+  getConfig: () => api("/leave/config"),
+  saveConfig: (config) => post("/leave/config", config),
+
+  getHolidays: () => api("/leave/holidays"),
+  saveHolidays: (holidays) => post("/leave/holidays", holidays),
+};
