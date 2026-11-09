@@ -303,6 +303,13 @@ export default function EntityTypePage() {
               ) : (
                 <Badge tone="neutral">Not configured</Badge>
               )}
+              {activeConfiguration ? (
+                <Badge tone="neutral">
+                  {meta?.total ?? rows.length} {((meta?.total ?? rows.length) === 1) ? "entry" : "entries"}
+                </Badge>
+              ) : (
+                <Badge tone="neutral">Not configured</Badge>
+              )}
             </div>
 
             {entityType.description ? (
@@ -332,6 +339,7 @@ export default function EntityTypePage() {
             ) : null}
 
             {activeConfiguration && entityType.status === "active" ? (
+            {activeConfiguration && entityType.status === "active" ? (
               <Button
                 size="sm"
                 onClick={() => setEntityDialog({ mode: "create" })}
@@ -343,6 +351,33 @@ export default function EntityTypePage() {
         </div>
       </header>
 
+      {/* Main Content */}
+      {!activeConfiguration ? (
+        <EmptyState
+          title={`No configuration for ${entityType.label}`}
+          description={`Link a form and table to start entering and managing ${entityType.label.toLowerCase()} entries.`}
+          action={
+            canManage ? (
+              <Button onClick={() => setConfigDialog({ mode: "create" })}>
+                New configuration
+              </Button>
+            ) : null
+          }
+        />
+      ) : (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="flex flex-1 flex-wrap items-end gap-3">
+              <SearchInput
+                className="w-full sm:max-w-xs"
+                value={search}
+                onChange={(next) => {
+                  setSearch(next);
+                  setPage(1);
+                }}
+                label="Search entities"
+                placeholder="Search by name…"
+              />
       {/* Main Content */}
       {!activeConfiguration ? (
         <EmptyState
@@ -386,7 +421,38 @@ export default function EntityTypePage() {
                 ]}
               />
             </div>
+              <Select
+                id="entities-status"
+                label="Status"
+                className="w-40"
+                value={status}
+                onChange={(event) => {
+                  setStatus(event.target.value);
+                  setPage(1);
+                }}
+                options={[
+                  { value: "active", label: "Active" },
+                  { value: "archived", label: "Archived" },
+                ]}
+              />
+            </div>
 
+            <div className="flex items-center gap-2">
+              <ColumnVisibilityManager
+                columns={orderedColumns}
+                visibleKeys={visibleColumnKeys}
+                onChangeVisibleKeys={setVisibleColumnKeys}
+                onReorderColumns={reorderColumns}
+                onReset={resetPreferences}
+                storageKey={
+                  tableId
+                    ? `columns:entity-type-records:${entityTypeId}:${tableId}`
+                    : `columns:entity-type-records:${entityTypeId}`
+                }
+                defaultVisibleKeys={defaultVisibleKeys}
+              />
+            </div>
+          </div>
             <div className="flex items-center gap-2">
               <ColumnVisibilityManager
                 columns={orderedColumns}
@@ -437,6 +503,39 @@ export default function EntityTypePage() {
                     Open
                   </Button>
                 </Link>
+          <DataTable
+            columns={columns}
+            rows={rows}
+            loading={loading}
+            error={error}
+            onRetry={reload}
+            onReorderColumns={reorderColumns}
+            pagination={meta}
+            onPageChange={setPage}
+            empty={
+              <EmptyState
+                title={search ? "No entities match your search" : "No entities yet"}
+                description={
+                  search
+                    ? "Try a different name, or clear the search."
+                    : `Create the first ${entityType.label.toLowerCase()} record.`
+                }
+                action={
+                  canManage && !search && entityType.status === "active" ? (
+                    <Button onClick={() => setEntityDialog({ mode: "create" })}>
+                      New {entityType.label.toLowerCase()}
+                    </Button>
+                  ) : null
+                }
+              />
+            }
+            actions={(row) => (
+              <>
+                <Link to={`/organization/entities/${row.id}`}>
+                  <Button variant="ghost" size="sm">
+                    Open
+                  </Button>
+                </Link>
 
                 {canManage && row.status === "active" ? (
                   <>
@@ -448,6 +547,20 @@ export default function EntityTypePage() {
                       Edit
                     </Button>
 
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEntityArchiveTarget(row)}
+                    >
+                      Archive
+                    </Button>
+                  </>
+                ) : null}
+              </>
+            )}
+          />
+        </section>
+      )}
                     <Button
                       variant="ghost"
                       size="sm"
