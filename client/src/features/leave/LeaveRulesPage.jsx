@@ -1,38 +1,22 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Badge from "../../components/ui/Badge.jsx";
 import Button from "../../components/ui/Button.jsx";
 import ConfirmDialog from "../../components/ui/ConfirmDialog.jsx";
+import EmptyState from "../../components/ui/EmptyState.jsx";
 import { LoadingState } from "../../components/ui/LoadingState.jsx";
-import Modal from "../../components/ui/Modal.jsx";
-import NumberInput from "../../components/ui/NumberInput.jsx";
-import PageHeader from "../../components/ui/PageHeader.jsx";
+import SearchInput from "../../components/ui/SearchInput.jsx";
 import Select from "../../components/ui/Select.jsx";
-import TextInput from "../../components/ui/TextInput.jsx";
-import Toggle from "../../components/ui/Toggle.jsx";
 import { useToast } from "../../components/ui/ToastContext.js";
 import useAsyncData from "../../hooks/useAsyncData.js";
 import useMutation from "../../hooks/useMutation.js";
 import { errorMessage } from "../../services/errors.js";
 import { leave as leaveApi } from "../../services/resources.js";
-
-const OPERATORS = [
-  { value: "eq", label: "Equals (=)" },
-  { value: "neq", label: "Not Equals (!=)" },
-  { value: "between", label: "Between (Range [min, max])" },
-  { value: "gte", label: "Greater than or equal (>=)" },
-  { value: "lte", label: "Less than or equal (<=)" },
-  { value: "in", label: "In list (comma separated)" },
-];
-
-const APPROVER_TYPES = [
-  { value: "user_relation", label: "User Supervisor / Reference (e.g. reports_to / coordinator)" },
-  { value: "entity_incharge", label: "Entity In-Charge (e.g. Project or Center In-Charge)" },
-  { value: "council_or_team", label: "Council or Team (e.g. Academic Council, Programme Committee)" },
-  { value: "direct_user", label: "Specific User Account" },
-];
+import RuleDialog from "./RuleDialog.jsx";
 
 export default function LeaveRulesPage() {
   const toast = useToast();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [ruleDialog, setRuleDialog] = useState(null); // null | rule object to edit/create
   const [deleteTarget, setDeleteTarget] = useState(null);
 
@@ -44,21 +28,47 @@ export default function LeaveRulesPage() {
 
   const { run: saveRuleMutation, pending: saving } = useMutation();
 
-  const rules = rulesData?.data ?? [];
+  const rules = useMemo(() => rulesData?.data ?? [], [rulesData]);
+
+  const filteredRules = useMemo(() => {
+    return rules.filter((r) => {
+      const matchesStatus =
+        statusFilter === "all" ||
+        (statusFilter === "active" && r.status === "active") ||
+        (statusFilter === "inactive" && r.status === "inactive");
+
+      const query = search.toLowerCase().trim();
+      const matchesSearch =
+        !query ||
+        r.name.toLowerCase().includes(query) ||
+        (r.id && r.id.toLowerCase().includes(query)) ||
+        (r.actions?.entityName && r.actions.entityName.toLowerCase().includes(query)) ||
+        (r.actions?.approverTarget && r.actions.approverTarget.toLowerCase().includes(query));
+
+      return matchesStatus && matchesSearch;
+    });
+  }, [rules, search, statusFilter]);
 
   function openCreateRule() {
+    const nextPriority = (rules.length + 1) * 10;
     setRuleDialog({
       id: `rule_${Date.now()}`,
       name: "",
-      priority: (rules.length + 1) * 10,
+      priority: nextPriority,
       status: "active",
       combinator: "AND",
       conditions: [
         {
+          source: "user",
+          field: "staff_category",
+          operator: "eq",
+          value: "Programme Staff",
+        },
+        {
           source: "request",
           field: "days",
           operator: "between",
-          value: "1,6",
+          value: [1, 6],
         },
       ],
       actions: {
@@ -78,52 +88,16 @@ export default function LeaveRulesPage() {
     setRuleDialog(JSON.parse(JSON.stringify(rule)));
   }
 
-  function handleAddCondition() {
-    if (!ruleDialog) return;
-    setRuleDialog({
-      ...ruleDialog,
-      conditions: [
-        ...ruleDialog.conditions,
-        { source: "request", field: "days", operator: "eq", value: "" },
-      ],
-    });
+  function openDuplicateRule(rule) {
+    const nextPriority = (rules.length + 1) * 10;
+    const duplicated = JSON.parse(JSON.stringify(rule));
+    duplicated.id = `rule_${Date.now()}`;
+    duplicated.name = `${rule.name} (Copy)`;
+    duplicated.priority = nextPriority;
+    setRuleDialog(duplicated);
   }
 
-  function handleRemoveCondition(index) {
-    if (!ruleDialog) return;
-    const updated = [...ruleDialog.conditions];
-    updated.splice(index, 1);
-    setRuleDialog({ ...ruleDialog, conditions: updated });
-  }
-
-  function updateCondition(index, patch) {
-    if (!ruleDialog) return;
-    const updated = [...ruleDialog.conditions];
-    updated[index] = { ...updated[index], ...patch };
-    setRuleDialog({ ...ruleDialog, conditions: updated });
-  }
-
-  async function handleSaveRuleSubmit(e) {
-    e.preventDefault();
-    if (!ruleDialog) return;
-
-    // Process conditions value format (e.g. range string to array if between)
-    const processedConditions = ruleDialog.conditions.map((cond) => {
-      let val = cond.value;
-      if (cond.operator === "between" && typeof val === "string") {
-        const parts = val.split(",").map((v) => Number(v.trim()));
-        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-          val = parts;
-        }
-      }
-      return { ...cond, value: val };
-    });
-
-    const ruleToSave = {
-      ...ruleDialog,
-      conditions: processedConditions,
-    };
-
+  async function handleSaveRule(ruleToSave) {
     const existingIndex = rules.findIndex((r) => r.id === ruleToSave.id);
     let updatedRules;
     if (existingIndex >= 0) {
@@ -177,345 +151,242 @@ export default function LeaveRulesPage() {
     reloadRules();
   }
 
+  async function handleMovePriority(rule, direction) {
+    const sorted = [...rules].sort((a, b) => (Number(a.priority) || 100) - (Number(b.priority) || 100));
+    const currentIndex = sorted.findIndex((r) => r.id === rule.id);
+    if (currentIndex < 0) return;
+
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= sorted.length) return;
+
+    // Swap priorities
+    const temp = sorted[currentIndex].priority;
+    sorted[currentIndex].priority = sorted[targetIndex].priority;
+    sorted[targetIndex].priority = temp;
+
+    sorted.sort((a, b) => (Number(a.priority) || 100) - (Number(b.priority) || 100));
+
+    const outcome = await saveRuleMutation(() => leaveApi.saveRules(sorted));
+    if (!outcome.ok) {
+      toast.danger(errorMessage(outcome.error, "Failed to update priority order."));
+      return;
+    }
+
+    toast.success("Rule priority updated.");
+    reloadRules();
+  }
+
   if (rulesLoading) {
     return <LoadingState label="Loading leave rules configuration..." />;
   }
 
   return (
     <div className="p-6 space-y-6">
-      <PageHeader
-        title="Leave Rules & Approval Routing"
-        description="Configure dynamic condition-based routing rules, approval hierarchies, and notifications without hardcoding."
-        action={
-          <Button variant="primary" onClick={openCreateRule}>
-            + Add Leave Rule
-          </Button>
-        }
-      />
+      {/* Prominent Action Bar with Search, Filters and "+ Add Leave Rule" Button */}
+      <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
+          <SearchInput
+            placeholder="Search rules by name, condition, or approver..."
+            value={search}
+            onChange={setSearch}
+            className="w-72"
+          />
 
-      <div className="space-y-4">
-        {rules.map((rule) => (
-          <div
-            key={rule.id}
-            className={`rounded-lg border p-5 transition-all bg-white shadow-sm ${
-              rule.status === "active" ? "border-slate-200" : "border-slate-200 opacity-60 bg-slate-50"
-            }`}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-3">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-50 text-xs font-bold text-indigo-700">
-                  {rule.priority}
-                </span>
-                <div>
-                  <h3 className="font-semibold text-slate-900">{rule.name}</h3>
-                  <p className="text-xs text-slate-500">ID: {rule.id}</p>
-                </div>
-              </div>
+          <Select
+            id="status-filter"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="w-36 text-xs"
+            options={[
+              { value: "all", label: "All Rules" },
+              { value: "active", label: "Active Only" },
+              { value: "inactive", label: "Inactive Only" },
+            ]}
+          />
 
-              <div className="flex items-center gap-3">
-                <Badge tone={rule.status === "active" ? "success" : "neutral"}>
-                  {rule.status === "active" ? "Active" : "Inactive"}
-                </Badge>
-                <Button size="sm" variant="ghost" onClick={() => handleToggleStatus(rule)}>
-                  {rule.status === "active" ? "Disable" : "Enable"}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => openEditRule(rule)}>
-                  Edit
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
-                  onClick={() => setDeleteTarget(rule)}
-                >
-                  Delete
-                </Button>
-              </div>
-            </div>
+          <span className="text-xs text-slate-500 font-medium">
+            Showing {filteredRules.length} of {rules.length} rules
+          </span>
+        </div>
 
-            {/* Conditions and Actions Summary */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 text-xs">
-              <div className="rounded border border-slate-100 bg-slate-50 p-3">
-                <h4 className="font-semibold uppercase text-slate-700 tracking-wider mb-2">
-                  Matching Criteria ({rule.combinator || "AND"})
-                </h4>
-                {rule.conditions && rule.conditions.length > 0 ? (
-                  <ul className="space-y-1 text-slate-700">
-                    {rule.conditions.map((c, i) => (
-                      <li key={i} className="flex items-center gap-2">
-                        <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200 text-indigo-700">
-                          {c.source === "user" ? `user.${c.field}` : c.field}
-                        </span>
-                        <span className="text-slate-500">{c.operator}</span>
-                        <span className="font-medium text-slate-900">
-                          {Array.isArray(c.value) ? c.value.join(" to ") : String(c.value)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-slate-500 italic">No conditions (Standard Fallback Rule)</p>
-                )}
-              </div>
-
-              <div className="rounded border border-slate-100 bg-slate-50 p-3">
-                <h4 className="font-semibold uppercase text-slate-700 tracking-wider mb-2">
-                  Routing Actions & Approver
-                </h4>
-                <div className="space-y-1.5 text-slate-700">
-                  <p>
-                    <span className="text-slate-500">Requires Approval: </span>
-                    <span className="font-medium">
-                      {rule.actions?.requiresApproval ? "Yes" : "No (Auto-approved / Inform only)"}
-                    </span>
-                  </p>
-                  {rule.actions?.requiresApproval && (
-                    <>
-                      <p>
-                        <span className="text-slate-500">Approver Resolution: </span>
-                        <span className="font-semibold text-slate-900">
-                          {rule.actions?.approverType === "user_relation" &&
-                            `Applicant Supervisor (${rule.actions?.approverTarget || "reports_to"})`}
-                          {rule.actions?.approverType === "entity_incharge" &&
-                            `In-Charge of Entity (${rule.actions?.inchargeField || "in_charge"})`}
-                          {rule.actions?.approverType === "council_or_team" &&
-                            `Council / Committee: ${rule.actions?.entityName}`}
-                          {rule.actions?.approverType === "direct_user" && "Specific User Account"}
-                        </span>
-                      </p>
-                      <p>
-                        <span className="text-slate-500">Notice Required: </span>
-                        <span className="font-medium">{rule.actions?.noticeDays ?? 2} Days advance</span>
-                        <span className="text-slate-400 mx-2">|</span>
-                        <span className="text-slate-500">Approver SLA: </span>
-                        <span className="font-medium">{rule.actions?.slaHours ?? 48} Hours</span>
-                      </p>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
+        <Button variant="primary" onClick={openCreateRule} className="font-semibold shadow-sm">
+          <span className="mr-1 font-bold text-base leading-none">+</span> Add New Leave Rule
+        </Button>
       </div>
 
-      {/* Rule Edit / Create Modal */}
-      {ruleDialog && (
-        <Modal
-          open={Boolean(ruleDialog)}
-          onClose={() => setRuleDialog(null)}
-          title={rules.some((r) => r.id === ruleDialog.id) ? "Edit Leave Rule" : "Create Leave Rule"}
-          size="lg"
-        >
-          <form onSubmit={handleSaveRuleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <TextInput
-                id="rule-name"
-                label="Rule Name"
-                required
-                value={ruleDialog.name}
-                onChange={(e) => setRuleDialog({ ...ruleDialog, name: e.target.value })}
-              />
+      {/* Rules List */}
+      {filteredRules.length === 0 ? (
+        <EmptyState
+          title={search ? "No matching rules found" : "No Leave Rules Configured"}
+          description={
+            search
+              ? "Try adjusting your search criteria or clear the filter."
+              : "Create dynamic routing rules to control approver hierarchies and notifications based on duration and staff category."
+          }
+          action={
+            <Button variant="primary" onClick={openCreateRule}>
+              + Add Your First Leave Rule
+            </Button>
+          }
+        />
+      ) : (
+        <div className="space-y-4">
+          {filteredRules.map((rule, index) => (
+            <div
+              key={rule.id}
+              className={`rounded-lg border p-5 transition-all bg-white shadow-sm hover:border-indigo-300 ${
+                rule.status === "active" ? "border-slate-200" : "border-slate-200 opacity-60 bg-slate-50"
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex flex-col items-center justify-center">
+                    <button
+                      type="button"
+                      disabled={index === 0}
+                      onClick={() => handleMovePriority(rule, "up")}
+                      className="text-slate-400 hover:text-indigo-600 disabled:opacity-20 text-xs px-1"
+                      title="Increase Priority (Evaluate Earlier)"
+                    >
+                      ▲
+                    </button>
+                    <span className="flex h-6 w-8 items-center justify-center rounded bg-indigo-50 text-xs font-bold text-indigo-700">
+                      #{rule.priority}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={index === filteredRules.length - 1}
+                      onClick={() => handleMovePriority(rule, "down")}
+                      className="text-slate-400 hover:text-indigo-600 disabled:opacity-20 text-xs px-1"
+                      title="Decrease Priority (Evaluate Later)"
+                    >
+                      ▼
+                    </button>
+                  </div>
 
-              <NumberInput
-                id="rule-priority"
-                label="Priority Order (Lower = higher priority)"
-                required
-                value={ruleDialog.priority}
-                onChange={(e) =>
-                  setRuleDialog({ ...ruleDialog, priority: Number(e.target.value) })
-                }
-              />
-            </div>
-
-            {/* Conditions Section */}
-            <div className="border border-slate-200 rounded-lg p-4 bg-slate-50 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                <h4 className="text-sm font-semibold text-slate-800">Conditions (IF)</h4>
-                <div className="flex items-center gap-2">
-                  <Select
-                    id="rule-combinator"
-                    className="w-28 text-xs"
-                    value={ruleDialog.combinator}
-                    options={[
-                      { value: "AND", label: "Match ALL" },
-                      { value: "OR", label: "Match ANY" },
-                    ]}
-                    onChange={(e) => setRuleDialog({ ...ruleDialog, combinator: e.target.value })}
-                  />
-                  <Button size="sm" variant="outline" type="button" onClick={handleAddCondition}>
-                    + Add Condition
-                  </Button>
+                  <div>
+                    <h3 className="font-semibold text-slate-900 text-sm">{rule.name}</h3>
+                    <p className="text-[11px] text-slate-400 font-mono">ID: {rule.id}</p>
+                  </div>
                 </div>
-              </div>
 
-              {ruleDialog.conditions.map((cond, idx) => (
-                <div key={idx} className="flex flex-wrap items-center gap-2 bg-white p-2.5 rounded border border-slate-200">
-                  <Select
-                    id={`cond-source-${idx}`}
-                    className="w-28 text-xs"
-                    value={cond.source}
-                    options={[
-                      { value: "request", label: "Request Field" },
-                      { value: "user", label: "User Attribute" },
-                    ]}
-                    onChange={(e) => updateCondition(idx, { source: e.target.value })}
-                  />
+                <div className="flex items-center gap-2">
+                  <Badge tone={rule.status === "active" ? "success" : "neutral"}>
+                    {rule.status === "active" ? "Active" : "Inactive"}
+                  </Badge>
 
-                  <TextInput
-                    id={`cond-field-${idx}`}
-                    placeholder="Field key (e.g. days, staff_category)"
-                    className="flex-1 min-w-[130px] text-xs"
-                    value={cond.field}
-                    onChange={(e) => updateCondition(idx, { field: e.target.value })}
-                  />
+                  <Button size="sm" variant="ghost" onClick={() => handleToggleStatus(rule)}>
+                    {rule.status === "active" ? "Disable" : "Enable"}
+                  </Button>
 
-                  <Select
-                    id={`cond-op-${idx}`}
-                    className="w-40 text-xs"
-                    value={cond.operator}
-                    options={OPERATORS}
-                    onChange={(e) => updateCondition(idx, { operator: e.target.value })}
-                  />
+                  <Button size="sm" variant="ghost" onClick={() => openDuplicateRule(rule)} title="Duplicate as new rule">
+                    Duplicate
+                  </Button>
 
-                  <TextInput
-                    id={`cond-val-${idx}`}
-                    placeholder="Value (e.g. 1,6 or Programme Staff)"
-                    className="flex-1 min-w-[140px] text-xs"
-                    value={Array.isArray(cond.value) ? cond.value.join(",") : cond.value}
-                    onChange={(e) => updateCondition(idx, { value: e.target.value })}
-                  />
+                  <Button size="sm" variant="outline" onClick={() => openEditRule(rule)}>
+                    Edit
+                  </Button>
 
                   <Button
                     size="sm"
                     variant="ghost"
-                    type="button"
-                    className="text-rose-600"
-                    onClick={() => handleRemoveCondition(idx)}
+                    className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                    onClick={() => setDeleteTarget(rule)}
                   >
-                    ✕
+                    Delete
                   </Button>
                 </div>
-              ))}
-            </div>
+              </div>
 
-            {/* Actions Section */}
-            <div className="border border-slate-200 rounded-lg p-4 bg-slate-50 space-y-4">
-              <h4 className="text-sm font-semibold text-slate-800 border-b border-slate-200 pb-2">
-                Actions & Approver Routing (THEN)
-              </h4>
+              {/* Conditions and Actions Breakdown */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 text-xs">
+                <div className="rounded border border-slate-100 bg-slate-50 p-3">
+                  <h4 className="font-semibold uppercase text-slate-600 tracking-wider mb-2 flex items-center justify-between">
+                    <span>Conditions (IF)</span>
+                    <span className="font-mono text-[10px] bg-slate-200 px-1.5 py-0.5 rounded">
+                      {rule.combinator || "AND"}
+                    </span>
+                  </h4>
+                  {rule.conditions && rule.conditions.length > 0 ? (
+                    <ul className="space-y-1.5 text-slate-700">
+                      {rule.conditions.map((c, i) => (
+                        <li key={i} className="flex flex-wrap items-center gap-1.5">
+                          <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200 text-indigo-700 font-medium">
+                            {c.source === "user" ? `user.${c.field}` : c.field}
+                          </span>
+                          <span className="text-slate-400 font-semibold">{c.operator}</span>
+                          <span className="font-medium text-slate-900 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                            {Array.isArray(c.value) ? c.value.join(" to ") : String(c.value)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-slate-500 italic">No specific condition (Standard Default Rule)</p>
+                  )}
+                </div>
 
-              <div className="space-y-3">
-                <Toggle
-                  label="Requires Manager / Council Approval"
-                  hint="Disable for self-recorded leaves like Short Leave"
-                  checked={ruleDialog.actions.requiresApproval}
-                  onChange={(val) =>
-                    setRuleDialog({
-                      ...ruleDialog,
-                      actions: { ...ruleDialog.actions, requiresApproval: val },
-                    })
-                  }
-                />
-
-                {ruleDialog.actions.requiresApproval && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                    <Select
-                      id="approver-type"
-                      label="Approver Hierarchy Type"
-                      value={ruleDialog.actions.approverType}
-                      options={APPROVER_TYPES}
-                      onChange={(e) =>
-                        setRuleDialog({
-                          ...ruleDialog,
-                          actions: { ...ruleDialog.actions, approverType: e.target.value },
-                        })
-                      }
-                    />
-
-                    {ruleDialog.actions.approverType === "user_relation" && (
-                      <TextInput
-                        id="approver-target"
-                        label="User Reference Column"
-                        hint="Column on Users table (e.g. reports_to or coordinator)"
-                        value={ruleDialog.actions.approverTarget || ""}
-                        onChange={(e) =>
-                          setRuleDialog({
-                            ...ruleDialog,
-                            actions: { ...ruleDialog.actions, approverTarget: e.target.value },
-                          })
-                        }
-                      />
+                <div className="rounded border border-slate-100 bg-slate-50 p-3">
+                  <h4 className="font-semibold uppercase text-slate-600 tracking-wider mb-2">
+                    Routing & Approver (THEN)
+                  </h4>
+                  <div className="space-y-1.5 text-slate-700">
+                    <p>
+                      <span className="text-slate-500">Requires Approval: </span>
+                      <span className="font-semibold text-slate-900">
+                        {rule.actions?.requiresApproval ? "Yes" : "No (Auto-approved / Inform only)"}
+                      </span>
+                    </p>
+                    {rule.actions?.requiresApproval && (
+                      <>
+                        <p>
+                          <span className="text-slate-500">Primary Approver: </span>
+                          <span className="font-semibold text-indigo-700">
+                            {rule.actions?.approverType === "user_relation" &&
+                              `Direct Supervisor (${rule.actions?.approverTarget || "reports_to"})`}
+                            {rule.actions?.approverType === "entity_incharge" &&
+                              `In-Charge of Entity (${rule.actions?.inchargeField || "center_in_charge"})`}
+                            {rule.actions?.approverType === "council_or_team" &&
+                              `Council / Committee (${rule.actions?.entityName || "Assigned"})`}
+                            {rule.actions?.approverType === "direct_user" && "Specific User Account"}
+                          </span>
+                        </p>
+                        <p>
+                          <span className="text-slate-500">Notice Required: </span>
+                          <span className="font-medium">{rule.actions?.noticeDays ?? 2} Days advance</span>
+                          <span className="text-slate-300 mx-2">|</span>
+                          <span className="text-slate-500">Decision SLA: </span>
+                          <span className="font-medium">{rule.actions?.slaHours ?? 48} Hours</span>
+                        </p>
+                        {rule.actions?.notifyTargets && rule.actions.notifyTargets.length > 0 && (
+                          <p>
+                            <span className="text-slate-500">Information To (CC): </span>
+                            <span className="font-medium text-slate-800">
+                              {rule.actions.notifyTargets
+                                .map((t) => t.entityName || t.columnKey || t.field || t.type)
+                                .join(", ")}
+                            </span>
+                          </p>
+                        )}
+                      </>
                     )}
-
-                    {ruleDialog.actions.approverType === "entity_incharge" && (
-                      <TextInput
-                        id="incharge-field"
-                        label="In-Charge Column Key"
-                        hint="Profile column (e.g. project_incharge, center_in_charge)"
-                        value={ruleDialog.actions.inchargeField || ""}
-                        onChange={(e) =>
-                          setRuleDialog({
-                            ...ruleDialog,
-                            actions: { ...ruleDialog.actions, inchargeField: e.target.value },
-                          })
-                        }
-                      />
-                    )}
-
-                    {ruleDialog.actions.approverType === "council_or_team" && (
-                      <TextInput
-                        id="council-name"
-                        label="Council or Committee Entity Name"
-                        hint="e.g. Academic Council, Programme Committee, Executive Council"
-                        value={ruleDialog.actions.entityName || ""}
-                        onChange={(e) =>
-                          setRuleDialog({
-                            ...ruleDialog,
-                            actions: { ...ruleDialog.actions, entityName: e.target.value },
-                          })
-                        }
-                      />
-                    )}
-
-                    <NumberInput
-                      id="notice-days"
-                      label="Advance Notice Days Required"
-                      value={ruleDialog.actions.noticeDays ?? 2}
-                      onChange={(e) =>
-                        setRuleDialog({
-                          ...ruleDialog,
-                          actions: { ...ruleDialog.actions, noticeDays: Number(e.target.value) },
-                        })
-                      }
-                    />
-
-                    <NumberInput
-                      id="sla-hours"
-                      label="Approver SLA (Hours)"
-                      value={ruleDialog.actions.slaHours ?? 48}
-                      onChange={(e) =>
-                        setRuleDialog({
-                          ...ruleDialog,
-                          actions: { ...ruleDialog.actions, slaHours: Number(e.target.value) },
-                        })
-                      }
-                    />
                   </div>
-                )}
+                </div>
               </div>
             </div>
+          ))}
+        </div>
+      )}
 
-            <div className="flex justify-end gap-3 pt-2">
-              <Button type="button" variant="outline" onClick={() => setRuleDialog(null)} disabled={saving}>
-                Cancel
-              </Button>
-              <Button type="submit" variant="primary" loading={saving}>
-                Save Rule
-              </Button>
-            </div>
-          </form>
-        </Modal>
+      {/* Isolated Rule Dialog */}
+      {ruleDialog && (
+        <RuleDialog
+          open={Boolean(ruleDialog)}
+          rule={ruleDialog}
+          onClose={() => setRuleDialog(null)}
+          onSave={handleSaveRule}
+          saving={saving}
+        />
       )}
 
       {/* Delete Rule Confirmation */}
@@ -534,4 +405,3 @@ export default function LeaveRulesPage() {
     </div>
   );
 }
-

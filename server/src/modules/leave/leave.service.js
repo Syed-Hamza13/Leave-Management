@@ -300,11 +300,12 @@ export async function submitLeaveRequest({
       });
     }
 
-    await recordAudit(conn, {
+    await recordAudit({
+      connection: conn,
       action: "leave.request.create",
       entityType: "table_records",
       entityId: insertId,
-      details: {
+      summary: {
         tableId,
         applicantId,
         leaveType,
@@ -372,11 +373,12 @@ export async function approveLeaveRequest({ requestId, remarks = "", actorUserId
       actorUserId,
     });
 
-    await recordAudit(conn, {
+    await recordAudit({
+      connection: conn,
       action: "leave.request.approve",
       entityType: "table_records",
       entityId: requestId,
-      details: {
+      summary: {
         applicantId: values.applicant,
         days: values.days,
         remarks,
@@ -419,11 +421,12 @@ export async function rejectLeaveRequest({ requestId, remarks = "", actorUserId 
       [stringifyJsonColumn(updatedValues), actorUserId, requestId]
     );
 
-    await recordAudit(conn, {
+    await recordAudit({
+      connection: conn,
       action: "leave.request.reject",
       entityType: "table_records",
       entityId: requestId,
-      details: {
+      summary: {
         applicantId: values.applicant,
         remarks,
       },
@@ -470,11 +473,12 @@ export async function cancelLeaveRequest({ requestId, actorUserId }) {
       [stringifyJsonColumn(updatedValues), actorUserId, requestId]
     );
 
-    await recordAudit(conn, {
+    await recordAudit({
+      connection: conn,
       action: "leave.request.cancel",
       entityType: "table_records",
       entityId: requestId,
-      details: { requestId },
+      summary: { requestId },
       actorUserId,
     });
   });
@@ -614,11 +618,12 @@ export async function getLeaveRules() {
 export async function saveLeaveRules(rules, actorUserId) {
   await withTransaction(async (conn) => {
     await repoSaveLeaveRules(conn, rules, actorUserId);
-    await recordAudit(conn, {
+    await recordAudit({
+      connection: conn,
       action: "leave.rules.update",
       entityType: "app_settings",
       entityId: "leave_rules",
-      details: { ruleCount: rules.length },
+      summary: { ruleCount: rules.length },
       actorUserId,
     });
   });
@@ -632,11 +637,12 @@ export async function getWorkflowConfig() {
 export async function saveWorkflowConfig(config, actorUserId) {
   await withTransaction(async (conn) => {
     await repoSaveWorkflowConfig(conn, config, actorUserId);
-    await recordAudit(conn, {
+    await recordAudit({
+      connection: conn,
       action: "leave.workflow.update",
       entityType: "app_settings",
       entityId: "leave_workflow_config",
-      details: { config },
+      summary: { config },
       actorUserId,
     });
   });
@@ -650,11 +656,12 @@ export async function getHolidays() {
 export async function saveHolidays(holidays, actorUserId) {
   await withTransaction(async (conn) => {
     await repoSaveHolidays(conn, holidays, actorUserId);
-    await recordAudit(conn, {
+    await recordAudit({
+      connection: conn,
       action: "leave.holidays.update",
       entityType: "app_settings",
       entityId: "leave_holidays",
-      details: { count: holidays.length },
+      summary: { count: holidays.length },
       actorUserId,
     });
   });

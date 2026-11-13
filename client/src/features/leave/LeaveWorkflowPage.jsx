@@ -100,10 +100,6 @@ export default function LeaveWorkflowPage() {
 
   return (
     <div className="p-6 max-w-4xl space-y-8">
-      <PageHeader
-        title="Leave Workflow & Calendar Settings"
-        description="Configure organization-wide calendar parameters, sandwich threshold rules, and statutory accumulation quotas."
-      />
 
       {/* Main Settings Form */}
       <form onSubmit={handleSaveConfig} className="bg-white rounded-lg border border-slate-200 p-6 shadow-sm space-y-6">

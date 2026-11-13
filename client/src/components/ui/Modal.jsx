@@ -21,8 +21,13 @@ export default function Modal({
 }) {
   const panelRef = useRef(null);
   const restoreRef = useRef(null);
+  const onCloseRef = useRef(onClose);
   const titleId = useId();
   const descriptionId = useId();
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -48,7 +53,7 @@ export default function Modal({
     function handleKeyDown(event) {
       if (event.key === "Escape") {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current?.();
         return;
       }
 
@@ -84,7 +89,7 @@ export default function Modal({
       document.body.style.overflow = previousOverflow;
       restoreRef.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

@@ -245,18 +245,8 @@ export default function LeaveRequestsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <PageHeader
-        title="Leave Requests & Approvals"
-        description="Submit leave applications, track approval workflows, and review subordinate requests."
-        action={
-          <Button variant="primary" onClick={() => setApplyDialogOpen(true)}>
-            + Apply for Leave
-          </Button>
-        }
-      />
-
-      {/* Tabs */}
-      <div className="border-b border-slate-200">
+      {/* Header Action Bar with Tabs and Apply Button */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-2">
         <nav className="flex space-x-6">
           <button
             type="button"
@@ -287,6 +277,10 @@ export default function LeaveRequestsPage() {
             )}
           </button>
         </nav>
+
+        <Button variant="primary" onClick={() => setApplyDialogOpen(true)}>
+          + Apply for Leave
+        </Button>
       </div>
 
       {busy ? (

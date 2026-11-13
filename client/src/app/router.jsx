@@ -318,6 +318,10 @@ const router = createBrowserRouter([
                   permission: PERMISSIONS.RECORDS_VIEW,
                   label: "Viewing leave requests",
                   element: <LeaveRequestsPage />,
+                  handle: {
+                    title: "Leave requests",
+                    description: "Submit leave applications, track approval workflows, and review subordinate requests.",
+                  },
                 }),
               },
               {
@@ -364,6 +368,10 @@ const router = createBrowserRouter([
                   permission: PERMISSIONS.RECORDS_VIEW,
                   label: "Viewing leave rules",
                   element: <LeaveRulesPage />,
+                  handle: {
+                    title: "Leave rules & approval routing",
+                    description: "Configure dynamic condition-based routing rules, approval hierarchies, and notifications without hardcoding.",
+                  },
                 }),
               },
               {
@@ -372,6 +380,10 @@ const router = createBrowserRouter([
                   permission: PERMISSIONS.RECORDS_VIEW,
                   label: "Viewing leave workflows",
                   element: <LeaveWorkflowPage />,
+                  handle: {
+                    title: "Leave workflow & calendar settings",
+                    description: "Configure organization-wide calendar parameters, sandwich threshold rules, and statutory accumulation quotas.",
+                  },
                 }),
               },
               {
