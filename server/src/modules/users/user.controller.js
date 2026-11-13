@@ -7,9 +7,20 @@ import {
   setPasswordSchema,
   updateUserSchema,
   userIdParamSchema,
+  bulkDeleteUsersSchema,
+  bulkUpdateUsersSchema,
 } from "./user.validation.js";
 import { USER_SORT_KEYS } from "./user.repository.js";
-import { createUser, getUser, listUsers, setUserPassword, updateUser } from "./user.service.js";
+import {
+  createUser,
+  getUser,
+  listUsers,
+  setUserPassword,
+  updateUser,
+  deleteUser,
+  bulkDeleteUsers,
+  bulkUpdateUsers,
+} from "./user.service.js";
 
 function actorFrom(req) {
   return {
@@ -82,6 +93,39 @@ export async function setUserPasswordHandler(req, res, next) {
       "The password was set. That account has to sign in again.",
       user
     );
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function deleteUserHandler(req, res, next) {
+  try {
+    const { userId } = userIdParamSchema.parse(req.params);
+    const result = await deleteUser(userId, actorFrom(req));
+
+    return ok(res, result);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function bulkDeleteUsersHandler(req, res, next) {
+  try {
+    const { userIds } = bulkDeleteUsersSchema.parse(req.body);
+    const result = await bulkDeleteUsers(userIds, actorFrom(req));
+
+    return ok(res, result);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function bulkUpdateUsersHandler(req, res, next) {
+  try {
+    const payload = bulkUpdateUsersSchema.parse(req.body);
+    const result = await bulkUpdateUsers(payload, actorFrom(req));
+
+    return ok(res, result);
   } catch (error) {
     return next(error);
   }

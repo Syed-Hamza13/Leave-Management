@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import Badge from "../../components/ui/Badge.jsx";
 import Button from "../../components/ui/Button.jsx";
 import ColumnVisibilityManager from "../../components/ui/ColumnVisibilityManager.jsx";
+import ConfirmDialog from "../../components/ui/ConfirmDialog.jsx";
 import DataTable from "../../components/ui/DataTable.jsx";
 import EmptyState from "../../components/ui/EmptyState.jsx";
 import SearchInput from "../../components/ui/SearchInput.jsx";
@@ -11,7 +12,9 @@ import { useToast } from "../../components/ui/ToastContext.js";
 
 import useAsyncData from "../../hooks/useAsyncData.js";
 import useColumnPreferences from "../../hooks/useColumnPreferences.js";
+import useMutation from "../../hooks/useMutation.js";
 import { PERMISSIONS } from "../../lib/permissions.js";
+import { errorMessage } from "../../services/errors.js";
 import {
   authorization as authorizationApi,
   tables as tablesApi,
@@ -23,6 +26,7 @@ import { usePermissions } from "../permissions/PermissionsContext.js";
 import useEntryOptions from "../records/useEntryOptions.js";
 import { formatRecordValue } from "../records/recordValues.js";
 
+import BulkUpdateDialog from "./BulkUpdateDialog.jsx";
 import ResetPasswordDialog from "./ResetPasswordDialog.jsx";
 import UserDialog from "./UserDialog.jsx";
 import UserFieldsDialog from "./UserFieldsDialog.jsx";
@@ -45,11 +49,21 @@ export default function UsersPage() {
   const [sort, setSort] = useState({ key: "createdAt", direction: "desc" });
   const [page, setPage] = useState(1);
 
+  // Row selection state
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  // Dialogs
   const [dialog, setDialog] = useState(null);
   const [fieldsDialogOpen, setFieldsDialogOpen] = useState(false);
+  const [bulkUpdateOpen, setBulkUpdateOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [singleDeleteTarget, setSingleDeleteTarget] = useState(null);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
 
   const canManage = can(PERMISSIONS.USERS_MANAGE);
   const { getDataType } = useMetadata();
+
+  const { run: runDelete, pending: deleting } = useMutation();
 
   const { data: rolesData } = useAsyncData("authorization-roles", () => authorizationApi.roles());
   const roles = useMemo(() => rolesData?.data ?? [], [rolesData]);
@@ -116,6 +130,75 @@ export default function UsersPage() {
 
   const rows = data?.data ?? [];
   const meta = data?.meta ?? null;
+
+  // Selection handlers
+  function toggleSelect(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (rows.length === 0) return;
+    const allSelectedOnPage = rows.every((r) => selectedIds.has(r.id));
+    if (allSelectedOnPage) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const r of rows) next.delete(r.id);
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const r of rows) next.add(r.id);
+        return next;
+      });
+    }
+  }
+
+  const isAllSelected = rows.length > 0 && rows.every((r) => selectedIds.has(r.id));
+  const isIndeterminate = rows.some((r) => selectedIds.has(r.id)) && !isAllSelected;
+
+  async function handleExecuteSingleDelete() {
+    if (!singleDeleteTarget) return;
+
+    const outcome = await runDelete(() => usersApi.delete(singleDeleteTarget.id));
+    if (!outcome.ok) {
+      toast.danger(errorMessage(outcome.error, "Failed to delete account."));
+      return;
+    }
+
+    toast.success(`Account ${singleDeleteTarget.email} was deleted.`);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(singleDeleteTarget.id);
+      return next;
+    });
+    setSingleDeleteTarget(null);
+    reload();
+  }
+
+  async function handleExecuteBulkDelete() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+
+    const outcome = await runDelete(() => usersApi.bulkDelete(ids));
+    if (!outcome.ok) {
+      toast.danger(errorMessage(outcome.error, "Failed to delete selected accounts."));
+      return;
+    }
+
+    toast.success(`Successfully deleted ${outcome.result?.data?.deletedCount ?? ids.length} account(s).`);
+    setSelectedIds(new Set());
+    setBulkDeleteOpen(false);
+    reload();
+  }
 
   const columnDefinitionMap = useMemo(() => {
     const map = new Map();
@@ -201,7 +284,7 @@ export default function UsersPage() {
   }, [allCustomColumns, getDataType, optionsFor]);
 
   const columns = useMemo(() => {
-    return orderedColumns.map((col) => {
+    const cols = orderedColumns.map((col) => {
       const def = columnDefinitionMap.get(col.key) || {
         key: col.key,
         header: col.label || col.key,
@@ -212,10 +295,43 @@ export default function UsersPage() {
         hidden: !visibleColumnKeys.includes(col.key),
       };
     });
-  }, [orderedColumns, columnDefinitionMap, visibleColumnKeys]);
+
+    if (canManage) {
+      cols.unshift({
+        key: "select",
+        header: (
+          <input
+            type="checkbox"
+            checked={isAllSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = isIndeterminate;
+            }}
+            onChange={toggleSelectAll}
+            aria-label="Select all accounts on page"
+            className="rounded border-line text-brand focus:ring-brand cursor-pointer"
+          />
+        ),
+        width: "44px",
+        alwaysVisible: true,
+        isFixed: true,
+        render: (row) => (
+          <input
+            type="checkbox"
+            checked={selectedIds.has(row.id)}
+            onChange={() => toggleSelect(row.id)}
+            aria-label={`Select ${row.email}`}
+            className="rounded border-line text-brand focus:ring-brand cursor-pointer"
+          />
+        ),
+      });
+    }
+
+    return cols;
+  }, [orderedColumns, columnDefinitionMap, visibleColumnKeys, canManage, isAllSelected, isIndeterminate, selectedIds, rows]);
 
   return (
     <div className="space-y-4">
+      {/* Top Search and Toolbar */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-1 flex-wrap items-end gap-3">
           <SearchInput
@@ -260,6 +376,67 @@ export default function UsersPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Actions Dropdown Button */}
+          {canManage && (
+            <div className="relative">
+              <Button
+                variant={selectedIds.size > 0 ? "primary" : "secondary"}
+                onClick={() => setActionsMenuOpen((prev) => !prev)}
+                className="flex items-center gap-1.5"
+              >
+                Actions {selectedIds.size > 0 ? `(${selectedIds.size})` : ""}
+                <span className="text-xs">▾</span>
+              </Button>
+
+              {actionsMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-30"
+                    onClick={() => setActionsMenuOpen(false)}
+                  />
+                  <div className="absolute right-0 top-full mt-1.5 z-40 w-48 rounded-md border border-line bg-surface py-1 shadow-lg">
+                    <button
+                      type="button"
+                      disabled={selectedIds.size === 0}
+                      onClick={() => {
+                        setActionsMenuOpen(false);
+                        setBulkUpdateOpen(true);
+                      }}
+                      className="w-full text-left px-3.5 py-2 text-xs font-medium text-ink hover:bg-surface-sunken disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Bulk Update Selected...
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={selectedIds.size === 0}
+                      onClick={() => {
+                        setActionsMenuOpen(false);
+                        setBulkDeleteOpen(true);
+                      }}
+                      className="w-full text-left px-3.5 py-2 text-xs font-medium text-danger hover:bg-danger-soft disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Delete Selected
+                    </button>
+
+                    {selectedIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedIds(new Set());
+                          setActionsMenuOpen(false);
+                        }}
+                        className="w-full text-left px-3.5 py-1.5 text-[11px] text-ink-muted hover:bg-surface-sunken border-t border-line mt-1"
+                      >
+                        Clear Selection ({selectedIds.size})
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           <ColumnVisibilityManager
             columns={orderedColumns}
             visibleKeys={visibleColumnKeys}
@@ -317,7 +494,7 @@ export default function UsersPage() {
         }
         actions={(row) =>
           canManage ? (
-            <>
+            <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
                 size="sm"
@@ -333,10 +510,65 @@ export default function UsersPage() {
               >
                 Set password
               </Button>
-            </>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-danger hover:bg-danger-soft hover:text-danger"
+                onClick={() => setSingleDeleteTarget(row)}
+              >
+                Delete
+              </Button>
+            </div>
           ) : null
         }
       />
+
+      {/* Bulk Update Dialog */}
+      {bulkUpdateOpen && (
+        <BulkUpdateDialog
+          open={bulkUpdateOpen}
+          userIds={Array.from(selectedIds)}
+          customColumns={allCustomColumns}
+          roles={roles}
+          optionsFor={optionsFor}
+          onClose={() => setBulkUpdateOpen(false)}
+          onSaved={() => {
+            setSelectedIds(new Set());
+            reload();
+          }}
+        />
+      )}
+
+      {/* Bulk Delete Confirm Dialog */}
+      {bulkDeleteOpen && (
+        <ConfirmDialog
+          open={bulkDeleteOpen}
+          title={`Delete ${selectedIds.size} accounts`}
+          message={`Are you sure you want to permanently delete ${selectedIds.size} selected account(s)?`}
+          detail="This will revoke all active sessions for these accounts and remove their user profile data. This action cannot be undone."
+          confirmLabel={`Delete ${selectedIds.size} accounts`}
+          tone="danger"
+          loading={deleting}
+          onConfirm={handleExecuteBulkDelete}
+          onCancel={() => setBulkDeleteOpen(false)}
+        />
+      )}
+
+      {/* Single User Delete Confirm Dialog */}
+      {singleDeleteTarget && (
+        <ConfirmDialog
+          open={Boolean(singleDeleteTarget)}
+          title={`Delete ${singleDeleteTarget.email}`}
+          message={`Are you sure you want to permanently delete the account for "${[singleDeleteTarget.firstName, singleDeleteTarget.lastName].filter(Boolean).join(" ") || singleDeleteTarget.email}"?`}
+          detail="This will revoke active sessions and delete this account's profile values."
+          confirmLabel="Delete account"
+          tone="danger"
+          loading={deleting}
+          onConfirm={handleExecuteSingleDelete}
+          onCancel={() => setSingleDeleteTarget(null)}
+        />
+      )}
 
       {fieldsDialogOpen ? (
         <UserFieldsDialog
@@ -384,4 +616,3 @@ export default function UsersPage() {
     </div>
   );
 }
-

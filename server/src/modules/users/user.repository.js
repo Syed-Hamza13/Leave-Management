@@ -1,4 +1,5 @@
 import { db } from "../../config/database.js";
+import { parseJsonColumn } from "../../lib/jsonColumn.js";
 import { limitClause } from "../../lib/pagination.js";
 
 /*
@@ -358,4 +359,209 @@ export async function upsertUserProfileValues(executor, userId, valuesMap, custo
     }
   }
 }
+
+export async function cleanupUserReferences(executor, userIds) {
+  const ids = (Array.isArray(userIds) ? userIds : [userIds]).map(Number).filter((id) => id > 0);
+  if (ids.length === 0) return;
+
+  const idSet = new Set(ids);
+
+  // 1. Clean up user_reference columns in user_profile_values
+  const [userRefCols] = await executor.execute(
+    `SELECT id, column_key, config FROM column_definitions WHERE data_type = 'user_reference'`
+  );
+
+  if (userRefCols.length > 0) {
+    const colIds = userRefCols.map((c) => c.id);
+    const placeholders = colIds.map(() => "?").join(",");
+    const [profileRows] = await executor.execute(
+      `SELECT id, user_id, column_definition_id, value FROM user_profile_values WHERE column_definition_id IN (${placeholders})`,
+      colIds
+    );
+
+    for (const row of profileRows) {
+      const parsed = parseJsonColumn(row.value);
+      if (Array.isArray(parsed)) {
+        const filtered = parsed.filter((item) => !idSet.has(Number(item)));
+        if (filtered.length !== parsed.length) {
+          if (filtered.length === 0) {
+            await executor.execute(`DELETE FROM user_profile_values WHERE id = ?`, [row.id]);
+          } else {
+            await executor.execute(
+              `UPDATE user_profile_values SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+              [JSON.stringify(filtered), row.id]
+            );
+          }
+        }
+      } else if (parsed !== null && parsed !== undefined && parsed !== "") {
+        if (idSet.has(Number(parsed))) {
+          await executor.execute(`DELETE FROM user_profile_values WHERE id = ?`, [row.id]);
+        }
+      }
+    }
+  }
+
+  // 2. Clean up user_reference columns in table_records (managed dynamic tables)
+  const [tableRefCols] = await executor.execute(
+    `SELECT c.id, c.table_id, c.column_key, c.config
+     FROM column_definitions c
+     JOIN table_definitions t ON c.table_id = t.id
+     WHERE c.data_type = 'user_reference' AND t.storage_kind = 'managed'`
+  );
+
+  if (tableRefCols.length > 0) {
+    const colsByTableId = new Map();
+    for (const col of tableRefCols) {
+      if (!colsByTableId.has(col.table_id)) {
+        colsByTableId.set(col.table_id, []);
+      }
+      colsByTableId.get(col.table_id).push(col);
+    }
+
+    const tableIds = Array.from(colsByTableId.keys());
+    const tablePlaceholders = tableIds.map(() => "?").join(",");
+    const [records] = await executor.execute(
+      `SELECT id, table_id, data FROM table_records WHERE table_id IN (${tablePlaceholders})`,
+      tableIds
+    );
+
+    for (const record of records) {
+      const data = parseJsonColumn(record.data) || {};
+      let changed = false;
+      const cols = colsByTableId.get(record.table_id) || [];
+
+      for (const col of cols) {
+        const key = col.column_key;
+        const val = data[key];
+        if (val === undefined || val === null) continue;
+
+        if (Array.isArray(val)) {
+          const filtered = val.filter((item) => !idSet.has(Number(item)));
+          if (filtered.length !== val.length) {
+            data[key] = filtered;
+            changed = true;
+          }
+        } else {
+          if (idSet.has(Number(val))) {
+            data[key] = null;
+            changed = true;
+          }
+        }
+      }
+
+      if (changed) {
+        await executor.execute(
+          `UPDATE table_records SET data = ?, updated_at = CURRENT_TIMESTAMP(3) WHERE id = ?`,
+          [JSON.stringify(data), record.id]
+        );
+      }
+    }
+  }
+
+  // 3. Clear creator / updater fields
+  for (const id of ids) {
+    await executor.execute(`UPDATE table_records SET updated_by = NULL WHERE updated_by = ?`, [id]);
+    await executor.execute(`UPDATE organization_entities SET created_by = NULL WHERE created_by = ?`, [id]);
+    await executor.execute(`UPDATE organization_entities SET updated_by = NULL WHERE updated_by = ?`, [id]);
+    await executor.execute(`UPDATE user_roles SET assigned_by = NULL WHERE assigned_by = ?`, [id]);
+  }
+}
+
+export async function cleanupDanglingUserReferences(executor) {
+  const [users] = await executor.execute(`SELECT id FROM users`);
+  const existingIds = new Set(users.map((u) => u.id));
+
+  // 1. user_profile_values
+  const [userRefCols] = await executor.execute(
+    `SELECT id, column_key, config FROM column_definitions WHERE data_type = 'user_reference'`
+  );
+  if (userRefCols.length > 0) {
+    const colIds = userRefCols.map((c) => c.id);
+    const placeholders = colIds.map(() => "?").join(",");
+    const [profileRows] = await executor.execute(
+      `SELECT id, value FROM user_profile_values WHERE column_definition_id IN (${placeholders})`,
+      colIds
+    );
+    for (const row of profileRows) {
+      const parsed = parseJsonColumn(row.value);
+      if (Array.isArray(parsed)) {
+        const filtered = parsed.filter((item) => existingIds.has(Number(item)));
+        if (filtered.length !== parsed.length) {
+          if (filtered.length === 0) {
+            await executor.execute(`DELETE FROM user_profile_values WHERE id = ?`, [row.id]);
+          } else {
+            await executor.execute(
+              `UPDATE user_profile_values SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+              [JSON.stringify(filtered), row.id]
+            );
+          }
+        }
+      } else if (parsed !== null && parsed !== undefined && parsed !== "") {
+        if (!existingIds.has(Number(parsed))) {
+          await executor.execute(`DELETE FROM user_profile_values WHERE id = ?`, [row.id]);
+        }
+      }
+    }
+  }
+
+  // 2. table_records
+  const [tableRefCols] = await executor.execute(
+    `SELECT c.id, c.table_id, c.column_key, c.config
+     FROM column_definitions c
+     JOIN table_definitions t ON c.table_id = t.id
+     WHERE c.data_type = 'user_reference' AND t.storage_kind = 'managed'`
+  );
+  if (tableRefCols.length > 0) {
+    const colsByTableId = new Map();
+    for (const col of tableRefCols) {
+      if (!colsByTableId.has(col.table_id)) colsByTableId.set(col.table_id, []);
+      colsByTableId.get(col.table_id).push(col);
+    }
+    const tableIds = Array.from(colsByTableId.keys());
+    const tablePlaceholders = tableIds.map(() => "?").join(",");
+    const [records] = await executor.execute(
+      `SELECT id, table_id, data FROM table_records WHERE table_id IN (${tablePlaceholders})`,
+      tableIds
+    );
+    for (const record of records) {
+      const data = parseJsonColumn(record.data) || {};
+      let changed = false;
+      const cols = colsByTableId.get(record.table_id) || [];
+      for (const col of cols) {
+        const key = col.column_key;
+        const val = data[key];
+        if (val === undefined || val === null) continue;
+        if (Array.isArray(val)) {
+          const filtered = val.filter((item) => existingIds.has(Number(item)));
+          if (filtered.length !== val.length) {
+            data[key] = filtered;
+            changed = true;
+          }
+        } else {
+          if (!existingIds.has(Number(val))) {
+            data[key] = null;
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        await executor.execute(
+          `UPDATE table_records SET data = ?, updated_at = CURRENT_TIMESTAMP(3) WHERE id = ?`,
+          [JSON.stringify(data), record.id]
+        );
+      }
+    }
+  }
+}
+
+export async function deleteUserRow(executor, userId) {
+  await cleanupUserReferences(executor, [userId]);
+  await executor.execute(`DELETE FROM user_profile_values WHERE user_id = ?`, [userId]);
+  await executor.execute(`DELETE FROM user_roles WHERE user_id = ?`, [userId]);
+  await executor.execute(`DELETE FROM user_devices WHERE user_id = ?`, [userId]);
+  await executor.execute(`DELETE FROM user_sessions WHERE user_id = ?`, [userId]);
+  const [result] = await executor.execute(`DELETE FROM users WHERE id = ?`, [userId]);
+  return result.affectedRows > 0;
+}
+
 

@@ -11,6 +11,9 @@ import {
   listUsersHandler,
   setUserPasswordHandler,
   updateUserHandler,
+  deleteUserHandler,
+  bulkDeleteUsersHandler,
+  bulkUpdateUsersHandler,
 } from "./user.controller.js";
 
 export function createUserRoutes() {
@@ -42,6 +45,20 @@ export function createUserRoutes() {
     requirePermission(PERMISSIONS.USERS_MANAGE),
     createUserHandler
   );
+
+  router.post(
+    "/bulk-delete",
+    requirePermission(PERMISSIONS.USERS_MANAGE),
+    bulkDeleteUsersHandler
+  );
+
+  router.post(
+    "/bulk-update",
+    requirePermission(PERMISSIONS.USERS_MANAGE),
+    bulkUpdateUsersHandler
+  );
+
+  router.delete("/:userId", requirePermission(PERMISSIONS.USERS_MANAGE), deleteUserHandler);
 
   router.patch("/:userId", requirePermission(PERMISSIONS.USERS_MANAGE), updateUserHandler);
 

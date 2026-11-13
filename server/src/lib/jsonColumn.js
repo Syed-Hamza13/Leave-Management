@@ -6,6 +6,7 @@ export function parseJsonColumn(raw, fallback = null) {
   if (raw === null || raw === undefined) return fallback;
 
   if (typeof raw === "object") return raw;
+  if (typeof raw === "number" || typeof raw === "boolean") return raw;
 
   if (typeof raw !== "string") return fallback;
 

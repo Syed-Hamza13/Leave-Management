@@ -63,3 +63,15 @@ export const updateUserSchema = z
 export const setPasswordSchema = z.object({
   password: passwordSchema,
 });
+
+export const bulkDeleteUsersSchema = z.object({
+  userIds: z.array(z.coerce.number().int().positive()).min(1, "Select at least one account to delete."),
+});
+
+export const bulkUpdateUsersSchema = z.object({
+  userIds: z.array(z.coerce.number().int().positive()).min(1, "Select at least one account to update."),
+  status: z.enum(["active", "disabled"]).optional(),
+  roleKeys: z.array(z.enum(ROLE_KEYS)).optional(),
+  profileValues: z.record(z.any()).optional().default({}),
+  clearFields: z.array(z.string()).optional().default([]),
+});

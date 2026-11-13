@@ -172,6 +172,9 @@ export const users = {
   get: (userId) => api(`/admin/users/${userId}`),
   create: (payload) => post("/admin/users", payload),
   update: (userId, payload) => patch(`/admin/users/${userId}`, payload),
+  delete: (userId) => api(`/admin/users/${userId}`, { method: "DELETE" }),
+  bulkDelete: (userIds) => post("/admin/users/bulk-delete", { userIds }),
+  bulkUpdate: (payload) => post("/admin/users/bulk-update", payload),
   setPassword: (userId, password) => put(`/admin/users/${userId}/password`, { password }),
 };
 

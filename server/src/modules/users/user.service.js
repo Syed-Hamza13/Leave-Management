@@ -23,6 +23,8 @@ import {
   updateUserProfile,
   updateUserStatus,
   upsertUserProfileValues,
+  deleteUserRow,
+  cleanupUserReferences,
 } from "./user.repository.js";
 
 /*
@@ -361,4 +363,182 @@ export async function setUserPassword(userId, password, actor) {
   await revokeAllUserSessions(userId);
 
   return getUser(userId);
+}
+
+export async function deleteUser(targetUserId, actor) {
+  const userId = Number(targetUserId);
+  if (actor?.userId && Number(actor.userId) === userId) {
+    throw badRequest("You cannot delete your own account.", { code: "SELF_DELETION" });
+  }
+
+  const user = await getUser(userId);
+  if (!user) {
+    throw notFound("This user does not exist.", { code: "USER_NOT_FOUND" });
+  }
+
+  // Prevent deleting the last active account holding super_admin or admin
+  const holdsElevated = user.roles.some((r) => ELEVATED_ROLE_KEYS.includes(r.key));
+  if (holdsElevated && user.status === "active") {
+    for (const roleKey of ELEVATED_ROLE_KEYS) {
+      if (user.roles.some((r) => r.key === roleKey)) {
+        const remaining = await findActiveAccountByRoleKeys([roleKey]);
+        if (remaining.length <= 1 && remaining.includes(userId)) {
+          throw conflict(`Cannot delete the last active ${roleKey} account.`, {
+            code: "LAST_ADMIN_ACCOUNT",
+          });
+        }
+      }
+    }
+  }
+
+  await revokeAllUserSessions(userId);
+
+  await withTransaction(async (conn) => {
+    await deleteUserRow(conn, userId);
+    await recordAudit({
+      connection: conn,
+      actorUserId: actor?.userId ?? null,
+      action: "users.delete",
+      entityType: "user",
+      entityId: userId,
+      summary: { email: user.email },
+      ipAddress: actor?.ipAddress ?? null,
+      userAgent: actor?.userAgent ?? null,
+    });
+  });
+
+  return { id: userId, email: user.email };
+}
+
+export async function bulkDeleteUsers(userIds = [], actor) {
+  const actorId = actor?.userId ? Number(actor.userId) : null;
+  const filteredIds = userIds.map(Number).filter((id) => id > 0 && id !== actorId);
+
+  if (filteredIds.length === 0) {
+    throw badRequest("No valid accounts selected for deletion.");
+  }
+
+  // Ensure at least one active administrator remains
+  const elevated = await findActiveAccountByRoleKeys(ELEVATED_ROLE_KEYS);
+  const remainingElevated = elevated.filter((id) => !filteredIds.includes(id));
+  if (elevated.length > 0 && remainingElevated.length === 0) {
+    throw conflict("Cannot delete all active administrator accounts. At least one must remain.", {
+      code: "LAST_ADMIN_ACCOUNT",
+    });
+  }
+
+  const deleted = [];
+  await withTransaction(async (conn) => {
+    await cleanupUserReferences(conn, filteredIds);
+    for (const userId of filteredIds) {
+      await revokeAllUserSessions(userId);
+      await deleteUserRow(conn, userId);
+      deleted.push(userId);
+    }
+
+    await recordAudit({
+      connection: conn,
+      actorUserId: actorId,
+      action: "users.bulk_delete",
+      entityType: "user",
+      entityId: null,
+      summary: { count: deleted.length, userIds: deleted },
+      ipAddress: actor?.ipAddress ?? null,
+      userAgent: actor?.userAgent ?? null,
+    });
+  });
+
+  return { deletedCount: deleted.length, deletedUserIds: deleted };
+}
+
+export async function bulkUpdateUsers({ userIds = [], status, roleKeys, profileValues = {}, clearFields = [] }, actor) {
+  const actorId = actor?.userId ? Number(actor.userId) : null;
+  const validIds = userIds.map(Number).filter((id) => id > 0);
+
+  if (validIds.length === 0) {
+    throw badRequest("No valid accounts selected for update.");
+  }
+
+  if (actorId && validIds.includes(actorId) && status && status !== "active") {
+    throw forbidden("You cannot deactivate your own account.", {
+      code: "SELF_DEACTIVATION_BLOCKED",
+    });
+  }
+
+  if (status && status !== "active") {
+    const elevated = await findActiveAccountByRoleKeys(ELEVATED_ROLE_KEYS);
+    const remaining = elevated.filter((id) => !validIds.includes(id));
+    if (elevated.length > 0 && remaining.length === 0) {
+      throw conflict("Cannot deactivate all active administrator accounts. At least one must remain.", {
+        code: "LAST_ADMIN_ACCOUNT",
+      });
+    }
+  }
+
+  if (roleKeys && !roleKeys.some((r) => ELEVATED_ROLE_KEYS.includes(r))) {
+    const elevated = await findActiveAccountByRoleKeys(ELEVATED_ROLE_KEYS);
+    const remaining = elevated.filter((id) => !validIds.includes(id));
+    if (elevated.length > 0 && remaining.length === 0) {
+      throw conflict("Cannot remove administrator privileges from all active admin accounts. At least one must remain.", {
+        code: "LAST_ADMIN_ACCOUNT",
+      });
+    }
+  }
+
+  const usersTable = await findTableByKey("users");
+  const allColumns = usersTable ? await findColumnsByTableId(usersTable.id, { includeArchived: false }) : [];
+  const customColumns = allColumns.filter((col) => !col.isSystem);
+  const customColumnsByKey = new Map(customColumns.map((col) => [col.key, col]));
+
+  // Combine profileValues and clearFields
+  const combinedProfileValues = { ...profileValues };
+  for (const field of clearFields) {
+    combinedProfileValues[field] = null;
+  }
+
+  let roleIds = null;
+  if (Array.isArray(roleKeys) && roleKeys.length > 0) {
+    roleIds = await getRoleIdsByKeys(roleKeys);
+  }
+
+  await withTransaction(async (conn) => {
+    for (const userId of validIds) {
+      // 1. Update status if provided
+      if (status) {
+        await updateUserStatus(conn, userId, status);
+        if (status === "disabled") {
+          await revokeAllUserSessions(userId);
+        }
+      }
+
+      // 2. Update role if provided
+      if (roleIds) {
+        await replaceUserRoles(conn, userId, roleIds, actorId);
+      }
+
+      // 3. Update profile values if provided
+      if (Object.keys(combinedProfileValues).length > 0) {
+        await upsertUserProfileValues(conn, userId, combinedProfileValues, customColumnsByKey);
+      }
+    }
+
+    await recordAudit({
+      connection: conn,
+      actorUserId: actorId,
+      action: "users.bulk_update",
+      entityType: "user",
+      entityId: null,
+      summary: {
+        count: validIds.length,
+        userIds: validIds,
+        fieldsUpdated: Object.keys(combinedProfileValues),
+        statusUpdated: status || null,
+        rolesUpdated: roleKeys || null,
+      },
+      ipAddress: actor?.ipAddress ?? null,
+      userAgent: actor?.userAgent ?? null,
+    });
+  });
+
+  return { updatedCount: validIds.length, userIds: validIds };
 }

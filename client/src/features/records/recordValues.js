@@ -9,9 +9,10 @@ export function isEmptyValue(value) {
 }
 
 function referenceLabel(value, options) {
+  if (value === null || value === undefined || value === "") return null;
   const match = options?.find((option) => Number(option.value) === Number(value));
 
-  return match?.label ?? `#${value}`;
+  return match?.label ?? null;
 }
 
 export function formatRecordValue(value, { storage = "string", options = null } = {}) {
@@ -21,10 +22,12 @@ export function formatRecordValue(value, { storage = "string", options = null } 
 
   if (storage === "reference") {
     if (Array.isArray(value)) {
-      return value.map((entry) => referenceLabel(entry, options)).join(", ");
+      const labels = value.map((entry) => referenceLabel(entry, options)).filter(Boolean);
+      return labels.length > 0 ? labels.join(", ") : "—";
     }
 
-    return referenceLabel(value, options);
+    const label = referenceLabel(value, options);
+    return label || "—";
   }
 
   if (Array.isArray(value)) return value.join(", ");
