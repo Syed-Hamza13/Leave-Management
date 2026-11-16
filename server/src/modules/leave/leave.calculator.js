@@ -37,6 +37,7 @@ export function calculateLeaveDuration({
   startDate,
   endDate,
   session = "full_day",
+  leaveType = "",
   holidays = [],
   config = {},
 }) {
@@ -59,10 +60,10 @@ export function calculateLeaveDuration({
     throw new Error("End date cannot be earlier than start date.");
   }
 
-  // Handle single day half-day session
+  // Handle single day half-day session or short leave
   const isSameDay = formatDateKey(start) === formatDateKey(end);
   const isHalfDay = isSameDay && (session === "first_half" || session === "second_half");
-  const isShortLeave = isSameDay && session === "short_leave";
+  const isShortLeave = isSameDay && (session === "short_leave" || String(leaveType).toLowerCase().includes("short"));
 
   const breakdown = [];
   let current = new Date(start);

@@ -16,6 +16,12 @@ export const DEFAULT_LEAVE_RULES = [
         operator: "eq",
         value: "short_leave",
       },
+      {
+        source: "request",
+        field: "leave_type",
+        operator: "eq",
+        value: "Short Leave",
+      },
     ],
     combinator: "OR",
     actions: {

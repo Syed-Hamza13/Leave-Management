@@ -20,23 +20,18 @@ const LEAVE_TYPES = [
   { value: "Leave Without Pay", label: "Leave Without Pay (LWP)" },
 ];
 
-const SESSIONS = [
-  { value: "full_day", label: "Full Day" },
-  { value: "first_half", label: "First Half (Morning)" },
-  { value: "second_half", label: "Second Half (Afternoon)" },
-  { value: "short_leave", label: "2-Hour Short Leave" },
-];
-
 export default function ApplyLeaveDialog({ open, onClose, onSaved }) {
   const toast = useToast();
 
   const todayStr = new Date().toISOString().split("T")[0];
   const [startDate, setStartDate] = useState(todayStr);
   const [endDate, setEndDate] = useState(todayStr);
-  const [session, setSession] = useState("full_day");
   const [leaveType, setLeaveType] = useState("Privilege Leave");
   const [isEmergency, setIsEmergency] = useState(false);
   const [reason, setReason] = useState("");
+
+  const isSingleDay = leaveType === "Short Leave";
+  const effectiveSession = isSingleDay ? "short_leave" : "full_day";
 
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -44,13 +39,12 @@ export default function ApplyLeaveDialog({ open, onClose, onSaved }) {
 
   const { run: submitLeave, pending: submitting } = useMutation();
 
-  // If short leave selected, lock session to short_leave and endDate to startDate
+  // If short leave selected, lock endDate to startDate
   useEffect(() => {
-    if (leaveType === "Short Leave") {
-      setSession("short_leave");
+    if (isSingleDay) {
       setEndDate(startDate);
     }
-  }, [leaveType, startDate]);
+  }, [isSingleDay, startDate]);
 
   // Recalculate live preview
   useEffect(() => {
@@ -60,13 +54,13 @@ export default function ApplyLeaveDialog({ open, onClose, onSaved }) {
     setPreviewLoading(true);
     setPreviewError(null);
 
-    const actualEnd = session === "short_leave" || session.includes("half") ? startDate : (endDate || startDate);
+    const actualEnd = isSingleDay ? startDate : (endDate || startDate);
 
     leaveApi
       .preview({
         startDate,
         endDate: actualEnd,
-        session,
+        session: effectiveSession,
         leaveType,
         isEmergency,
       })
@@ -86,18 +80,18 @@ export default function ApplyLeaveDialog({ open, onClose, onSaved }) {
     return () => {
       active = false;
     };
-  }, [startDate, endDate, session, leaveType, isEmergency]);
+  }, [startDate, endDate, leaveType, isEmergency, isSingleDay, effectiveSession]);
 
   async function handleSubmit(e) {
     e.preventDefault();
 
-    const actualEnd = session === "short_leave" || session.includes("half") ? startDate : (endDate || startDate);
+    const actualEnd = isSingleDay ? startDate : (endDate || startDate);
 
     const outcome = await submitLeave(() =>
       leaveApi.submit({
         startDate,
         endDate: actualEnd,
-        session,
+        session: effectiveSession,
         leaveType,
         isEmergency,
         reason,
@@ -118,12 +112,10 @@ export default function ApplyLeaveDialog({ open, onClose, onSaved }) {
     onClose();
   }
 
-  const isSingleDaySession = session === "short_leave" || session.includes("half");
-
   return (
     <Modal open={open} onClose={onClose} title="Apply for Leave" size="lg">
       <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
           <Select
             id="leave-type"
             label="Leave Type"
@@ -132,27 +124,18 @@ export default function ApplyLeaveDialog({ open, onClose, onSaved }) {
             options={LEAVE_TYPES}
             onChange={(e) => setLeaveType(e.target.value)}
           />
-
-          <Select
-            id="leave-session"
-            label="Session / Duration"
-            required
-            value={session}
-            options={SESSIONS}
-            onChange={(e) => setSession(e.target.value)}
-          />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className={isSingleDay ? "" : "grid grid-cols-1 md:grid-cols-2 gap-4"}>
           <DateInput
             id="start-date"
-            label={isSingleDaySession ? "Date" : "Start Date"}
+            label={isSingleDay ? "Date" : "Start Date"}
             required
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
           />
 
-          {!isSingleDaySession && (
+          {!isSingleDay && (
             <DateInput
               id="end-date"
               label="End Date"

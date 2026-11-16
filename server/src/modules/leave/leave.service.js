@@ -181,10 +181,19 @@ export async function previewLeaveRequest({
   const workflowConfig = await repoFindWorkflowConfig();
   const holidays = await repoFindHolidays();
 
+  const isShortLeave = String(leaveType).toLowerCase().includes("short");
+  const effectiveSession =
+    session && session !== "full_day"
+      ? session
+      : isShortLeave
+        ? "short_leave"
+        : session || "full_day";
+
   const durationInfo = calculateLeaveDuration({
     startDate,
     endDate,
-    session,
+    session: effectiveSession,
+    leaveType,
     holidays,
     config: workflowConfig,
   });
@@ -200,7 +209,7 @@ export async function previewLeaveRequest({
     userId: applicantId,
     leaveType,
     days: durationInfo.calculatedDays,
-    session,
+    session: effectiveSession,
   });
 
   const rules = await findLeaveRules();
@@ -209,7 +218,7 @@ export async function previewLeaveRequest({
   const requestData = {
     days: durationInfo.calculatedDays,
     leave_type: leaveType,
-    session,
+    session: effectiveSession,
     is_emergency: isEmergency,
     startDate,
     endDate,
@@ -248,11 +257,19 @@ export async function submitLeaveRequest({
   reason = "",
   actorUserId = null,
 }) {
+  const isShortLeave = String(leaveType).toLowerCase().includes("short");
+  const effectiveSession =
+    session && session !== "full_day"
+      ? session
+      : isShortLeave
+        ? "short_leave"
+        : session || "full_day";
+
   const preview = await previewLeaveRequest({
     applicantId,
     startDate,
     endDate,
-    session,
+    session: effectiveSession,
     leaveType,
     isEmergency,
   });
@@ -266,7 +283,7 @@ export async function submitLeaveRequest({
     leave_type: leaveType,
     start_date: preview.duration.startDate,
     end_date: preview.duration.endDate,
-    session,
+    session: effectiveSession,
     days: preview.duration.calculatedDays,
     sandwiched_days: preview.duration.sandwichedDaysCount,
     reason,
@@ -295,7 +312,7 @@ export async function submitLeaveRequest({
         userId: applicantId,
         leaveType,
         days: preview.duration.calculatedDays,
-        session,
+        session: effectiveSession,
         actorUserId: actorUserId ?? applicantId,
       });
     }
