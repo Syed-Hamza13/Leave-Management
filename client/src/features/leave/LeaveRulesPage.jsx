@@ -60,9 +60,9 @@ export default function LeaveRulesPage() {
       conditions: [
         {
           source: "user",
-          field: "staff_category",
+          field: "staff_type",
           operator: "eq",
-          value: "Programme Staff",
+          value: "programme_staff",
         },
         {
           source: "request",

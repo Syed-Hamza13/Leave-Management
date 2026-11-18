@@ -236,11 +236,14 @@ export const DEFAULT_LEAVE_RULES = [
 
 export async function findLeaveRules() {
   const row = await findSettingRow("leave_rules");
-  if (!row || !row.setting_value) {
+  if (!row || row.setting_value === null || row.setting_value === undefined) {
     return DEFAULT_LEAVE_RULES;
   }
-  const rules = parseJsonColumn(row.setting_value, []);
-  return Array.isArray(rules) && rules.length > 0 ? rules : DEFAULT_LEAVE_RULES;
+  const rules = parseJsonColumn(row.setting_value, null);
+  if (Array.isArray(rules)) {
+    return rules;
+  }
+  return DEFAULT_LEAVE_RULES;
 }
 
 export async function saveLeaveRules(executor, rules, actorUserId) {

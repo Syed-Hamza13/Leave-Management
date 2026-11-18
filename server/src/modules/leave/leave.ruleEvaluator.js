@@ -5,6 +5,19 @@
  * and applicant profile attributes to determine routing and notification actions.
  */
 
+function normalizeVal(val) {
+  if (val === null || val === undefined) return "";
+  return String(val).trim().toLowerCase();
+}
+
+function matchesText(a, b) {
+  const normA = normalizeVal(a);
+  const normB = normalizeVal(b);
+  if (normA === normB) return true;
+  // Treat underscores and spaces as equivalent (e.g. "programme_staff" <=> "Programme Staff")
+  return normA.replace(/_/g, " ") === normB.replace(/_/g, " ");
+}
+
 export function evaluateCondition(condition, { requestData = {}, applicant = {} }) {
   const { source = "request", field, operator, value: expected } = condition;
 
@@ -12,6 +25,10 @@ export function evaluateCondition(condition, { requestData = {}, applicant = {} 
   if (source === "user") {
     // Check applicant user attributes or user custom profile values
     actual = applicant.values?.[field] ?? applicant[field];
+    // Support staff_category and staff_type aliases interchangeably
+    if (actual === undefined && (field === "staff_category" || field === "staff_type")) {
+      actual = applicant.values?.staff_type ?? applicant.values?.staff_category;
+    }
   } else {
     // Check request data
     actual = requestData[field];
@@ -32,11 +49,17 @@ export function evaluateCondition(condition, { requestData = {}, applicant = {} 
   switch (operator) {
     case "eq":
     case "equals":
-      return String(actual).trim().toLowerCase() === String(expected).trim().toLowerCase();
+      if (Array.isArray(actual)) {
+        return actual.some((a) => matchesText(a, expected));
+      }
+      return matchesText(actual, expected);
 
     case "neq":
     case "not_equals":
-      return String(actual).trim().toLowerCase() !== String(expected).trim().toLowerCase();
+      if (Array.isArray(actual)) {
+        return !actual.some((a) => matchesText(a, expected));
+      }
+      return !matchesText(actual, expected);
 
     case "gt":
     case "greater_than":
@@ -61,6 +84,10 @@ export function evaluateCondition(condition, { requestData = {}, applicant = {} 
       } else if (typeof expected === "object" && expected !== null) {
         min = expected.min;
         max = expected.max;
+      } else if (typeof expected === "string" && expected.includes(",")) {
+        const parts = expected.split(",").map(Number);
+        min = parts[0];
+        max = parts[1];
       }
       const val = isNumeric ? numActual : actual;
       return val >= min && val <= max;
@@ -68,22 +95,34 @@ export function evaluateCondition(condition, { requestData = {}, applicant = {} 
 
     case "in":
       if (Array.isArray(expected)) {
-        return expected.some(
-          (item) => String(item).trim().toLowerCase() === String(actual).trim().toLowerCase()
+        return expected.some((item) =>
+          Array.isArray(actual)
+            ? actual.some((a) => matchesText(item, a))
+            : matchesText(item, actual)
+        );
+      }
+      if (typeof expected === "string") {
+        const parts = expected.split(",").map((p) => p.trim());
+        return parts.some((item) =>
+          Array.isArray(actual)
+            ? actual.some((a) => matchesText(item, a))
+            : matchesText(item, actual)
         );
       }
       return false;
 
     case "not_in":
       if (Array.isArray(expected)) {
-        return !expected.some(
-          (item) => String(item).trim().toLowerCase() === String(actual).trim().toLowerCase()
+        return !expected.some((item) =>
+          Array.isArray(actual)
+            ? actual.some((a) => matchesText(item, a))
+            : matchesText(item, actual)
         );
       }
       return true;
 
     case "contains":
-      return String(actual).toLowerCase().includes(String(expected).toLowerCase());
+      return normalizeVal(actual).includes(normalizeVal(expected));
 
     default:
       return false;

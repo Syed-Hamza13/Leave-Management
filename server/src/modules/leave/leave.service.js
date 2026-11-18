@@ -155,6 +155,13 @@ async function loadApplicantUser(userId) {
   const profileMap = await findProfileValuesByUserIds([userId]);
   const values = profileMap.get(Number(userId)) || {};
 
+  const [roleRows] = await db.execute(
+    `SELECT r.role_key FROM roles r INNER JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = ?`,
+    [userId]
+  );
+  const roles = roleRows.map((r) => r.role_key);
+  const role = roles[0] || null;
+
   return {
     id: Number(userRow.id),
     email: userRow.email,
@@ -162,6 +169,8 @@ async function loadApplicantUser(userId) {
     lastName: userRow.last_name,
     fullName: `${userRow.first_name} ${userRow.last_name}`.trim(),
     status: userRow.status,
+    role,
+    roles,
     values,
   };
 }
