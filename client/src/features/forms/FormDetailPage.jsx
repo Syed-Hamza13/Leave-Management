@@ -155,7 +155,7 @@ export default function FormDetailPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex-1 min-h-0 w-full overflow-y-auto space-y-4 pr-1">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-ink">{form.label}</p>

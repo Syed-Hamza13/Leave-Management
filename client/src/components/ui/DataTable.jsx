@@ -62,12 +62,12 @@ export default function DataTable({
     );
 
   return (
-    <div className={`space-y-3 ${className}`}>
-      <div className="overflow-x-auto rounded-card border border-line bg-surface">
-        <table className="w-full border-collapse text-sm" aria-busy={loading ? "true" : undefined}>
+    <div className={`flex flex-col flex-1 min-h-0 w-full min-w-0 max-w-full gap-3 overflow-hidden ${className}`}>
+      <div className="flex-1 min-h-0 w-full max-w-full overflow-auto rounded-card border border-line bg-surface">
+        <table className="min-w-full border-collapse text-sm" aria-busy={loading ? "true" : undefined}>
           <caption className="sr-only">Data table</caption>
 
-          <thead>
+          <thead className="sticky top-0 z-10 bg-surface-sunken shadow-2xs">
             <tr className="border-b border-line bg-surface-sunken">
               {visible.map((column) => {
                 const isSorted = sort?.key === column.key;
@@ -129,7 +129,7 @@ export default function DataTable({
                         : "none"
                     }
                     style={column.width ? { width: column.width } : undefined}
-                    className={`whitespace-nowrap px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-soft transition-colors ${align} ${
+                    className={`whitespace-nowrap bg-surface-sunken px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-soft transition-colors ${align} ${
                       isDragging ? "opacity-30 bg-surface-sunken" : ""
                     } ${
                       isOver ? "border-l-2 border-brand bg-brand/5" : ""
@@ -182,7 +182,7 @@ export default function DataTable({
               {actions ? (
                 <th
                   scope="col"
-                  className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-ink-soft"
+                  className="bg-surface-sunken px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-ink-soft"
                 >
                   <span className="sr-only">Row actions</span>
                 </th>
@@ -258,14 +258,16 @@ export default function DataTable({
       </div>
 
       {pagination && !loading && !error ? (
-        <Pagination
-          page={pagination.page}
-          pageSize={pagination.pageSize}
-          total={pagination.total}
-          totalPages={pagination.totalPages}
-          onChange={onPageChange}
-          disabled={loading}
-        />
+        <div className="shrink-0">
+          <Pagination
+            page={pagination.page}
+            pageSize={pagination.pageSize}
+            total={pagination.total}
+            totalPages={pagination.totalPages}
+            onChange={onPageChange}
+            disabled={loading}
+          />
+        </div>
       ) : null}
     </div>
   );

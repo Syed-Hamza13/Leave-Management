@@ -317,7 +317,7 @@ function AppShell() {
   );
 
   return (
-    <div className="flex min-h-screen bg-canvas">
+    <div className="flex h-screen w-full overflow-hidden bg-canvas">
       <a
         href="#main-content"
         onClick={skipToMain}
@@ -338,8 +338,8 @@ function AppShell() {
         id="app-navigation"
         aria-label="Main navigation"
         className={[
-          "fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-line bg-surface",
-          "transition-[transform,visibility] duration-200 md:sticky md:top-0 md:h-screen md:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex w-64 h-full flex-col border-r border-line bg-surface",
+          "transition-[transform,visibility] duration-200 md:static md:h-full md:translate-x-0 md:shrink-0",
           /*
            * Closed on a narrow screen means hidden, not merely slid off-screen:
            * a translated-but-visible sidebar keeps its links in the tab order.
@@ -352,8 +352,8 @@ function AppShell() {
         {sidebar}
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-surface px-4 md:hidden">
+      <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface px-4 md:hidden">
           <Button
             variant="ghost"
             size="sm"
@@ -370,18 +370,20 @@ function AppShell() {
         </div>
 
         {heading ? (
-          <PageHeader
-            breadcrumb={heading.breadcrumb}
-            title={heading.title}
-            description={heading.description}
-          />
+          <div className="shrink-0">
+            <PageHeader
+              breadcrumb={heading.breadcrumb}
+              title={heading.title}
+              description={heading.description}
+            />
+          </div>
         ) : null}
 
         <main
           id="main-content"
           tabIndex={-1}
           key={location.pathname}
-          className="flex-1 px-4 py-6 outline-none md:px-6"
+          className="flex-1 min-h-0 min-w-0 w-full flex flex-col overflow-hidden px-4 py-3 md:px-6 md:py-3 outline-none"
         >
           <Outlet />
         </main>

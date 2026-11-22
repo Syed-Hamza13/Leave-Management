@@ -330,137 +330,133 @@ export default function UsersPage() {
   }, [orderedColumns, columnDefinitionMap, visibleColumnKeys, canManage, isAllSelected, isIndeterminate, selectedIds, rows]);
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col flex-1 min-h-0 h-full w-full min-w-0 max-w-full gap-3 overflow-hidden">
       {/* Top Search and Toolbar */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-1 flex-wrap items-end gap-3">
-          <SearchInput
-            className="w-full sm:max-w-xs"
-            value={search}
-            onChange={(next) => {
-              setSearch(next);
-              setPage(1);
-            }}
-            label="Search accounts"
-            placeholder="Search by name or email…"
-          />
+      <div className="shrink-0 flex flex-wrap items-center gap-2 w-full">
+        <SearchInput
+          className="w-64 sm:w-82"
+          value={search}
+          onChange={(next) => {
+            setSearch(next);
+            setPage(1);
+          }}
+          label="Search accounts"
+          placeholder="Search by name or email…"
+        />
 
-          <Select
-            id="users-status"
-            label="Status"
-            className="w-40"
-            placeholder="All statuses"
-            value={status}
-            onChange={(event) => {
-              setStatus(event.target.value);
-              setPage(1);
-            }}
-            options={[
-              { value: "active", label: "Active" },
-              { value: "disabled", label: "Deactivated" },
-            ]}
-          />
+        <Select
+          id="users-status"
+          className="w-32 sm:w-36"
+          placeholder="All statuses"
+          aria-label="Filter by status"
+          value={status}
+          onChange={(event) => {
+            setStatus(event.target.value);
+            setPage(1);
+          }}
+          options={[
+            { value: "active", label: "Active" },
+            { value: "disabled", label: "Deactivated" },
+          ]}
+        />
 
-          <Select
-            id="users-role"
-            label="Role"
-            className="w-44"
-            placeholder="All roles"
-            value={role}
-            onChange={(event) => {
-              setRole(event.target.value);
-              setPage(1);
-            }}
-            options={roles.map((entry) => ({ value: entry.key, label: entry.label }))}
-          />
-        </div>
+        <Select
+          id="users-role"
+          className="w-32 sm:w-36"
+          placeholder="All roles"
+          aria-label="Filter by role"
+          value={role}
+          onChange={(event) => {
+            setRole(event.target.value);
+            setPage(1);
+          }}
+          options={roles.map((entry) => ({ value: entry.key, label: entry.label }))}
+        />
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Actions Dropdown Button */}
-          {canManage && (
-            <div className="relative">
-              <Button
-                variant={selectedIds.size > 0 ? "primary" : "secondary"}
-                onClick={() => setActionsMenuOpen((prev) => !prev)}
-                className="flex items-center gap-1.5"
-              >
-                Actions {selectedIds.size > 0 ? `(${selectedIds.size})` : ""}
-                <span className="text-xs">▾</span>
-              </Button>
-
-              {actionsMenuOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-30"
-                    onClick={() => setActionsMenuOpen(false)}
-                  />
-                  <div className="absolute right-0 top-full mt-1.5 z-40 w-48 rounded-md border border-line bg-surface py-1 shadow-lg">
-                    <button
-                      type="button"
-                      disabled={selectedIds.size === 0}
-                      onClick={() => {
-                        setActionsMenuOpen(false);
-                        setBulkUpdateOpen(true);
-                      }}
-                      className="w-full text-left px-3.5 py-2 text-xs font-medium text-ink hover:bg-surface-sunken disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Bulk Update Selected...
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={selectedIds.size === 0}
-                      onClick={() => {
-                        setActionsMenuOpen(false);
-                        setBulkDeleteOpen(true);
-                      }}
-                      className="w-full text-left px-3.5 py-2 text-xs font-medium text-danger hover:bg-danger-soft disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Delete Selected
-                    </button>
-
-                    {selectedIds.size > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedIds(new Set());
-                          setActionsMenuOpen(false);
-                        }}
-                        className="w-full text-left px-3.5 py-1.5 text-[11px] text-ink-muted hover:bg-surface-sunken border-t border-line mt-1"
-                      >
-                        Clear Selection ({selectedIds.size})
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          <ColumnVisibilityManager
-            columns={orderedColumns}
-            visibleKeys={visibleColumnKeys}
-            onChangeVisibleKeys={setVisibleColumnKeys}
-            onReorderColumns={reorderColumns}
-            onReset={resetPreferences}
-            storageKey="columns:users-table"
-            defaultVisibleKeys={defaultVisibleKeys}
-          />
-
-          {canManage ? (
+        {/* Actions Dropdown Button */}
+        {canManage && (
+          <div className="relative">
             <Button
-              variant="secondary"
-              onClick={() => setFieldsDialogOpen(true)}
-              title="Customize placement and add/edit user profile fields"
+              variant={selectedIds.size > 0 ? "primary" : "secondary"}
+              onClick={() => setActionsMenuOpen((prev) => !prev)}
+              className="flex items-center gap-1.5"
             >
-              Customize fields
+              Actions {selectedIds.size > 0 ? `(${selectedIds.size})` : ""}
+              <span className="text-xs">▾</span>
             </Button>
-          ) : null}
 
-          {canManage ? (
-            <Button onClick={() => setDialog({ mode: "create" })}>New account</Button>
-          ) : null}
-        </div>
+            {actionsMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-30"
+                  onClick={() => setActionsMenuOpen(false)}
+                />
+                <div className="absolute left-0 top-full mt-1.5 z-40 w-48 rounded-md border border-line bg-surface py-1 shadow-lg">
+                  <button
+                    type="button"
+                    disabled={selectedIds.size === 0}
+                    onClick={() => {
+                      setActionsMenuOpen(false);
+                      setBulkUpdateOpen(true);
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-xs font-medium text-ink hover:bg-surface-sunken disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Bulk Update Selected...
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={selectedIds.size === 0}
+                    onClick={() => {
+                      setActionsMenuOpen(false);
+                      setBulkDeleteOpen(true);
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-xs font-medium text-danger hover:bg-danger-soft disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Delete Selected
+                  </button>
+
+                  {selectedIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedIds(new Set());
+                        setActionsMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3.5 py-1.5 text-[11px] text-ink-muted hover:bg-surface-sunken border-t border-line mt-1"
+                    >
+                      Clear Selection ({selectedIds.size})
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        <ColumnVisibilityManager
+          columns={orderedColumns}
+          visibleKeys={visibleColumnKeys}
+          onChangeVisibleKeys={setVisibleColumnKeys}
+          onReorderColumns={reorderColumns}
+          onReset={resetPreferences}
+          storageKey="columns:users-table"
+          defaultVisibleKeys={defaultVisibleKeys}
+        />
+
+        {canManage ? (
+          <Button
+            variant="secondary"
+            onClick={() => setFieldsDialogOpen(true)}
+            title="Customize placement and add/edit user profile fields"
+          >
+            Customize fields
+          </Button>
+        ) : null}
+
+        {canManage ? (
+          <Button onClick={() => setDialog({ mode: "create" })}>New account</Button>
+        ) : null}
       </div>
 
       <DataTable
@@ -477,6 +473,7 @@ export default function UsersPage() {
         onReorderColumns={reorderColumns}
         pagination={meta}
         onPageChange={setPage}
+        className="flex-1 min-h-0"
         empty={
           <EmptyState
             title={search ? "No accounts match your search" : "No accounts yet"}

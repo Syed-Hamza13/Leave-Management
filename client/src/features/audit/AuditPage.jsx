@@ -128,8 +128,8 @@ export default function AuditPage() {
   );
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3 rounded-card border border-line bg-surface p-4">
+    <div className="flex flex-col flex-1 min-h-0 h-full w-full min-w-0 max-w-full gap-3 overflow-hidden">
+      <div className="shrink-0 space-y-3 rounded-card border border-line bg-surface p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <TextInput
             id="audit-action"
@@ -208,6 +208,7 @@ export default function AuditPage() {
           onRetry={reload}
           pagination={meta}
           onPageChange={setPage}
+          className="flex-1 min-h-0"
           empty={
             <EmptyState
               title="No matching actions"

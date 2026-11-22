@@ -213,7 +213,7 @@ export default function SettingsPage() {
   const dirty = draft !== null && Object.keys(buildPatch(smtp, value)).length > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="flex-1 min-h-0 w-full overflow-y-auto space-y-6 pr-1">
       {!saved.secretStorageConfigured ? (
         <p className="rounded-card border border-warning bg-warning-soft px-4 py-3 text-sm text-warning">
           This server has no encryption key configured, so a mail password cannot be

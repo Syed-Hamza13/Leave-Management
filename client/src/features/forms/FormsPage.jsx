@@ -106,8 +106,8 @@ export default function FormsPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="flex flex-col flex-1 min-h-0 h-full w-full min-w-0 max-w-full gap-3 overflow-hidden">
+      <div className="shrink-0 flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-1 flex-wrap items-end gap-3">
           <SearchInput
             className="w-full sm:max-w-xs"
@@ -147,6 +147,7 @@ export default function FormsPage() {
         onRetry={reload}
         pagination={meta}
         onPageChange={setPage}
+        className="flex-1 min-h-0"
         empty={
           <EmptyState
             title={search ? "No forms match your search" : "No forms yet"}

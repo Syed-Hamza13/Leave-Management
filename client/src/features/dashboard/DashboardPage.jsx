@@ -69,7 +69,7 @@ function DashboardPage() {
   const steps = STEPS.filter((step) => can(step.permission));
 
   return (
-    <div className="space-y-8">
+    <div className="flex-1 min-h-0 w-full overflow-y-auto space-y-8 pr-1">
       <section className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-ink-soft">Signed in as</span>
         <span className="font-medium text-ink">{fullName}</span>
