@@ -213,6 +213,18 @@ export default function FieldRenderer({
         />
       );
 
+    case "lookup":
+      return (
+        <FormField id={fieldId} label={field.label} hint={hint} className={className}>
+          <div className="flex items-center justify-between rounded-control border border-line bg-surface-sunken px-3 py-2 text-sm text-ink">
+            <span className="font-medium">
+              {value !== null && value !== undefined && value !== "" ? String(value) : "—"}
+            </span>
+            <span className="text-xs text-ink-muted">Linked live from related record</span>
+          </div>
+        </FormField>
+      );
+
     default:
       return (
         <FormField id={fieldId} label={field.label} hint={hint} className={className}>

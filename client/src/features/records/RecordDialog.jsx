@@ -261,6 +261,29 @@ export default function RecordDialog({
             />
           );
         })}
+
+        {isEdit && (table?.columns ?? []).some((c) => c.dataType === "lookup" && c.status === "active") ? (
+          <div className="rounded-control border border-line bg-surface-sunken p-3 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+              Linked Columns (Live Relation)
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {(table.columns ?? [])
+                .filter((c) => c.dataType === "lookup" && c.status === "active")
+                .map((col) => {
+                  const val = record?.values?.[col.key];
+                  return (
+                    <div key={col.id} className="text-xs">
+                      <span className="text-ink-soft">{col.label}: </span>
+                      <strong className="text-ink">
+                        {val !== null && val !== undefined && val !== "" ? String(val) : "—"}
+                      </strong>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        ) : null}
       </form>
     </Modal>
   );

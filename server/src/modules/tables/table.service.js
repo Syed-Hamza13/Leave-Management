@@ -37,6 +37,7 @@ import {
   countProfileValuesForColumn,
   countUsersForTable,
   findConnectedFieldsForColumn,
+  findInboundRelationsByTableId,
 } from "./table.repository.js";
 
 export async function listTables(query) {
@@ -342,8 +343,29 @@ export async function addColumn(tableId, payload, actor) {
     config = normalizeTypeConfig(dataType.key, relation.config);
     relationTableId = relation.relationTableId;
     relationPolicy = relation.relationPolicy;
+  } else if (dataType.key === "lookup") {
+    const targetTableId = Number(payload.relationTableId ?? config.targetTableId);
+    if (!Number.isInteger(targetTableId) || targetTableId <= 0) {
+      throw badRequest("A lookup column must specify the target table.", {
+        code: "LOOKUP_TARGET_REQUIRED",
+      });
+    }
+    const targetTable = await findTableById(targetTableId);
+    if (!targetTable || targetTable.status !== "active") {
+      throw badRequest("The target table does not exist or is archived.", {
+        code: "TARGET_TABLE_UNAVAILABLE",
+      });
+    }
+    relationTableId = targetTableId;
+    relationPolicy = "single";
+    config = normalizeTypeConfig(dataType.key, {
+      ...config,
+      targetTableId,
+      targetColumnKey: payload.config?.targetColumnKey || config.targetColumnKey,
+      relationColumnKey: payload.config?.relationColumnKey || config.relationColumnKey,
+    });
   } else if (payload.relationTableId) {
-    throw badRequest("Only a record reference column can point at another table.", {
+    throw badRequest("Only a record reference or lookup column can point at another table.", {
       code: "RELATION_TYPE_MISMATCH",
     });
   }
@@ -380,6 +402,86 @@ export async function addColumn(tableId, payload, actor) {
       relationTableId,
       relationPolicy,
     });
+
+    // Automatically connect to table's active mapped forms so the field appears in the form immediately
+    if (payload.addToForms !== false) {
+      const [activeMappings] = await connection.execute(
+        `SELECT id, form_id FROM form_table_mappings WHERE table_id = ? AND status = 'active'`,
+        [resolvedTableId]
+      );
+
+      if (activeMappings.length > 0) {
+        // Find or create matching field definition
+        let fieldId = null;
+        const [existingField] = await connection.execute(
+          `SELECT id FROM field_definitions WHERE field_key = ? LIMIT 1`,
+          [key]
+        );
+
+        if (existingField.length > 0) {
+          fieldId = existingField[0].id;
+          await connection.execute(
+            `UPDATE field_definitions SET status = 'active', archived_at = NULL, config = ? WHERE id = ?`,
+            [JSON.stringify(config), fieldId]
+          );
+        } else {
+          const [insField] = await connection.execute(
+            `INSERT INTO field_definitions (field_key, label, description, data_type, config, is_required, status, created_by, updated_by)
+             VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+            [
+              key,
+              payload.label,
+              payload.description ?? null,
+              dataType.key,
+              JSON.stringify(config),
+              payload.isRequired ? 1 : 0,
+              actor?.userId ?? null,
+              actor?.userId ?? null,
+            ]
+          );
+          fieldId = insField.insertId;
+        }
+
+        for (const mapping of activeMappings) {
+          // Check if field is already in form
+          const [existingFormField] = await connection.execute(
+            `SELECT id FROM form_fields WHERE form_id = ? AND field_id = ? LIMIT 1`,
+            [mapping.form_id, fieldId]
+          );
+
+          let formFieldId = existingFormField[0]?.id;
+
+          if (!formFieldId) {
+            const [maxOrder] = await connection.execute(
+              `SELECT COALESCE(MAX(sort_order), 0) + 10 AS next_order FROM form_fields WHERE form_id = ?`,
+              [mapping.form_id]
+            );
+            const nextOrder = maxOrder[0]?.next_order ?? 10;
+
+            const [insFormField] = await connection.execute(
+              `INSERT INTO form_fields (form_id, field_id, sort_order) VALUES (?, ?, ?)`,
+              [mapping.form_id, fieldId, nextOrder]
+            );
+            formFieldId = insFormField.insertId;
+          }
+
+          // Link in field_column_mappings
+          await connection.execute(
+            `DELETE FROM field_column_mappings WHERE mapping_id = ? AND (form_field_id = ? OR column_id = ?)`,
+            [mapping.id, formFieldId, insertId]
+          );
+          await connection.execute(
+            `INSERT INTO field_column_mappings (mapping_id, form_field_id, column_id) VALUES (?, ?, ?)`,
+            [mapping.id, formFieldId, insertId]
+          );
+
+          await connection.execute(
+            `UPDATE form_definitions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [mapping.form_id]
+          );
+        }
+      }
+    }
 
     await bumpSchemaVersion(connection, resolvedTableId);
 
@@ -464,8 +566,31 @@ export async function updateColumnDefinition(tableId, columnId, patch, actor) {
     nextConfig = normalizeTypeConfig(nextDataType, relation.config);
     nextRelationTableId = relation.relationTableId;
     nextRelationPolicy = relation.relationPolicy;
+  } else if (nextDataType === "lookup") {
+    const targetTableId = Number(
+      patch.relationTableId !== undefined ? patch.relationTableId : (nextConfig.targetTableId ?? column.relationTableId)
+    );
+    if (!Number.isInteger(targetTableId) || targetTableId <= 0) {
+      throw badRequest("A lookup column must specify the target table.", {
+        code: "LOOKUP_TARGET_REQUIRED",
+      });
+    }
+    const targetTable = await findTableById(targetTableId);
+    if (!targetTable || targetTable.status !== "active") {
+      throw badRequest("The target table does not exist or is archived.", {
+        code: "TARGET_TABLE_UNAVAILABLE",
+      });
+    }
+    nextRelationTableId = targetTableId;
+    nextRelationPolicy = "single";
+    nextConfig = normalizeTypeConfig(nextDataType, {
+      ...nextConfig,
+      targetTableId,
+      targetColumnKey: patch.config?.targetColumnKey || nextConfig.targetColumnKey,
+      relationColumnKey: patch.config?.relationColumnKey || nextConfig.relationColumnKey,
+    });
   } else if (patch.relationTableId != null) {
-    throw badRequest("Only a record reference column can point at another table.", {
+    throw badRequest("Only a record reference or lookup column can point at another table.", {
       code: "RELATION_TYPE_MISMATCH",
     });
   } else {
@@ -744,12 +869,13 @@ export async function getTableUsage(tableId) {
       ? countUsersForTable()
       : countRecordsForTable(tableId);
 
-  const [mappingCount, recordCount, relationCount, entityConfigCount] = await Promise.all([
+  const [mappingCount, recordCount, relationCount, entityConfigCount, inboundRelations] = await Promise.all([
     countMappingsForTable(tableId),
     recordCountPromise,
     countColumnsUsingRelation(tableId),
     countEntityConfigurationsForTable(tableId),
+    findInboundRelationsByTableId(tableId),
   ]);
 
-  return { mappingCount, recordCount, relationCount, entityConfigCount };
+  return { mappingCount, recordCount, relationCount, entityConfigCount, inboundRelations };
 }

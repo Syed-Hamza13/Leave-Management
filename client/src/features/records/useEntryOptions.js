@@ -22,7 +22,7 @@ function collectIds(items, dataType, configKey) {
   for (const item of items) {
     if (item.dataType !== dataType) continue;
 
-    const id = Number(item.config?.[configKey]);
+    const id = Number(item.config?.[configKey] || item.relationTableId);
 
     if (Number.isInteger(id) && id > 0) ids.add(id);
   }
@@ -50,10 +50,11 @@ async function loadTable(tableId) {
   ]);
 
   const table = tableResponse?.data ?? null;
-  const displayKey = pickDisplayKey(table);
+  const records = recordsResponse?.data ?? [];
+  const defaultDisplayKey = pickDisplayKey(table);
 
-  const options = (recordsResponse?.data ?? []).map((record) => {
-    const value = displayKey ? record.values?.[displayKey] : null;
+  const options = records.map((record) => {
+    const value = defaultDisplayKey ? record.values?.[defaultDisplayKey] : null;
 
     return {
       value: record.id,
@@ -64,7 +65,13 @@ async function loadTable(tableId) {
     };
   });
 
-  return { options, total: recordsResponse?.meta?.total ?? options.length };
+  return {
+    options,
+    records,
+    defaultDisplayKey,
+    table,
+    total: recordsResponse?.meta?.total ?? records.length,
+  };
 }
 
 async function loadEntities(entityTypeId = null) {
@@ -206,7 +213,8 @@ export default function useEntryOptions(items = []) {
     }
 
     if (item?.dataType === "record_reference") {
-      return sources.get(`table:${Number(item.config?.targetTableId)}`) ?? null;
+      const tableId = Number(item.config?.targetTableId || item.relationTableId);
+      return sources.get(`table:${tableId}`) ?? null;
     }
 
     if (item?.dataType === "entity_reference") {
@@ -224,7 +232,32 @@ export default function useEntryOptions(items = []) {
   }
 
   function optionsFor(item) {
-    return sourceFor(item)?.options ?? null;
+    const source = sourceFor(item);
+    if (!source) return null;
+
+    if (item?.dataType === "record_reference") {
+      const targetDisplayKey =
+        item.config?.targetDisplayColumnKey ||
+        item.config?.displayColumnKey ||
+        source.defaultDisplayKey;
+
+      if (source.records && targetDisplayKey) {
+        return source.records.map((record) => {
+          const value = record.values?.[targetDisplayKey];
+          return {
+            value: record.id,
+            label:
+              value === null || value === undefined || value === ""
+                ? `Record #${record.id}`
+                : String(value),
+          };
+        });
+      }
+
+      return source.options ?? null;
+    }
+
+    return source.options ?? null;
   }
 
   function failedFor(item) {

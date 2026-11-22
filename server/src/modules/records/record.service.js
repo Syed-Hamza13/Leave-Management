@@ -1,12 +1,21 @@
 import { badRequest, conflict, notFound } from "../../lib/appError.js";
 import { withTransaction } from "../../lib/transactions.js";
+import { db } from "../../config/database.js";
+import { parseJsonColumn } from "../../lib/jsonColumn.js";
 import { coerceValue, STORAGE_FAMILIES } from "../../lib/dataTypes.js";
 import { buildOrderByClause, buildWhereClause } from "../../lib/recordQuery.js";
 import { parsePagination, parseSearch, parseSort } from "../../lib/pagination.js";
 import { recordAudit } from "../audit/audit.service.js";
 import { getActiveTableWithColumns } from "../tables/table.service.js";
+import { findTableById, findColumnsByTableId } from "../tables/table.repository.js";
+import { findProfileValuesByUserIds } from "../users/user.repository.js";
 import { getActiveMappingWithEntries } from "../mappings/mapping.service.js";
 import { findOptionByValue } from "../dropdowns/dropdown.repository.js";
+import {
+  syncRelationOnWrite,
+  syncInverseRelationOnWrite,
+  hydrateInverseRelationColumns,
+} from "../tables/relationSync.service.js";
 import {
   SYSTEM_SORT_KEYS,
   archiveRecordById,
@@ -90,6 +99,11 @@ function validateValues({ columnsByKey, values, mode, keyAliases }) {
       continue;
     }
 
+    if (column.dataType === "lookup") {
+      // Lookup columns are derived from related table; do not persist in record JSON payload
+      continue;
+    }
+
     const required = column.isRequired && mode === "create";
 
     const result = coerceValue({
@@ -137,6 +151,7 @@ function validateValues({ columnsByKey, values, mode, keyAliases }) {
 
   if (mode === "create") {
     for (const column of columnsByKey.values()) {
+      if (column.dataType === "lookup") continue;
       if (!column.isRequired) continue;
 
       if (!Object.prototype.hasOwnProperty.call(values, column.key)) {
@@ -304,6 +319,89 @@ async function resolveOrganizationEntity(organizationEntityId) {
   return entity.id;
 }
 
+async function hydrateLookupColumns(tableId, records) {
+  if (!records || records.length === 0) return records;
+  const columns = await findColumnsByTableId(tableId, { includeArchived: false });
+  const lookupCols = columns.filter((c) => c.dataType === "lookup" && c.status === "active");
+  if (lookupCols.length === 0) return records;
+
+  for (const col of lookupCols) {
+    const relationKey = col.config?.relationColumnKey;
+    const targetTableId = col.relationTableId || col.config?.targetTableId;
+    const targetColumnKey = col.config?.targetColumnKey;
+
+    if (!relationKey || !targetTableId || !targetColumnKey) continue;
+
+    const targetIds = new Set();
+    for (const r of records) {
+      const val = r.values?.[relationKey];
+      if (val !== undefined && val !== null && val !== "") {
+        if (Array.isArray(val)) {
+          val.forEach((id) => targetIds.add(Number(id)));
+        } else {
+          targetIds.add(Number(val));
+        }
+      }
+    }
+
+    if (targetIds.size === 0) continue;
+
+    const targetTable = await findTableById(targetTableId);
+    const targetValuesMap = new Map();
+
+    if (targetTable?.storageKind === "system_users") {
+      const ids = [...targetIds];
+      const placeholders = ids.map(() => "?").join(",");
+      const [userRows] = await db.execute(
+        `SELECT id, email, first_name, last_name FROM users WHERE id IN (${placeholders})`,
+        ids
+      );
+      const profileMap = await findProfileValuesByUserIds(ids);
+      for (const u of userRows) {
+        const prof = profileMap.get(Number(u.id)) || {};
+        targetValuesMap.set(Number(u.id), {
+          id: u.id,
+          email: u.email,
+          first_name: u.first_name,
+          last_name: u.last_name,
+          name: `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.email,
+          ...prof,
+        });
+      }
+    } else {
+      const ids = [...targetIds];
+      const placeholders = ids.map(() => "?").join(",");
+      const [targetRows] = await db.execute(
+        `SELECT id, data FROM table_records WHERE table_id = ? AND id IN (${placeholders})`,
+        [targetTableId, ...ids]
+      );
+      for (const tr of targetRows) {
+        const parsed = parseJsonColumn(tr.data, {});
+        targetValuesMap.set(Number(tr.id), parsed);
+      }
+    }
+
+    for (const r of records) {
+      const refVal = r.values?.[relationKey];
+      if (refVal !== undefined && refVal !== null && refVal !== "") {
+        if (Array.isArray(refVal)) {
+          r.values[col.key] = refVal
+            .map((id) => targetValuesMap.get(Number(id))?.[targetColumnKey])
+            .filter((v) => v !== undefined && v !== null)
+            .join(", ");
+        } else {
+          const targetRow = targetValuesMap.get(Number(refVal));
+          r.values[col.key] = targetRow?.[targetColumnKey] ?? null;
+        }
+      } else {
+        r.values[col.key] = null;
+      }
+    }
+  }
+
+  return records;
+}
+
 export async function listRecords(tableId, query) {
   const table = await assertRecordTable(tableId);
 
@@ -379,6 +477,9 @@ export async function listRecords(tableId, query) {
     countRecords({ where }),
   ]);
 
+  await hydrateLookupColumns(table.id, records);
+  await hydrateInverseRelationColumns({ tableId: table.id, records });
+
   return { table, records, total, pagination };
 }
 
@@ -388,6 +489,9 @@ export async function getRecord(tableId, recordId) {
   if (!record) {
     throw notFound("Record not found.", { code: "RECORD_NOT_FOUND" });
   }
+
+  await hydrateLookupColumns(tableId, [record]);
+  await hydrateInverseRelationColumns({ tableId, records: [record] });
 
   return record;
 }
@@ -442,6 +546,22 @@ async function writeCreate(connection, tableId, prepared, actor) {
     data: prepared.data,
     organizationEntityId: prepared.organizationEntityId,
     actorUserId: actor?.userId ?? null,
+  });
+
+  await syncRelationOnWrite({
+    connection,
+    sourceTableId: tableId,
+    sourceRecordId: recordId,
+    values: prepared.data,
+    previousValues: {},
+  });
+
+  await syncInverseRelationOnWrite({
+    connection,
+    tableId,
+    recordId,
+    values: prepared.data,
+    previousValues: {},
   });
 
   await recordAudit({
@@ -526,6 +646,7 @@ async function prepareUpdate(tableId, recordId, payload) {
   return {
     table,
     merged: { ...existing.values, ...patch },
+    existingValues: existing.values,
     changedKeys: Object.keys(patch),
     organizationEntityId,
     warnings,
@@ -539,6 +660,22 @@ async function writeUpdate(connection, tableId, recordId, prepared, actor) {
     schemaVersion: prepared.table.schemaVersion,
     organizationEntityId: prepared.organizationEntityId,
     actorUserId: actor?.userId ?? null,
+  });
+
+  await syncRelationOnWrite({
+    connection,
+    sourceTableId: tableId,
+    sourceRecordId: recordId,
+    values: prepared.merged,
+    previousValues: prepared.existingValues || {},
+  });
+
+  await syncInverseRelationOnWrite({
+    connection,
+    tableId,
+    recordId,
+    values: prepared.merged,
+    previousValues: prepared.existingValues || {},
   });
 
   await recordAudit({

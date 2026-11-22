@@ -19,6 +19,7 @@ import { usePermissions } from "../permissions/PermissionsContext.js";
 
 import ColumnDialog from "./ColumnDialog.jsx";
 import TableDialog from "./TableDialog.jsx";
+import LinkColumnDialog from "./LinkColumnDialog.jsx";
 
 export default function TableDetailPage() {
   const { tableId } = useParams();
@@ -45,6 +46,7 @@ export default function TableDetailPage() {
   const [dropIndex, setDropIndex] = useState(null);
   const [dialog, setDialog] = useState(null);
   const [removeTarget, setRemoveTarget] = useState(null);
+  const [unlinkTarget, setUnlinkTarget] = useState(null);
   const [connectedFields, setConnectedFields] = useState([]);
   const [archiveConnected, setArchiveConnected] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState(null);
@@ -179,6 +181,26 @@ export default function TableDetailPage() {
     toast.error(errorMessage(outcome.error, "The column could not be archived."));
   }
 
+  async function confirmUnlink() {
+    const target = unlinkTarget;
+    const outcome = await run(() =>
+      tablesApi.deleteColumn(tableId, target.id, {
+        permanent: true,
+        archiveConnectedFields: true,
+      })
+    );
+
+    setUnlinkTarget(null);
+
+    if (outcome.ok) {
+      toast.success(`Relation “${target.label}” was unlinked.`);
+      refresh();
+      return;
+    }
+
+    toast.error(errorMessage(outcome.error, "The relation column could not be unlinked."));
+  }
+
   async function confirmRestore() {
     const target = restoreTarget;
 
@@ -298,9 +320,18 @@ export default function TableDetailPage() {
           <h2 className="text-sm font-semibold text-ink">Columns</h2>
 
           {canManageColumns ? (
-            <Button size="sm" onClick={() => setDialog({ mode: "column" })}>
-              Add column
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setDialog({ mode: "link-column" })}
+              >
+                Link Table (Relation)
+              </Button>
+              <Button size="sm" onClick={() => setDialog({ mode: "column" })}>
+                Add column
+              </Button>
+            </div>
           ) : null}
         </div>
 
@@ -375,8 +406,10 @@ export default function TableDetailPage() {
 
                         {column.dataType === "record_reference" ? (
                           <span>
-                            → {tableNames.get(Number(column.relationTableId)) ?? "another table"}
-                            {column.relationPolicy === "multiple" ? " (many)" : ""}
+                            → {tableNames.get(Number(column.relationTableId || column.config?.targetTableId)) ?? "another table"}
+                            {column.config?.targetDisplayColumnKey ? ` (displays ${column.config.targetDisplayColumnKey})` : ""}
+                            {column.config?.syncTargetColumnKey ? ` · ⮂ Syncs into ${column.config.syncTargetColumnKey}` : ""}
+                            {column.relationPolicy === "multiple" || column.config?.allowMultiple ? " (many)" : ""}
                           </span>
                         ) : null}
 
@@ -393,8 +426,25 @@ export default function TableDetailPage() {
                             {column.config?.allowMultiple ? " (many)" : ""}
                           </span>
                         ) : null}
+
+                        {column.dataType === "lookup" ? (
+                          <span>
+                            ⮑ Linked from {tableNames.get(Number(column.relationTableId || column.config?.targetTableId)) ?? "another table"}
+                            {column.config?.targetColumnKey ? ` (${column.config.targetColumnKey})` : ""}
+                          </span>
+                        ) : null}
                       </p>
                     </div>
+
+                    {column.dataType === "lookup" ? (
+                      <Badge tone="brand">Linked / Lookup</Badge>
+                    ) : null}
+
+                    {column.dataType === "record_reference" ? (
+                      <Badge tone={column.config?.syncTargetColumnKey ? "brand" : "neutral"}>
+                        {column.config?.syncTargetColumnKey ? "Relation (Synced)" : "Relation"}
+                      </Badge>
+                    ) : null}
 
                     {column.isRequired ? <Badge tone="brand">Required</Badge> : null}
 
@@ -434,9 +484,23 @@ export default function TableDetailPage() {
                           Edit
                         </Button>
 
-                        <Button variant="ghost" size="sm" onClick={() => handleOpenArchive(column)}>
-                          Archive
-                        </Button>
+                        {column.dataType === "record_reference" ||
+                        column.dataType === "lookup" ||
+                        column.relationTableId ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-danger hover:text-danger hover:bg-danger-soft"
+                            onClick={() => setUnlinkTarget(column)}
+                            title="Unlink this relation without archiving the target table"
+                          >
+                            Unlink
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" size="sm" onClick={() => handleOpenArchive(column)}>
+                            Archive
+                          </Button>
+                        )}
                       </div>
                     ) : null}
                   </li>
@@ -512,6 +576,68 @@ export default function TableDetailPage() {
         </section>
       ) : null}
 
+      {usage?.inboundRelations && usage.inboundRelations.length > 0 ? (
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-ink">Linked By Other Tables (Relations)</h2>
+            <Badge tone="brand">
+              {usage.inboundRelations.length} inbound {usage.inboundRelations.length === 1 ? "relation" : "relations"}
+            </Badge>
+          </div>
+
+          <p className="text-xs text-ink-soft">
+            These tables reference this table or link live column data from here without duplicating storage.
+          </p>
+
+          <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+            {usage.inboundRelations.map((rel) => (
+              <li
+                key={`${rel.tableId}-${rel.columnId}`}
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to={`/admin/tables/${rel.tableId}`}
+                      className="text-sm font-semibold text-brand hover:underline"
+                    >
+                      {rel.tableLabel}
+                    </Link>
+                    <code className="font-mono text-xs text-ink-muted">({rel.tableKey})</code>
+                  </div>
+
+                  <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-ink-soft">
+                    <span>
+                      Column: <strong className="text-ink">{rel.columnLabel}</strong>
+                    </span>
+                    <code className="font-mono text-ink-muted">{rel.columnKey}</code>
+                    {rel.dataType === "lookup" ? (
+                      <span>
+                        → Live lookup of <code>{rel.config?.targetColumnKey}</code> from this table
+                      </span>
+                    ) : (
+                      <span>→ References records of this table</span>
+                    )}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Badge tone={rel.dataType === "lookup" ? "brand" : "neutral"}>
+                    {rel.dataType === "lookup" ? "Live Lookup" : "Record Reference"}
+                  </Badge>
+
+                  <Link to={`/admin/tables/${rel.tableId}`}>
+                    <Button variant="ghost" size="sm">
+                      View Table →
+                    </Button>
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {dialog?.mode === "table" ? (
         <TableDialog
           table={table}
@@ -520,6 +646,17 @@ export default function TableDetailPage() {
           onSaved={(saved) => {
             setDialog(null);
             toast.success(`“${saved?.label ?? "Table"}” was saved.`);
+            refresh();
+          }}
+        />
+      ) : null}
+
+      {dialog?.mode === "link-column" ? (
+        <LinkColumnDialog
+          table={table}
+          onClose={() => setDialog(null)}
+          onSaved={() => {
+            setDialog(null);
             refresh();
           }}
         />
@@ -653,6 +790,33 @@ export default function TableDetailPage() {
         loading={pending}
         onCancel={() => setArchiveTableOpen(false)}
         onConfirm={confirmArchiveTable}
+      />
+
+      <ConfirmDialog
+        open={Boolean(unlinkTarget)}
+        title="Unlink relation"
+        message={`Unlink relation “${unlinkTarget?.label ?? ""}”?`}
+        tone="danger"
+        detail={
+          <div className="space-y-2 text-xs">
+            <p className="text-ink">
+              This will remove the relation column and its form connection from this table.
+            </p>
+            <p className="text-ink-soft">
+              The linked table{" "}
+              <strong className="text-ink">
+                {tableNames.get(
+                  Number(unlinkTarget?.relationTableId || unlinkTarget?.config?.targetTableId)
+                ) || "target table"}
+              </strong>{" "}
+              and its records will <strong>not</strong> be archived or deleted.
+            </p>
+          </div>
+        }
+        confirmLabel="Unlink relation"
+        loading={pending}
+        onCancel={() => setUnlinkTarget(null)}
+        onConfirm={confirmUnlink}
       />
     </div>
   );

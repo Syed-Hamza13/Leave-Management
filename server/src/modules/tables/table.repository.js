@@ -574,3 +574,40 @@ export async function findConnectedFieldsForColumn(columnId) {
   }));
 }
 
+export async function findInboundRelationsByTableId(tableId) {
+  const [rows] = await db.execute(
+    `
+      SELECT
+        cd.id AS column_id,
+        cd.column_key,
+        cd.label AS column_label,
+        cd.data_type,
+        cd.config,
+        cd.relation_table_id,
+        td.id AS table_id,
+        td.table_key,
+        td.label AS table_label
+      FROM column_definitions cd
+      INNER JOIN table_definitions td ON td.id = cd.table_id
+      WHERE (cd.relation_table_id = ? OR JSON_UNQUOTE(JSON_EXTRACT(cd.config, '$.targetTableId')) = ?)
+        AND cd.status = 'active'
+        AND td.status = 'active'
+      ORDER BY td.label ASC, cd.sort_order ASC
+    `,
+    [tableId, String(tableId)]
+  );
+
+  return rows.map((r) => ({
+    columnId: Number(r.column_id),
+    columnKey: r.column_key,
+    columnLabel: r.column_label,
+    dataType: r.data_type,
+    config: parseJsonColumn(r.config, {}),
+    relationTableId: Number(r.relation_table_id || tableId),
+    tableId: Number(r.table_id),
+    tableKey: r.table_key,
+    tableLabel: r.table_label,
+  }));
+}
+
+

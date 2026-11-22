@@ -89,6 +89,7 @@ const booleanConfigSchema = z.object({
 const referenceConfigSchema = z.object({
   targetTableId: z.number().int().positive(),
   targetDisplayColumnKey: z.string().max(63).optional(),
+  syncTargetColumnKey: z.string().max(63).optional(),
   allowMultiple: z.boolean().optional(),
 });
 
@@ -98,6 +99,13 @@ const entityReferenceConfigSchema = z.object({
 });
 
 const userReferenceConfigSchema = z.object({
+  allowMultiple: z.boolean().optional(),
+});
+
+const lookupConfigSchema = z.object({
+  targetTableId: z.number().int().positive().optional(),
+  targetColumnKey: z.string().max(63).optional(),
+  relationColumnKey: z.string().max(63).optional(),
   allowMultiple: z.boolean().optional(),
 });
 
@@ -449,6 +457,7 @@ export const DATA_TYPES = [
     configFields: [
       { key: "targetTableId", label: "Target table", type: "table-ref" },
       { key: "targetDisplayColumnKey", label: "Display column key", type: "text" },
+      { key: "syncTargetColumnKey", label: "Sync column in target table", type: "text" },
       { key: "allowMultiple", label: "Allow multiple selections", type: "toggle" },
     ],
     coerce: coerceReference,
@@ -480,6 +489,21 @@ export const DATA_TYPES = [
     ],
     coerce: coerceReference,
     defaultConfig: { allowMultiple: false },
+  },
+  {
+    key: "lookup",
+    label: "Lookup (Linked column)",
+    description: "Displays a column value from a related record in another table without duplicating data.",
+    storage: STORAGE.STRING,
+    input: "lookup-display",
+    configSchema: lookupConfigSchema,
+    configFields: [
+      { key: "targetTableId", label: "Target table", type: "table-ref" },
+      { key: "targetColumnKey", label: "Target column key", type: "text" },
+      { key: "relationColumnKey", label: "Relation column key", type: "text" },
+    ],
+    coerce: (value) => ({ ok: true, value: value === undefined ? null : value }),
+    defaultConfig: {},
   },
 ];
 
@@ -583,6 +607,10 @@ export function isMappingCompatible(source, target) {
   const targetType = getDataType(target?.type);
 
   if (!sourceType || !targetType) return { compatible: false, reason: "Unknown data type." };
+
+  if (sourceType.key === "lookup" || targetType.key === "lookup") {
+    return { compatible: true, reason: null };
+  }
 
   if (sourceType.storage !== targetType.storage) {
     return {

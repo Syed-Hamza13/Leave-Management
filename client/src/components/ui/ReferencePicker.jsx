@@ -87,25 +87,27 @@ function SingleReferencePicker({
       disabled={disabled}
       placeholder={singlePlaceholder}
       value={value === null || value === undefined ? "" : String(value)}
-      onChange={(event) =>
-        onChange(event.target.value === "" ? null : Number(event.target.value))
-      }
+      onChange={(event) => {
+        const val = event.target.value;
+        onChange(val === "" ? null : isNaN(Number(val)) ? val : Number(val));
+      }}
       options={options}
     />
   );
 }
 
 /**
- * Dropdown popover multi-select for user_reference and entity_reference.
- * Modeled after classic searchable dropdowns (Select2 / Ant Design):
- * - Clean trigger box showing selected chips or placeholder with chevron arrow.
- * - Clicking opens a floating dropdown containing a dedicated search input at the top.
- * - Selecting an option toggles it, adds its chip above, and resets the search input
- *   so subsequent searches start clean without lingering text.
+ * Dropdown popover multi-select for all reference relations (record_reference, user_reference, entity_reference).
+ * Modeled after modern searchable comboboxes:
+ * - Clean trigger box showing selected chips or placeholder with chevron arrow (looks like a normal field when idle).
+ * - Focusing or clicking opens the dropdown panel containing a dedicated search input at the top.
+ * - Options list has a fixed max-height with scrolling, bounded width, and checkboxes.
+ * - Toggling options updates selection while keeping dropdown open for multi-selection.
+ * - Clicking outside or pressing Escape closes the dropdown.
  */
 function DropdownMultiReferencePicker({
   id,
-  dataType = "user_reference",
+  dataType = "record_reference",
   label,
   hint,
   error,
@@ -118,13 +120,27 @@ function DropdownMultiReferencePicker({
 }) {
   const containerRef = useRef(null);
   const searchInputRef = useRef(null);
+  const justFocusedRef = useRef(false);
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
   const safeOptions = useMemo(() => (Array.isArray(options) ? options : []), [options]);
 
   const selected = useMemo(() => {
-    return Array.isArray(value) ? value.map((entry) => Number(entry)) : [];
+    let raw = value;
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) raw = parsed;
+      } catch {
+        raw = raw.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+    }
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const isNum = !isNaN(Number(entry)) && entry !== "" && entry !== null;
+      return isNum ? Number(entry) : entry;
+    });
   }, [value]);
 
   const filteredOptions = useMemo(() => {
@@ -140,7 +156,7 @@ function DropdownMultiReferencePicker({
   }, [safeOptions, searchTerm]);
 
   const selectedOptions = useMemo(
-    () => safeOptions.filter((opt) => selected.includes(Number(opt.value))),
+    () => safeOptions.filter((opt) => selected.some((s) => String(s) === String(opt.value))),
     [safeOptions, selected]
   );
 
@@ -160,7 +176,6 @@ function DropdownMultiReferencePicker({
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
       document.addEventListener("keydown", handleKeyDown);
-      // Auto-focus search input when dropdown opens without causing parent scroll jumps
       const timer = setTimeout(() => {
         searchInputRef.current?.focus({ preventScroll: true });
       }, 30);
@@ -185,22 +200,37 @@ function DropdownMultiReferencePicker({
     );
   }
 
-  function handleToggle(optionValue) {
-    const num = Number(optionValue);
-    if (selected.includes(num)) {
-      onChange(selected.filter((item) => item !== num));
+  function handleFocus() {
+    if (disabled || isOpen) return;
+    justFocusedRef.current = true;
+    setIsOpen(true);
+    setTimeout(() => {
+      justFocusedRef.current = false;
+    }, 250);
+  }
+
+  function handleClick() {
+    if (disabled) return;
+    if (justFocusedRef.current) return;
+    setIsOpen((prev) => !prev);
+  }
+
+  function handleToggle(rawOptionValue) {
+    const isNum = !isNaN(Number(rawOptionValue)) && rawOptionValue !== "" && rawOptionValue !== null;
+    const optionValue = isNum ? Number(rawOptionValue) : rawOptionValue;
+    const exists = selected.some((item) => String(item) === String(optionValue));
+    if (exists) {
+      onChange(selected.filter((item) => String(item) !== String(optionValue)));
     } else {
-      onChange([...selected, num]);
+      onChange([...selected, optionValue]);
     }
-    // Clear search term after selection so next search starts clean
     setSearchTerm("");
     searchInputRef.current?.focus({ preventScroll: true });
   }
 
-  function handleRemove(optionValue, e) {
+  function handleRemove(rawOptionValue, e) {
     e.stopPropagation();
-    const num = Number(optionValue);
-    onChange(selected.filter((item) => item !== num));
+    onChange(selected.filter((item) => String(item) !== String(rawOptionValue)));
   }
 
   function handleClearAll(e) {
@@ -210,7 +240,10 @@ function DropdownMultiReferencePicker({
   }
 
   function handleSelectAllVisible() {
-    const visibleValues = filteredOptions.map((o) => Number(o.value));
+    const visibleValues = filteredOptions.map((o) => {
+      const isNum = !isNaN(Number(o.value)) && o.value !== "" && o.value !== null;
+      return isNum ? Number(o.value) : o.value;
+    });
     const combined = Array.from(new Set([...selected, ...visibleValues]));
     onChange(combined);
     setSearchTerm("");
@@ -221,26 +254,29 @@ function DropdownMultiReferencePicker({
     placeholder ||
     (dataType === "user_reference"
       ? "Select users…"
-      : "Select organization entities…");
+      : dataType === "entity_reference"
+        ? "Select organization entities…"
+        : "Select records…");
 
   const searchPlaceholder =
     dataType === "user_reference"
       ? "Search users by name or email…"
-      : "Search organization entities…";
+      : dataType === "entity_reference"
+        ? "Search organization entities…"
+        : "Search records…";
 
   return (
     <FormField id={id} label={label} hint={hint} error={error} required={required}>
       <div ref={containerRef} className="relative">
-        {/* Main Trigger Box (Clean, single uniform input field with chips) */}
+        {/* Main Trigger Box (Clean uniform input field with chips or placeholder) */}
         <div
           id={id}
           role="combobox"
           aria-expanded={isOpen}
           aria-haspopup="listbox"
           tabIndex={disabled ? -1 : 0}
-          onClick={() => {
-            if (!disabled) setIsOpen((prev) => !prev);
-          }}
+          onFocus={handleFocus}
+          onClick={handleClick}
           onKeyDown={(e) => {
             if (!disabled && (e.key === "Enter" || e.key === " " || e.key === "ArrowDown")) {
               e.preventDefault();
@@ -254,7 +290,7 @@ function DropdownMultiReferencePicker({
                 ? "border-brand ring-2 ring-brand/10 shadow-sm"
                 : error
                   ? "border-danger ring-1 ring-danger/20"
-                  : "border-line-strong hover:border-line-stronger"
+                  : "border-line-strong hover:border-line-stronger focus:border-brand focus:ring-2 focus:ring-brand/10"
           }`}
         >
           {/* Left: Placeholder or Selected Chips */}
@@ -270,13 +306,22 @@ function DropdownMultiReferencePicker({
                       d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
                     />
                   </svg>
-                ) : (
+                ) : dataType === "entity_reference" ? (
                   <svg className="h-4 w-4 shrink-0 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
                       d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                    />
+                  </svg>
+                ) : (
+                  <svg className="h-4 w-4 shrink-0 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                     />
                   </svg>
                 )}
@@ -298,7 +343,7 @@ function DropdownMultiReferencePicker({
                       >
                         {getInitials(userMeta?.name || opt.label)}
                       </span>
-                    ) : (
+                    ) : dataType === "entity_reference" ? (
                       <svg className="h-3.5 w-3.5 shrink-0 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path
                           strokeLinecap="round"
@@ -307,9 +352,18 @@ function DropdownMultiReferencePicker({
                           d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
                         />
                       </svg>
+                    ) : (
+                      <svg className="h-3.5 w-3.5 shrink-0 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                        />
+                      </svg>
                     )}
-                    <span className="max-w-[130px] truncate font-medium">
-                      {userMeta?.name || opt.name || opt.label}
+                    <span className="max-w-[140px] truncate font-medium">
+                      {userMeta?.name || opt.label || opt.name || `Record #${opt.value}`}
                     </span>
                     {!disabled ? (
                       <button
@@ -357,19 +411,32 @@ function DropdownMultiReferencePicker({
           </div>
         </div>
 
-        {/* Dropdown Options Panel (In-flow so form & modal naturally expand to fit without clipping or collapse) */}
+        {/* Dropdown Options Panel (In-flow with fixed max-height and smooth scroll) */}
         {isOpen ? (
-          <div className="mt-2 overflow-hidden rounded-xl border border-line-subtle bg-surface shadow-md ring-1 ring-black/5 animate-fade-in">
-            {/* Top Search Field inside dropdown (like user's reference image) */}
+          <div className="mt-1.5 overflow-hidden rounded-xl border border-line-subtle bg-surface shadow-lg ring-1 ring-black/5 animate-fade-in w-full max-w-full">
+            {/* Top Search Field inside dropdown */}
             <div className="border-b border-line-subtle bg-surface p-2">
               <div className="relative flex items-center">
+                <svg
+                  className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-ink-muted"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
                 <input
                   ref={searchInputRef}
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder={searchPlaceholder}
-                  className="w-full rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-xs text-ink placeholder:text-ink-muted transition-colors focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                  className="w-full rounded-lg border border-line bg-surface-sunken/40 py-1.5 pl-8 pr-7 text-xs text-ink placeholder:text-ink-muted transition-colors focus:border-brand focus:bg-surface focus:outline-none focus:ring-1 focus:ring-brand"
                 />
                 {searchTerm ? (
                   <button
@@ -379,7 +446,7 @@ function DropdownMultiReferencePicker({
                       searchInputRef.current?.focus({ preventScroll: true });
                     }}
                     aria-label="Clear search"
-                    className="absolute right-2.5 text-ink-muted hover:text-ink"
+                    className="absolute right-2 text-ink-muted hover:text-ink"
                   >
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -436,7 +503,7 @@ function DropdownMultiReferencePicker({
               </div>
             </div>
 
-            {/* Option List Container */}
+            {/* Option List Container with height limit and smooth scroll */}
             <ul className="max-h-56 divide-y divide-line-subtle/50 overflow-y-auto p-1.5">
               {safeOptions.length === 0 ? (
                 <li className="px-3 py-6 text-center text-xs text-ink-muted">
@@ -459,8 +526,8 @@ function DropdownMultiReferencePicker({
                 </li>
               ) : (
                 filteredOptions.map((option, index) => {
-                  const optionValue = Number(option.value);
-                  const isChecked = selected.includes(optionValue);
+                  const optionValue = option.value;
+                  const isChecked = selected.some((s) => String(s) === String(optionValue));
                   const optionId = `${id}-opt-${index}`;
                   const userMeta = dataType === "user_reference" ? parseUserDetails(option) : null;
 
@@ -493,7 +560,7 @@ function DropdownMultiReferencePicker({
                           >
                             {getInitials(userMeta?.name || option.label)}
                           </div>
-                        ) : (
+                        ) : dataType === "entity_reference" ? (
                           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-200/60 bg-emerald-50 text-emerald-600 shadow-2xs">
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path
@@ -501,6 +568,17 @@ function DropdownMultiReferencePicker({
                                 strokeLinejoin="round"
                                 strokeWidth={2}
                                 d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                              />
+                            </svg>
+                          </div>
+                        ) : (
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-blue-200/60 bg-blue-50 text-blue-600 shadow-2xs">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                               />
                             </svg>
                           </div>
@@ -521,7 +599,7 @@ function DropdownMultiReferencePicker({
                                 </span>
                               ) : null}
                             </>
-                          ) : (
+                          ) : dataType === "entity_reference" ? (
                             <div className="flex items-center gap-1.5">
                               <span className="truncate font-medium text-ink">
                                 {option.name || option.label}
@@ -531,6 +609,12 @@ function DropdownMultiReferencePicker({
                                   {option.entityTypeName}
                                 </span>
                               ) : null}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <span className="truncate font-medium text-ink">
+                                {option.label ?? option.name ?? `Record #${option.value}`}
+                              </span>
                             </div>
                           )}
                         </div>
@@ -556,279 +640,9 @@ function DropdownMultiReferencePicker({
   );
 }
 
-/**
- * Inline multi-select used for record_reference relations.
- * Renders an inline list with search bar.
- */
-function InlineMultiReferencePicker({
-  id,
-  dataType = "record_reference",
-  label,
-  hint,
-  error,
-  required = false,
-  disabled = false,
-  options,
-  value,
-  onChange,
-}) {
-  const searchInputId = useId();
-  const [searchTerm, setSearchTerm] = useState("");
-
-  const safeOptions = useMemo(() => (Array.isArray(options) ? options : []), [options]);
-
-  const selected = useMemo(() => {
-    return Array.isArray(value) ? value.map((entry) => Number(entry)) : [];
-  }, [value]);
-
-  const filteredOptions = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase();
-    if (!q) return safeOptions;
-    return safeOptions.filter((opt) => {
-      const l = String(opt.label ?? "").toLowerCase();
-      const n = String(opt.name ?? "").toLowerCase();
-      const e = String(opt.email ?? "").toLowerCase();
-      const t = String(opt.entityTypeName ?? "").toLowerCase();
-      return l.includes(q) || n.includes(q) || e.includes(q) || t.includes(q);
-    });
-  }, [safeOptions, searchTerm]);
-
-  const selectedOptions = useMemo(
-    () => safeOptions.filter((opt) => selected.includes(Number(opt.value))),
-    [safeOptions, selected]
-  );
-
-  if (!options) {
-    return (
-      <TextInput
-        id={id}
-        label={label}
-        hint="Options for this relation could not be loaded."
-        error={error}
-        value=""
-        disabled
-      />
-    );
-  }
-
-  function handleToggle(optionValue) {
-    const num = Number(optionValue);
-    if (selected.includes(num)) {
-      onChange(selected.filter((item) => item !== num));
-    } else {
-      onChange([...selected, num]);
-    }
-  }
-
-  function handleSelectAllVisible() {
-    const visibleValues = filteredOptions.map((o) => Number(o.value));
-    const combined = Array.from(new Set([...selected, ...visibleValues]));
-    onChange(combined);
-  }
-
-  function handleClearAll() {
-    onChange([]);
-  }
-
-  return (
-    <FormField id={id} label={label} hint={hint} error={error} required={required}>
-      <div
-        className={`rounded-xl border bg-surface transition-all duration-150 ${
-          error
-            ? "border-danger ring-1 ring-danger/20"
-            : "border-line-strong focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/10"
-        }`}
-      >
-        {/* Search header bar */}
-        <div className="flex items-center gap-2 border-b border-line-subtle bg-surface-sunken/40 px-3 py-2">
-          <svg className="h-4 w-4 shrink-0 text-ink-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
-          <input
-            id={searchInputId}
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search records…"
-            disabled={disabled}
-            className="w-full bg-transparent text-xs text-ink placeholder:text-ink-muted focus:outline-none"
-          />
-          {searchTerm ? (
-            <button
-              type="button"
-              onClick={() => setSearchTerm("")}
-              aria-label="Clear search"
-              className="rounded p-0.5 text-ink-muted hover:bg-surface hover:text-ink"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          ) : null}
-        </div>
-
-        {/* Action / Count sub-bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-subtle/70 bg-surface px-3 py-1.5 text-xs">
-          <div className="flex items-center gap-1.5">
-            {selected.length > 0 ? (
-              <span className="inline-flex items-center rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-semibold text-brand">
-                {selected.length} selected
-              </span>
-            ) : (
-              <span className="text-ink-muted">
-                {safeOptions.length} available
-              </span>
-            )}
-            {searchTerm && filteredOptions.length !== safeOptions.length ? (
-              <span className="text-[11px] text-ink-muted">
-                ({filteredOptions.length} match{filteredOptions.length === 1 ? "" : "es"})
-              </span>
-            ) : null}
-          </div>
-
-          <div className="flex items-center gap-3">
-            {filteredOptions.length > 0 ? (
-              <button
-                type="button"
-                onClick={handleSelectAllVisible}
-                disabled={disabled}
-                className="font-medium text-brand hover:underline disabled:opacity-50"
-              >
-                {searchTerm ? "Select matching" : "Select all"}
-              </button>
-            ) : null}
-            {selected.length > 0 ? (
-              <button
-                type="button"
-                onClick={handleClearAll}
-                disabled={disabled}
-                className="font-medium text-ink-muted hover:text-danger disabled:opacity-50"
-              >
-                Clear
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        {/* Selected chips row */}
-        {selectedOptions.length > 0 ? (
-          <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto border-b border-line-subtle bg-surface-sunken/20 p-2">
-            {selectedOptions.map((opt) => (
-              <span
-                key={opt.value}
-                className="inline-flex items-center gap-1.5 rounded-md border border-brand/20 bg-brand-soft/40 px-2 py-0.5 text-xs text-brand-strong"
-              >
-                <span className="max-w-[140px] truncate font-medium">
-                  {opt.label}
-                </span>
-                {!disabled ? (
-                  <button
-                    type="button"
-                    onClick={() => handleToggle(opt.value)}
-                    aria-label={`Remove ${opt.label}`}
-                    className="rounded p-0.5 text-brand hover:bg-brand/10"
-                  >
-                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                ) : null}
-              </span>
-            ))}
-          </div>
-        ) : null}
-
-        {/* Option list container */}
-        <ul
-          id={id}
-          className="max-h-56 divide-y divide-line-subtle/50 overflow-y-auto p-1.5"
-        >
-          {safeOptions.length === 0 ? (
-            <li className="px-3 py-6 text-center text-xs text-ink-muted">
-              No records to choose from.
-            </li>
-          ) : filteredOptions.length === 0 ? (
-            <li className="px-3 py-6 text-center text-xs text-ink-muted">
-              No matches found for “{searchTerm}”.
-              <button
-                type="button"
-                onClick={() => setSearchTerm("")}
-                className="ml-2 font-medium text-brand hover:underline"
-              >
-                Clear filter
-              </button>
-            </li>
-          ) : (
-            filteredOptions.map((option, index) => {
-              const optionValue = Number(option.value);
-              const isChecked = selected.includes(optionValue);
-              const optionId = `${id}-opt-${index}`;
-
-              return (
-                <li key={option.value ?? optionId}>
-                  <label
-                    htmlFor={optionId}
-                    className={`group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors duration-150 ${
-                      isChecked
-                        ? "bg-brand-soft/30 text-ink"
-                        : "text-ink hover:bg-surface-sunken"
-                    }`}
-                  >
-                    <input
-                      id={optionId}
-                      type="checkbox"
-                      disabled={disabled}
-                      className="h-4 w-4 shrink-0 rounded border-line-strong accent-brand focus:ring-brand"
-                      checked={isChecked}
-                      onChange={() => handleToggle(optionValue)}
-                    />
-
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-blue-200/60 bg-blue-50 text-blue-600 shadow-2xs">
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <span className="truncate font-medium text-ink">
-                        {option.label ?? option.value}
-                      </span>
-                    </div>
-
-                    {isChecked ? (
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand">
-                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </span>
-                    ) : null}
-                  </label>
-                </li>
-              );
-            })
-          )}
-        </ul>
-      </div>
-    </FormField>
-  );
-}
-
 export default function ReferencePicker(props) {
   if (!props.multiple) {
     return <SingleReferencePicker {...props} />;
   }
-  if (props.dataType === "user_reference" || props.dataType === "entity_reference") {
-    return <DropdownMultiReferencePicker {...props} />;
-  }
-  return <InlineMultiReferencePicker {...props} />;
+  return <DropdownMultiReferencePicker {...props} />;
 }

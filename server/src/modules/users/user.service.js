@@ -9,6 +9,7 @@ import { recordAudit } from "../audit/audit.service.js";
 
 import { coerceValue } from "../../lib/dataTypes.js";
 import { findTableByKey, findColumnsByTableId } from "../tables/table.repository.js";
+import { syncRelationOnWrite } from "../tables/relationSync.service.js";
 
 import {
   countUsers,
@@ -194,6 +195,15 @@ export async function createUser(payload, actor) {
 
     if (Object.keys(validatedValues).length > 0) {
       await upsertUserProfileValues(connection, insertedId, validatedValues, customColumnsByKey);
+      if (usersTable) {
+        await syncRelationOnWrite({
+          connection,
+          sourceTableId: usersTable.id,
+          sourceRecordId: insertedId,
+          values: validatedValues,
+          previousValues: {},
+        });
+      }
     }
 
     await recordAudit({
@@ -243,11 +253,12 @@ export async function updateUser(userId, patch, actor) {
     }
   }
 
-    let validatedValues = null;
+  let usersTable = null;
+  let validatedValues = null;
   let customColumnsByKey = null;
 
   if (patch.values !== undefined && patch.values !== null) {
-    const usersTable = await findTableByKey("users");
+    usersTable = await findTableByKey("users");
     const allColumns = usersTable ? await findColumnsByTableId(usersTable.id, { includeArchived: false }) : [];
     const customColumns = allColumns.filter((col) => !col.isSystem);
     customColumnsByKey = new Map(customColumns.map((col) => [col.key, col]));
@@ -297,7 +308,20 @@ export async function updateUser(userId, patch, actor) {
     }
 
     if (validatedValues && customColumnsByKey) {
+      const prevProfileMap = await findProfileValuesByUserIds([userId]);
+      const prevProfileValues = prevProfileMap.get(userId) || {};
+
       await upsertUserProfileValues(connection, userId, validatedValues, customColumnsByKey);
+
+      if (usersTable) {
+        await syncRelationOnWrite({
+          connection,
+          sourceTableId: usersTable.id,
+          sourceRecordId: userId,
+          values: validatedValues,
+          previousValues: prevProfileValues,
+        });
+      }
     }
 
     await recordAudit({
@@ -519,6 +543,15 @@ export async function bulkUpdateUsers({ userIds = [], status, roleKeys, profileV
       // 3. Update profile values if provided
       if (Object.keys(combinedProfileValues).length > 0) {
         await upsertUserProfileValues(conn, userId, combinedProfileValues, customColumnsByKey);
+        if (usersTable) {
+          await syncRelationOnWrite({
+            connection: conn,
+            sourceTableId: usersTable.id,
+            sourceRecordId: userId,
+            values: combinedProfileValues,
+            previousValues: {},
+          });
+        }
       }
     }
 

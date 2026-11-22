@@ -74,6 +74,7 @@ export const createColumnSchema = z.object({
    * how relations are expressed in the builder.
    */
   relationTableId: z.coerce.number().int().positive().optional(),
+  addToForms: z.boolean().optional(),
 });
 
 export const updateColumnSchema = z
