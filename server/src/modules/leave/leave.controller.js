@@ -21,6 +21,7 @@ import {
   getHolidays,
   saveHolidays,
 } from "./leave.service.js";
+import { DEFAULT_LEAVE_RULES } from "./leave.repository.js";
 
 function getActorUserId(req) {
   return req.session?.user?.id ?? null;
@@ -154,6 +155,16 @@ export async function saveLeaveRulesHandler(req, res, next) {
 
     const saved = await saveLeaveRules(rules, actorUserId);
     return ok(res, saved);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function restoreDefaultRulesHandler(req, res, next) {
+  try {
+    const actorUserId = getActorUserId(req);
+    const restored = await saveLeaveRules(DEFAULT_LEAVE_RULES, actorUserId);
+    return ok(res, restored);
   } catch (error) {
     return next(error);
   }

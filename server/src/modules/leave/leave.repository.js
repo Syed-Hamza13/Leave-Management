@@ -243,7 +243,7 @@ export async function findLeaveRules() {
     return DEFAULT_LEAVE_RULES;
   }
   const rules = parseJsonColumn(row.setting_value, null);
-  if (Array.isArray(rules) && rules.length > 0) {
+  if (Array.isArray(rules)) {
     return rules;
   }
   return DEFAULT_LEAVE_RULES;

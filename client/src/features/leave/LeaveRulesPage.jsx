@@ -19,6 +19,7 @@ export default function LeaveRulesPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [ruleDialog, setRuleDialog] = useState(null); // null | rule object to edit/create
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [clearAllConfirm, setClearAllConfirm] = useState(false);
 
   const {
     data: rulesData,
@@ -136,6 +137,27 @@ export default function LeaveRulesPage() {
     reloadRules();
   }
 
+  async function handleClearAllRules() {
+    const outcome = await saveRuleMutation(() => leaveApi.saveRules([]));
+    if (!outcome.ok) {
+      toast.danger(errorMessage(outcome.error, "Failed to delete leave rules."));
+      return;
+    }
+    toast.success("All leave rules deleted successfully.");
+    setClearAllConfirm(false);
+    reloadRules();
+  }
+
+  async function handleRestoreDefaults() {
+    const outcome = await saveRuleMutation(() => leaveApi.restoreDefaultRules());
+    if (!outcome.ok) {
+      toast.danger(errorMessage(outcome.error, "Failed to restore default rules."));
+      return;
+    }
+    toast.success("Default leave rules restored successfully.");
+    reloadRules();
+  }
+
   async function handleToggleStatus(rule) {
     const updated = rules.map((r) =>
       r.id === rule.id ? { ...r, status: r.status === "active" ? "inactive" : "active" } : r
@@ -209,9 +231,33 @@ export default function LeaveRulesPage() {
           </span>
         </div>
 
-        <Button variant="primary" onClick={openCreateRule} className="font-semibold shadow-sm">
-          <span className="mr-1 font-bold text-base leading-none">+</span> Add New Leave Rule
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {rules.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200"
+              onClick={() => setClearAllConfirm(true)}
+              disabled={saving}
+            >
+              Delete All Rules
+            </Button>
+          )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRestoreDefaults}
+            disabled={saving}
+            title="Restore the default Eklavya statutory leave rules"
+          >
+            Restore Default Rules
+          </Button>
+
+          <Button variant="primary" onClick={openCreateRule} className="font-semibold shadow-sm">
+            <span className="mr-1 font-bold text-base leading-none">+</span> Add New Leave Rule
+          </Button>
+        </div>
       </div>
 
       {/* Rules List */}
@@ -221,12 +267,17 @@ export default function LeaveRulesPage() {
           description={
             search
               ? "Try adjusting your search criteria or clear the filter."
-              : "Create dynamic routing rules to control approver hierarchies and notifications based on duration and staff category."
+              : "All leave rules have been removed. You can create your own custom leave rules from scratch or restore the default system rules anytime."
           }
           action={
-            <Button variant="primary" onClick={openCreateRule}>
-              + Add Your First Leave Rule
-            </Button>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Button variant="primary" onClick={openCreateRule}>
+                + Add Your First Leave Rule
+              </Button>
+              <Button variant="outline" onClick={handleRestoreDefaults} disabled={saving}>
+                Restore Default Rules
+              </Button>
+            </div>
           }
         />
       ) : (
@@ -385,6 +436,10 @@ export default function LeaveRulesPage() {
           rule={ruleDialog}
           onClose={() => setRuleDialog(null)}
           onSave={handleSaveRule}
+          onDelete={(r) => {
+            setRuleDialog(null);
+            setDeleteTarget(r);
+          }}
           saving={saving}
         />
       )}
@@ -400,6 +455,21 @@ export default function LeaveRulesPage() {
           loading={saving}
           onConfirm={handleDeleteRule}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {/* Clear All Rules Confirmation */}
+      {clearAllConfirm && (
+        <ConfirmDialog
+          open={Boolean(clearAllConfirm)}
+          title="Delete All Leave Rules"
+          message={`Are you sure you want to delete all ${rules.length} configured leave rules?`}
+          detail="This will clear all rules from the system. Leave requests will fallback to standard direct supervisor approval unless you configure new rules."
+          confirmLabel="Delete All Rules"
+          tone="danger"
+          loading={saving}
+          onConfirm={handleClearAllRules}
+          onCancel={() => setClearAllConfirm(false)}
         />
       )}
     </div>

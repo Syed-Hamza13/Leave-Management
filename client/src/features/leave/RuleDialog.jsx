@@ -342,7 +342,7 @@ function ConditionValueInput({ cond, idx, fieldMeta, onUpdate, optionsFor }) {
   );
 }
 
-export default function RuleDialog({ open, rule, onClose, onSave, saving }) {
+export default function RuleDialog({ open, rule, onClose, onSave, saving, onDelete }) {
   const toast = useToast();
   const [draft, setDraft] = useState(() => JSON.parse(JSON.stringify(rule)));
 
@@ -1228,13 +1228,29 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving }) {
           )}
         </div>
 
-        <div className="flex justify-end gap-3 pt-2">
-          <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" loading={saving}>
-            Save Leave Rule
-          </Button>
+        <div className="flex w-full items-center justify-between pt-2">
+          {onDelete && rule?.id ? (
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              onClick={() => onDelete(rule)}
+              disabled={saving}
+            >
+              Delete Rule
+            </Button>
+          ) : (
+            <span />
+          )}
+
+          <div className="flex items-center gap-3">
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" loading={saving}>
+              Save Leave Rule
+            </Button>
+          </div>
         </div>
       </form>
     </Modal>

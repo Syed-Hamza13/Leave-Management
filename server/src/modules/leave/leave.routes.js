@@ -12,6 +12,7 @@ import {
   listPendingApprovalsHandler,
   getLeaveRulesHandler,
   saveLeaveRulesHandler,
+  restoreDefaultRulesHandler,
   getWorkflowConfigHandler,
   saveWorkflowConfigHandler,
   getHolidaysHandler,
@@ -42,6 +43,7 @@ export function createLeaveRoutes() {
   // Dynamic Rule & Configuration Management
   router.get("/rules", getLeaveRulesHandler);
   router.post("/rules", requirePermission(MANAGE), saveLeaveRulesHandler);
+  router.post("/rules/restore-defaults", requirePermission(MANAGE), restoreDefaultRulesHandler);
 
   router.get("/config", getWorkflowConfigHandler);
   router.post("/config", requirePermission(MANAGE), saveWorkflowConfigHandler);

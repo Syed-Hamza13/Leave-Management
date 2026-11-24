@@ -213,6 +213,7 @@ export const leave = {
 
   getRules: () => api("/leave/rules"),
   saveRules: (rules) => post("/leave/rules", { rules }),
+  restoreDefaultRules: () => post("/leave/rules/restore-defaults", {}),
 
   getConfig: () => api("/leave/config"),
   saveConfig: (config) => post("/leave/config", config),

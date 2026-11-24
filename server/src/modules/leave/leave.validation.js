@@ -41,18 +41,20 @@ export const leaveRulesSchema = z.object({
       status: z.enum(["active", "inactive"]).default("active"),
       conditions: z.array(z.any()).default([]),
       combinator: z.enum(["AND", "OR"]).default("AND"),
-      actions: z.object({
-        requiresApproval: z.boolean().default(true),
-        approverType: z.string().optional(),
-        approverTarget: z.string().optional(),
-        inchargeField: z.string().optional(),
-        entityName: z.string().optional(),
-        userId: z.union([z.number(), z.string()]).optional(),
-        fallbackUserId: z.union([z.number(), z.string()]).optional(),
-        notifyTargets: z.array(z.any()).optional().default([]),
-        noticeDays: z.coerce.number().int().optional().default(2),
-        slaHours: z.coerce.number().int().optional().default(48),
-      }),
+      actions: z
+        .object({
+          requiresApproval: z.boolean().default(true),
+          approverType: z.string().optional(),
+          approverTarget: z.string().optional(),
+          inchargeField: z.string().optional(),
+          entityName: z.string().optional(),
+          userId: z.union([z.number(), z.string()]).optional(),
+          fallbackUserId: z.union([z.number(), z.string()]).optional(),
+          notifyTargets: z.array(z.any()).optional().default([]),
+          noticeDays: z.coerce.number().int().optional().default(2),
+          slaHours: z.coerce.number().int().optional().default(48),
+        })
+        .passthrough(),
     })
   ),
 });
