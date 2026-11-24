@@ -39,6 +39,13 @@ export default function ApplyLeaveDialog({ open, onClose, onSaved }) {
 
   const { run: submitLeave, pending: submitting } = useMutation();
 
+  function handleStartDateChange(val) {
+    setStartDate(val);
+    if (!isSingleDay && endDate && val && val > endDate) {
+      setEndDate(val);
+    }
+  }
+
   // If short leave selected, lock endDate to startDate
   useEffect(() => {
     if (isSingleDay) {
@@ -50,11 +57,19 @@ export default function ApplyLeaveDialog({ open, onClose, onSaved }) {
   useEffect(() => {
     if (!startDate) return;
 
+    const actualEnd = isSingleDay ? startDate : (endDate || startDate);
+
+    // Prevent preview calls when endDate is earlier than startDate
+    if (actualEnd < startDate) {
+      setPreview(null);
+      setPreviewLoading(false);
+      setPreviewError(null);
+      return;
+    }
+
     let active = true;
     setPreviewLoading(true);
     setPreviewError(null);
-
-    const actualEnd = isSingleDay ? startDate : (endDate || startDate);
 
     leaveApi
       .preview({
@@ -86,6 +101,10 @@ export default function ApplyLeaveDialog({ open, onClose, onSaved }) {
     e.preventDefault();
 
     const actualEnd = isSingleDay ? startDate : (endDate || startDate);
+    if (actualEnd < startDate) {
+      toast.danger("End date cannot be earlier than start date.");
+      return;
+    }
 
     const outcome = await submitLeave(() =>
       leaveApi.submit({
@@ -132,7 +151,7 @@ export default function ApplyLeaveDialog({ open, onClose, onSaved }) {
             label={isSingleDay ? "Date" : "Start Date"}
             required
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            onChange={(e) => handleStartDateChange(e.target.value)}
           />
 
           {!isSingleDay && (

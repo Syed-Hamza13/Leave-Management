@@ -1,3 +1,5 @@
+import { badRequest } from "../../lib/appError.js";
+
 /**
  * Leave Duration & Sandwich Rule Calculator
  * 
@@ -53,11 +55,11 @@ export function calculateLeaveDuration({
   end.setHours(0, 0, 0, 0);
 
   if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-    throw new Error("Invalid start or end date provided.");
+    throw badRequest("Invalid start or end date provided.", { code: "INVALID_DATE" });
   }
 
   if (end < start) {
-    throw new Error("End date cannot be earlier than start date.");
+    throw badRequest("End date cannot be earlier than start date.", { code: "INVALID_DATE_RANGE" });
   }
 
   // Handle single day half-day session or short leave

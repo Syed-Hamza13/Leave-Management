@@ -1,21 +1,32 @@
 import { z } from "zod";
 
-export const leavePreviewSchema = z.object({
-  startDate: z.string().min(1, "Start date is required."),
-  endDate: z.string().optional(),
-  session: z.string().optional().default("full_day"),
-  leaveType: z.string().optional().default("Privilege Leave"),
-  isEmergency: z.boolean().optional().default(false),
-});
+export const leavePreviewSchema = z
+  .object({
+    applicantId: z.coerce.number().optional(),
+    startDate: z.string().min(1, "Start date is required."),
+    endDate: z.string().optional(),
+    session: z.string().optional().default("full_day"),
+    leaveType: z.string().optional().default("Privilege Leave"),
+    isEmergency: z.boolean().optional().default(false),
+  })
+  .refine((data) => !data.endDate || data.endDate >= data.startDate, {
+    message: "End date cannot be earlier than start date.",
+    path: ["endDate"],
+  });
 
-export const leaveSubmitSchema = z.object({
-  startDate: z.string().min(1, "Start date is required."),
-  endDate: z.string().optional(),
-  session: z.string().optional().default("full_day"),
-  leaveType: z.string().min(1, "Leave type is required."),
-  isEmergency: z.boolean().optional().default(false),
-  reason: z.string().max(2000, "Reason must not exceed 2000 characters.").optional().default(""),
-});
+export const leaveSubmitSchema = z
+  .object({
+    startDate: z.string().min(1, "Start date is required."),
+    endDate: z.string().optional(),
+    session: z.string().optional().default("full_day"),
+    leaveType: z.string().min(1, "Leave type is required."),
+    isEmergency: z.boolean().optional().default(false),
+    reason: z.string().max(2000, "Reason must not exceed 2000 characters.").optional().default(""),
+  })
+  .refine((data) => !data.endDate || data.endDate >= data.startDate, {
+    message: "End date cannot be earlier than start date.",
+    path: ["endDate"],
+  });
 
 export const leaveActionSchema = z.object({
   remarks: z.string().max(1000).optional().default(""),
