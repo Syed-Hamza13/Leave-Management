@@ -428,8 +428,8 @@ export default function LeaveRulesPage() {
             </div>
           ))}
         </div>
-        )}
-      </div>
+      )}
+    </div>
 
       {/* Isolated Rule Dialog */}
       {ruleDialog && (
