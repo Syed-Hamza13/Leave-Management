@@ -104,60 +104,72 @@ export default function LeaveRequestsPage() {
     {
       key: "leave_type",
       header: "Leave Type",
-      render: (row) => (
-        <div>
-          <span className="font-medium text-slate-900">{row.values.leave_type}</span>
-          {row.values.is_emergency ? (
-            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-800">
-              Emergency
-            </span>
-          ) : null}
-        </div>
-      ),
+      render: (row) => {
+        const val = row.values || row;
+        return (
+          <div>
+            <span className="font-medium text-slate-900">{val.leave_type}</span>
+            {val.is_emergency ? (
+              <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-800">
+                Emergency
+              </span>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       key: "dates",
       header: "Dates",
-      render: (row) => (
-        <span className="text-sm text-slate-700">
-          {row.values.start_date}
-          {row.values.end_date && row.values.end_date !== row.values.start_date
-            ? ` to ${row.values.end_date}`
-            : ""}
-        </span>
-      ),
+      render: (row) => {
+        const val = row.values || row;
+        return (
+          <span className="text-sm text-slate-700">
+            {val.start_date}
+            {val.end_date && val.end_date !== val.start_date ? ` to ${val.end_date}` : ""}
+          </span>
+        );
+      },
     },
     {
       key: "days",
       header: "Duration",
-      render: (row) => (
-        <div className="text-sm">
-          <span className="font-semibold text-slate-800">{row.values.days} Days</span>
-          {row.values.sandwiched_days > 0 ? (
-            <span className="block text-[11px] text-amber-600">
-              (Includes {row.values.sandwiched_days} sandwiched day)
-            </span>
-          ) : null}
-        </div>
-      ),
+      render: (row) => {
+        const val = row.values || row;
+        return (
+          <div className="text-sm">
+            <span className="font-semibold text-slate-800">{val.days} Days</span>
+            {val.sandwiched_days > 0 ? (
+              <span className="block text-[11px] text-amber-600">
+                (Includes {val.sandwiched_days} sandwiched day)
+              </span>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       key: "status",
       header: "Status",
-      render: (row) => <Badge tone={getStatusTone(row.values.status)}>{row.values.status}</Badge>,
+      render: (row) => {
+        const val = row.values || row;
+        return <Badge tone={getStatusTone(val.status)}>{val.status}</Badge>;
+      },
     },
     {
       key: "reason",
       header: "Reason / Notes",
-      render: (row) => (
-        <span className="text-xs text-slate-600 line-clamp-2">{row.values.reason || "—"}</span>
-      ),
+      render: (row) => {
+        const val = row.values || row;
+        return <span className="text-xs text-slate-600 line-clamp-2">{val.reason || "—"}</span>;
+      },
     },
     {
       key: "actions",
       header: "",
-      render: (row) =>
-        row.values.status === "Pending Approval" ? (
+      render: (row) => {
+        const val = row.values || row;
+        return val.status === "Pending Approval" ? (
           <Button
             size="sm"
             variant="ghost"
@@ -166,7 +178,8 @@ export default function LeaveRequestsPage() {
           >
             Cancel
           </Button>
-        ) : null,
+        ) : null;
+      },
     },
   ];
 
@@ -184,38 +197,43 @@ export default function LeaveRequestsPage() {
     {
       key: "leave_type",
       header: "Leave Type",
-      render: (row) => (
-        <div>
-          <span className="font-medium text-slate-900">{row.values.leave_type}</span>
-          {row.values.is_emergency ? (
-            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-800">
-              Emergency
-            </span>
-          ) : null}
-        </div>
-      ),
+      render: (row) => {
+        const val = row.values || row;
+        return (
+          <div>
+            <span className="font-medium text-slate-900">{val.leave_type}</span>
+            {val.is_emergency ? (
+              <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-800">
+                Emergency
+              </span>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       key: "dates",
       header: "Dates & Duration",
-      render: (row) => (
-        <div className="text-sm">
-          <p className="text-slate-800 font-medium">
-            {row.values.start_date}
-            {row.values.end_date && row.values.end_date !== row.values.start_date
-              ? ` to ${row.values.end_date}`
-              : ""}
-          </p>
-          <p className="text-xs text-indigo-600 font-semibold">{row.values.days} Days</p>
-        </div>
-      ),
+      render: (row) => {
+        const val = row.values || row;
+        return (
+          <div className="text-sm">
+            <p className="text-slate-800 font-medium">
+              {val.start_date}
+              {val.end_date && val.end_date !== val.start_date ? ` to ${val.end_date}` : ""}
+            </p>
+            <p className="text-xs text-indigo-600 font-semibold">{val.days} Days</p>
+          </div>
+        );
+      },
     },
     {
       key: "reason",
       header: "Reason",
-      render: (row) => (
-        <span className="text-xs text-slate-600 line-clamp-2">{row.values.reason || "—"}</span>
-      ),
+      render: (row) => {
+        const val = row.values || row;
+        return <span className="text-xs text-slate-600 line-clamp-2">{val.reason || "—"}</span>;
+      },
     },
     {
       key: "actions",
@@ -298,7 +316,7 @@ export default function LeaveRequestsPage() {
           />
         ) : (
           <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-            <DataTable columns={myColumns} data={myRequests} keyField="id" />
+            <DataTable columns={myColumns} rows={myRequests} rowKey="id" />
           </div>
         )
       ) : pendingApprovals.length === 0 ? (
@@ -308,7 +326,7 @@ export default function LeaveRequestsPage() {
         />
       ) : (
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-          <DataTable columns={pendingColumns} data={pendingApprovals} keyField="id" />
+          <DataTable columns={pendingColumns} rows={pendingApprovals} rowKey="id" />
         </div>
       )}
 

@@ -50,6 +50,27 @@ const LEAVE_TYPES = [
   { value: "Leave Without Pay", label: "Leave Without Pay (LWP)" },
 ];
 
+const FALLBACK_TABLE_COLS = {
+  users: [
+    { value: "reports_to", label: "Co-Ordinator (reports_to)", allowMultiple: false },
+  ],
+  center: [
+    { value: "center_in_charge", label: "Center In-Charge (center_in_charge)", allowMultiple: false },
+  ],
+  councils: [
+    { value: "members", label: "Members (members)", allowMultiple: true },
+  ],
+  programmes: [
+    { value: "programme_coordinator", label: "Programme Coordinator (programme_coordinator)", allowMultiple: false },
+  ],
+  project: [
+    { value: "project_incharge", label: "Project Incharge (project_incharge)", allowMultiple: false },
+  ],
+  teams: [
+    { value: "members", label: "Members (members)", allowMultiple: true },
+  ],
+};
+
 const REQUEST_FIELDS = [
   {
     key: "days",
@@ -364,12 +385,12 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
   const { optionsFor } = useEntryOptions(userColumns);
   const { lookups } = useMetadata();
 
-  // Load all available tables for dynamic approver routing
+  // Load all available tables with columns for dynamic approver routing
   const { data: allTablesData } = useAsyncData("tables-list-all", () =>
-    tablesApi.list({ pageSize: 100 })
+    tablesApi.list({ pageSize: 100, includeColumns: "true" })
   );
 
-  const availableTables = useMemo(() => {
+  const tablesWithUserRefCols = useMemo(() => {
     const apiList = Array.isArray(allTablesData?.data)
       ? allTablesData.data
       : Array.isArray(allTablesData?.data?.tables)
@@ -380,89 +401,194 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
             ? allTablesData
             : [];
 
-    const sourceList = apiList.length > 0 ? apiList : (lookups?.tables ?? []);
+    const map = {};
 
-    return sourceList
-      .filter((t) => t.status === "active" || t.status === undefined)
-      .filter((t) => !["leave_requests", "leave_balances", "leave_policy"].includes(t.key))
-      .map((t) => ({
-        value: t.key,
-        label: `${t.label || t.key} (${t.key})`,
-      }));
-  }, [allTablesData, lookups?.tables]);
+    // 1. Populate from fallback defaults
+    Object.entries(FALLBACK_TABLE_COLS).forEach(([tKey, cols]) => {
+      map[tKey] = {
+        key: tKey,
+        label: tKey.charAt(0).toUpperCase() + tKey.slice(1),
+        columns: cols,
+      };
+    });
 
-  // Selected approver table and its user_reference columns
-  const selectedApproverTable =
-    draft.actions?.approverTable ||
-    (draft.actions?.approverType === "entity_incharge" &&
-    draft.actions?.inchargeField?.includes("center")
-      ? "center"
-      : draft.actions?.approverType === "entity_incharge" &&
-        draft.actions?.inchargeField?.includes("project")
-        ? "project"
-        : draft.actions?.approverType === "council_or_team"
-          ? "councils"
-          : "users");
+    // 2. Overwrite / augment with live table definitions and columns from API
+    for (const t of apiList) {
+      if (t.status === "archived") continue;
+      if (["leave_requests", "leave_balances", "leave_policy"].includes(t.key)) continue;
 
-  const { data: selectedTableMeta, loading: loadingTableCols } = useAsyncData(
-    `approver-table-cols:${selectedApproverTable}`,
-    () => (selectedApproverTable ? tablesApi.get(selectedApproverTable) : Promise.resolve(null))
-  );
+      const rawCols = t.columns || [];
+      const userRefCols = rawCols
+        .filter((c) => c.status === "active" || c.status === undefined)
+        .filter(
+          (c) =>
+            c.dataType === "user_reference" ||
+            (c.dataType === "record_reference" &&
+              (c.config?.targetTable === "users" || c.config?.targetTableKey === "users"))
+        )
+        .map((c) => ({
+          value: c.key,
+          label: `${c.label || c.key} (${c.key})`,
+          allowMultiple: Boolean(c.config?.allowMultiple),
+        }));
 
-  const approverColumns = useMemo(() => {
-    const cols = selectedTableMeta?.data?.columns ?? [];
-    return cols
-      .filter((c) => c.status === "active")
-      .filter(
-        (c) =>
-          c.dataType === "user_reference" ||
-          (c.dataType === "record_reference" &&
-            (c.config?.targetTable === "users" || c.config?.targetTableKey === "users"))
-      )
-      .map((c) => ({
-        value: c.key,
-        label: `${c.label || c.key} (${c.key})`,
-        allowMultiple: Boolean(c.config?.allowMultiple),
-      }));
-  }, [selectedTableMeta]);
+      if (userRefCols.length > 0) {
+        map[t.key] = {
+          key: t.key,
+          label: t.label || t.key,
+          columns: userRefCols,
+        };
+      }
+    }
 
-  // Auto-select first column when columns change and no column is set
+    return map;
+  }, [allTablesData]);
+
+  // Normalized list of approvers [{ table, column }]
+  const approversList = useMemo(() => {
+    if (Array.isArray(draft.actions?.approvers) && draft.actions.approvers.length > 0) {
+      return draft.actions.approvers.filter((a) => a && a.table && a.column);
+    }
+    const legacyTable =
+      draft.actions?.approverTable ||
+      (draft.actions?.approverType === "entity_incharge" &&
+      draft.actions?.inchargeField?.includes("center")
+        ? "center"
+        : draft.actions?.approverType === "entity_incharge" &&
+          draft.actions?.inchargeField?.includes("project")
+          ? "project"
+          : draft.actions?.approverType === "council_or_team"
+            ? "councils"
+            : "users");
+
+    const defaultCol =
+      draft.actions?.approverColumn ||
+      tablesWithUserRefCols[legacyTable]?.columns?.[0]?.value ||
+      "reports_to";
+
+    return [{ table: legacyTable, column: defaultCol }];
+  }, [
+    draft.actions?.approvers,
+    draft.actions?.approverTable,
+    draft.actions?.approverColumn,
+    draft.actions?.approverType,
+    draft.actions?.inchargeField,
+    tablesWithUserRefCols,
+  ]);
+
+  // Auto-sync draft.actions.approvers if not populated
   useEffect(() => {
-    if (approverColumns.length > 0 && !draft.actions?.approverColumn) {
+    if (!draft.actions?.approvers || draft.actions.approvers.length === 0) {
       setDraft((prev) => ({
         ...prev,
         actions: {
           ...prev.actions,
-          approverColumn: approverColumns[0].value,
+          requiresApproval: true,
+          approvers: approversList,
+          approverTable: approversList[0]?.table || "",
+          approverColumn: approversList[0]?.column || "",
         },
       }));
     }
-  }, [approverColumns, draft.actions?.approverColumn]);
+  }, [approversList, draft.actions?.approvers]);
 
-  const selectedColMeta = useMemo(() => {
-    const currentKey = draft.actions?.approverColumn;
-    return approverColumns.find((c) => c.value === currentKey);
-  }, [approverColumns, draft.actions?.approverColumn]);
+  // Returns columns for a table that are not already selected by OTHER rows
+  function getAvailableColumnsForTable(tableKey, rowIndex) {
+    const tableDef = tablesWithUserRefCols[tableKey];
+    if (!tableDef) return [];
+    const usedColsInOtherRows = approversList
+      .filter((_, idx) => idx !== rowIndex && _.table === tableKey)
+      .map((a) => a.column);
 
-  function handleTableChange(tableKey) {
+    return tableDef.columns.filter((c) => !usedColsInOtherRows.includes(c.value));
+  }
+
+  // Returns tables that have at least one available column (or is currently selected on this row)
+  function getAvailableTableOptions(rowIndex) {
+    const currentTable = approversList[rowIndex]?.table;
+    return Object.values(tablesWithUserRefCols)
+      .filter((t) => {
+        if (t.key === currentTable) return true;
+        const availableCols = getAvailableColumnsForTable(t.key, rowIndex);
+        return availableCols.length > 0;
+      })
+      .map((t) => ({
+        value: t.key,
+        label: `${t.label} (${t.key})`,
+      }));
+  }
+
+  // Find next unused approver across all tables for "+ Add Approver"
+  const nextAvailableApprover = useMemo(() => {
+    for (const t of Object.values(tablesWithUserRefCols)) {
+      const unusedCols = t.columns.filter(
+        (c) => !approversList.some((a) => a.table === t.key && a.column === c.value)
+      );
+      if (unusedCols.length > 0) {
+        return { table: t.key, column: unusedCols[0].value };
+      }
+    }
+    return null;
+  }, [tablesWithUserRefCols, approversList]);
+
+  function handleAddApprover() {
+    if (!nextAvailableApprover) return;
+    const updated = [...approversList, { ...nextAvailableApprover }];
     setDraft((prev) => ({
       ...prev,
       actions: {
         ...prev.actions,
         requiresApproval: true,
-        approverTable: tableKey,
-        approverColumn: "",
+        approvers: updated,
+        approverTable: updated[0]?.table || "",
+        approverColumn: updated[0]?.column || "",
       },
     }));
   }
 
-  function handleColumnChange(colKey) {
+  function handleApproverTableChange(rowIndex, newTableKey) {
+    const availableCols = getAvailableColumnsForTable(newTableKey, rowIndex);
+    const newCol = availableCols[0]?.value || "";
+    const updated = [...approversList];
+    updated[rowIndex] = { table: newTableKey, column: newCol };
     setDraft((prev) => ({
       ...prev,
       actions: {
         ...prev.actions,
         requiresApproval: true,
-        approverColumn: colKey,
+        approvers: updated,
+        approverTable: updated[0]?.table || "",
+        approverColumn: updated[0]?.column || "",
+      },
+    }));
+  }
+
+  function handleApproverColumnChange(rowIndex, newColKey) {
+    const updated = [...approversList];
+    updated[rowIndex] = { ...updated[rowIndex], column: newColKey };
+    setDraft((prev) => ({
+      ...prev,
+      actions: {
+        ...prev.actions,
+        requiresApproval: true,
+        approvers: updated,
+        approverTable: updated[0]?.table || "",
+        approverColumn: updated[0]?.column || "",
+      },
+    }));
+  }
+
+  function handleRemoveApprover(rowIndex) {
+    if (approversList.length <= 1) return;
+    const updated = approversList.filter((_, idx) => idx !== rowIndex);
+    setDraft((prev) => ({
+      ...prev,
+      actions: {
+        ...prev.actions,
+        requiresApproval: true,
+        approvers: updated,
+        approverTable: updated[0]?.table || "",
+        approverColumn: updated[0]?.column || "",
       },
     }));
   }
@@ -866,10 +992,21 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
       };
     });
 
+    const approversToSave = (draft.actions?.approvers || approversList).filter(
+      (a) => a && a.table && a.column
+    );
+
     const ruleToSave = {
       ...draft,
       priority: Number(draft.priority) || 100,
       conditions: processedConditions,
+      actions: {
+        ...draft.actions,
+        requiresApproval: true,
+        approvers: approversToSave,
+        approverTable: approversToSave[0]?.table || "",
+        approverColumn: approversToSave[0]?.column || "",
+      },
     };
 
     onSave(ruleToSave);
@@ -1047,89 +1184,139 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
           </div>
 
           <div className="space-y-4 pt-1">
-            {/* Dynamic Approver Table & User Reference Column Picker */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Select
-                  id="approver-table"
-                  label="Approver Table"
-                  hint="Select table from Organization or Users"
-                  value={selectedApproverTable}
-                  options={
-                    availableTables.length > 0
-                      ? availableTables
-                      : [{ value: "users", label: "Users (users)" }]
-                  }
-                  onChange={(e) => handleTableChange(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <Select
-                  id="approver-column"
-                  label="Approver Column (User Reference)"
-                  hint={
-                    loadingTableCols
-                      ? "Loading user reference columns..."
-                      : approverColumns.length === 0
-                        ? "No user reference column on this table"
-                        : "User reference attribute that specifies approver"
-                  }
-                  value={draft.actions?.approverColumn || (approverColumns[0]?.value ?? "")}
-                  options={
-                    approverColumns.length > 0
-                      ? approverColumns.map((c) => ({
-                          value: c.value,
-                          label: `${c.label} ${c.allowMultiple ? "(Multiple Users)" : "(Single User)"}`,
-                        }))
-                      : [{ value: "", label: "No user reference column found" }]
-                  }
-                  onChange={(e) => handleColumnChange(e.target.value)}
-                  disabled={loadingTableCols || approverColumns.length === 0}
-                />
-                {selectedColMeta && (
-                  <p className="mt-1 text-[11px] font-medium text-slate-500 flex items-center gap-1.5">
-                    <span>Selection Mode:</span>
-                    <span
-                      className={`px-1.5 py-0.5 rounded font-semibold text-[10px] ${
-                        selectedColMeta.allowMultiple
-                          ? "bg-indigo-100 text-indigo-700"
-                          : "bg-emerald-100 text-emerald-800"
-                      }`}
-                    >
-                      {selectedColMeta.allowMultiple
-                        ? "Multiple Users (Council / Committee / Team)"
-                        : "Single User Reference"}
-                    </span>
+            {/* Dynamic Multi-Approver Routing List */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+                <div>
+                  <h5 className="text-xs font-semibold text-slate-800 uppercase tracking-wide">
+                    Assigned Approvers ({approversList.length})
+                  </h5>
+                  <p className="text-[11px] text-slate-500">
+                    Requests matching this rule will route to each selected approver.
                   </p>
-                )}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleAddApprover}
+                  disabled={!nextAvailableApprover}
+                  title={
+                    !nextAvailableApprover
+                      ? "All available user reference attributes are already assigned"
+                      : "Add another approver"
+                  }
+                >
+                  + Add Approver
+                </Button>
               </div>
 
-              <NumberInput
-                id="notice-days"
-                label="Required Advance Notice (Days)"
-                hint="e.g. 2 days for normal leave, 7 days for long leave"
-                value={draft.actions?.noticeDays ?? 2}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    actions: { ...draft.actions, noticeDays: Number(e.target.value) },
-                  })
-                }
-              />
+              <div className="space-y-2.5">
+                {approversList.map((app, idx) => {
+                  const tableOpts = getAvailableTableOptions(idx);
+                  const colOpts = getAvailableColumnsForTable(app.table, idx);
+                  const selectedCol = tablesWithUserRefCols[app.table]?.columns?.find(
+                    (c) => c.value === app.column
+                  );
 
-              <NumberInput
-                id="sla-hours"
-                label="Approver Decision SLA (Hours)"
-                hint="e.g. 48 hours turnaround"
-                value={draft.actions?.slaHours ?? 48}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    actions: { ...draft.actions, slaHours: Number(e.target.value) },
-                  })
-                }
-              />
+                  return (
+                    <div
+                      key={idx}
+                      className="flex flex-wrap items-center gap-2.5 bg-white p-3 rounded-lg border border-slate-200 shadow-2xs"
+                    >
+                      {/* Step Tag */}
+                      <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2.5 py-1 min-w-[90px] text-center">
+                        Approver #{idx + 1}
+                      </span>
+
+                      {/* Approver Table */}
+                      <div className="w-52">
+                        <Select
+                          id={`approver-table-${idx}`}
+                          className="text-xs"
+                          value={app.table}
+                          options={tableOpts}
+                          onChange={(e) => handleApproverTableChange(idx, e.target.value)}
+                        />
+                      </div>
+
+                      {/* Approver Column (User Reference) */}
+                      <div className="flex-1 min-w-[220px]">
+                        <Select
+                          id={`approver-column-${idx}`}
+                          className="text-xs"
+                          value={app.column}
+                          options={
+                            colOpts.length > 0
+                              ? colOpts.map((c) => ({
+                                  value: c.value,
+                                  label: `${c.label} ${c.allowMultiple ? "(Multiple Users)" : "(Single User)"}`,
+                                }))
+                              : [{ value: "", label: "No available columns" }]
+                          }
+                          onChange={(e) => handleApproverColumnChange(idx, e.target.value)}
+                          disabled={colOpts.length === 0}
+                        />
+                      </div>
+
+                      {/* Allow Multiple Users Badge */}
+                      {selectedCol && (
+                        <span
+                          className={`text-[10px] font-semibold px-2 py-1 rounded border whitespace-nowrap ${
+                            selectedCol.allowMultiple
+                              ? "bg-purple-50 text-purple-700 border-purple-200"
+                              : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          }`}
+                        >
+                          {selectedCol.allowMultiple ? "Multiple Users" : "Single User"}
+                        </span>
+                      )}
+
+                      {/* Remove Button */}
+                      {approversList.length > 1 && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1"
+                          onClick={() => handleRemoveApprover(idx)}
+                          title="Remove Approver"
+                        >
+                          ✕
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                <NumberInput
+                  id="notice-days"
+                  label="Required Advance Notice (Days)"
+                  hint="e.g. 2 days for normal leave, 7 days for long leave"
+                  value={draft.actions?.noticeDays ?? 2}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      actions: { ...draft.actions, noticeDays: Number(e.target.value) },
+                    })
+                  }
+                />
+
+                <NumberInput
+                  id="sla-hours"
+                  label="Approver Decision SLA (Hours)"
+                  hint="e.g. 48 hours turnaround"
+                  value={draft.actions?.slaHours ?? 48}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      actions: { ...draft.actions, slaHours: Number(e.target.value) },
+                    })
+                  }
+                />
+              </div>
             </div>
           </div>
         </div>

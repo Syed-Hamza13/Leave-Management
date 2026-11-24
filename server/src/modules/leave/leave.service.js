@@ -281,6 +281,7 @@ export async function submitLeaveRequest({
   const tableId = await getLeaveRequestsTableId();
   const initialStatus = preview.approval.requiresApproval ? "Pending Approval" : "Approved";
   const assignedApproverId = preview.approval.approverUserIds[0] || null;
+  const assignedApprovers = preview.approval.approverUserIds || [];
 
   const recordValues = {
     applicant: Number(applicantId),
@@ -294,6 +295,7 @@ export async function submitLeaveRequest({
     is_emergency: Boolean(isEmergency),
     status: initialStatus,
     assigned_approver: assignedApproverId,
+    assigned_approvers: assignedApprovers,
     notified_users: preview.notifyUserIds,
     rule_id: preview.matchedRule?.id || null,
     approver_remarks: null,
@@ -573,14 +575,14 @@ export async function listPendingApprovals(userId, { page = 1, pageSize = 20 } =
   const tableId = await getLeaveRequestsTableId();
   const offset = (Math.max(1, page) - 1) * pageSize;
 
-  // Requests where status is 'Pending Approval' and assigned_approver is current user
+  // Requests where status is 'Pending Approval' and assigned_approver is current user or in assigned_approvers
   const conditions = [
     `r.table_id = ?`,
     `r.status = 'active'`,
     `JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.status')) = 'Pending Approval'`,
-    `JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.assigned_approver')) = ?`,
+    `(JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.assigned_approver')) = ? OR JSON_CONTAINS(COALESCE(JSON_EXTRACT(r.data, '$.assigned_approvers'), JSON_ARRAY()), CAST(? AS JSON)))`,
   ];
-  const params = [tableId, String(userId)];
+  const params = [tableId, String(userId), JSON.stringify(Number(userId))];
 
   const whereClause = `WHERE ${conditions.join(" AND ")}`;
 

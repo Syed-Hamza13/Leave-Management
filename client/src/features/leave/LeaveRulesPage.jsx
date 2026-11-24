@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import Badge from "../../components/ui/Badge.jsx";
 import Button from "../../components/ui/Button.jsx";
+import Checkbox from "../../components/ui/Checkbox.jsx";
 import ConfirmDialog from "../../components/ui/ConfirmDialog.jsx";
 import EmptyState from "../../components/ui/EmptyState.jsx";
 import { LoadingState } from "../../components/ui/LoadingState.jsx";
@@ -19,7 +20,9 @@ export default function LeaveRulesPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [ruleDialog, setRuleDialog] = useState(null); // null | rule object to edit/create
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [clearAllConfirm, setClearAllConfirm] = useState(false);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+  const [selectedRuleIds, setSelectedRuleIds] = useState(new Set());
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
 
   const {
     data: rulesData,
@@ -135,24 +138,51 @@ export default function LeaveRulesPage() {
     reloadRules();
   }
 
-  async function handleClearAllRules() {
-    const outcome = await saveRuleMutation(() => leaveApi.saveRules([]));
-    if (!outcome.ok) {
-      toast.danger(errorMessage(outcome.error, "Failed to delete leave rules."));
-      return;
-    }
-    toast.success("All leave rules deleted successfully.");
-    setClearAllConfirm(false);
-    reloadRules();
+  // Selection helpers
+  function toggleSelectRule(id) {
+    setSelectedRuleIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
-  async function handleRestoreDefaults() {
-    const outcome = await saveRuleMutation(() => leaveApi.restoreDefaultRules());
+  function toggleSelectAll() {
+    if (filteredRules.length === 0) return;
+    const allSelected = filteredRules.every((r) => selectedRuleIds.has(r.id));
+    if (allSelected) {
+      setSelectedRuleIds((prev) => {
+        const next = new Set(prev);
+        for (const r of filteredRules) next.delete(r.id);
+        return next;
+      });
+    } else {
+      setSelectedRuleIds((prev) => {
+        const next = new Set(prev);
+        for (const r of filteredRules) next.add(r.id);
+        return next;
+      });
+    }
+  }
+
+  const isAllSelected = filteredRules.length > 0 && filteredRules.every((r) => selectedRuleIds.has(r.id));
+  const isIndeterminate = filteredRules.some((r) => selectedRuleIds.has(r.id)) && !isAllSelected;
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selectedRuleIds);
+    if (ids.length === 0) return;
+
+    const remainingRules = rules.filter((r) => !selectedRuleIds.has(r.id));
+    const outcome = await saveRuleMutation(() => leaveApi.saveRules(remainingRules));
     if (!outcome.ok) {
-      toast.danger(errorMessage(outcome.error, "Failed to restore default rules."));
+      toast.danger(errorMessage(outcome.error, "Failed to delete selected leave rules."));
       return;
     }
-    toast.success("Default leave rules restored successfully.");
+
+    toast.success(`Successfully deleted ${ids.length} leave rule(s).`);
+    setSelectedRuleIds(new Set());
+    setBulkDeleteConfirm(false);
     reloadRules();
   }
 
@@ -202,9 +232,22 @@ export default function LeaveRulesPage() {
 
   return (
     <div className="flex-1 min-h-0 w-full flex flex-col space-y-4">
-      {/* Prominent Action Bar with Search, Filters and "+ Add Leave Rule" Button */}
+      {/* Prominent Action Bar with Search, Filters, Selection, Actions Dropdown and "+ Add Leave Rule" Button */}
       <div className="shrink-0 flex flex-wrap items-center justify-between gap-4 bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs">
         <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
+          {/* Select All Checkbox */}
+          {filteredRules.length > 0 && (
+            <div className="flex items-center pl-1 pr-0.5">
+              <Checkbox
+                checked={isAllSelected}
+                indeterminate={isIndeterminate}
+                onChange={toggleSelectAll}
+                aria-label="Select all rules"
+                title={isAllSelected ? "Deselect all rules" : "Select all rules"}
+              />
+            </div>
+          )}
+
           <SearchInput
             placeholder="Search rules by name, condition, or approver..."
             value={search}
@@ -230,29 +273,59 @@ export default function LeaveRulesPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {rules.length > 0 && (
+          {/* Actions Dropdown Button */}
+          <div className="relative">
             <Button
-              variant="outline"
-              size="sm"
-              className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200"
-              onClick={() => setClearAllConfirm(true)}
-              disabled={saving}
+              variant={selectedRuleIds.size > 0 ? "primary" : "secondary"}
+              onClick={() => setActionsMenuOpen((prev) => !prev)}
+              className="flex items-center gap-1.5 shadow-xs text-xs"
             >
-              Delete All Rules
+              Actions {selectedRuleIds.size > 0 ? `(${selectedRuleIds.size})` : ""}
+              <span className="text-xs">▾</span>
             </Button>
-          )}
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRestoreDefaults}
-            disabled={saving}
-            title="Restore the default Eklavya statutory leave rules"
-          >
-            Restore Default Rules
-          </Button>
+            {actionsMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-30"
+                  onClick={() => setActionsMenuOpen(false)}
+                />
+                <div className="absolute right-0 top-full mt-1.5 z-40 w-48 rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+                  <button
+                    type="button"
+                    disabled={selectedRuleIds.size === 0}
+                    onClick={() => {
+                      setActionsMenuOpen(false);
+                      setBulkDeleteConfirm(true);
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-between"
+                  >
+                    <span>Delete Selected</span>
+                    {selectedRuleIds.size > 0 && (
+                      <span className="font-semibold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded text-[10px]">
+                        {selectedRuleIds.size}
+                      </span>
+                    )}
+                  </button>
 
-          <Button variant="primary" onClick={openCreateRule} className="font-semibold shadow-sm">
+                  {selectedRuleIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRuleIds(new Set());
+                        setActionsMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3.5 py-1.5 text-[11px] text-slate-500 hover:bg-slate-50 border-t border-slate-100"
+                    >
+                      Clear Selection ({selectedRuleIds.size})
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          <Button variant="primary" onClick={openCreateRule} className="font-semibold shadow-sm text-xs">
             <span className="mr-1 font-bold text-base leading-none">+</span> Add New Leave Rule
           </Button>
         </div>
@@ -266,17 +339,12 @@ export default function LeaveRulesPage() {
             description={
               search
                 ? "Try adjusting your search criteria or clear the filter."
-                : "All leave rules have been removed. You can create your own custom leave rules from scratch or restore the default system rules anytime."
+                : "All leave rules have been removed. You can create your own custom leave rules from scratch anytime."
             }
             action={
-              <div className="flex flex-wrap items-center justify-center gap-3">
-                <Button variant="primary" onClick={openCreateRule}>
-                  + Add Your First Leave Rule
-                </Button>
-                <Button variant="outline" onClick={handleRestoreDefaults} disabled={saving}>
-                  Restore Default Rules
-                </Button>
-              </div>
+              <Button variant="primary" onClick={openCreateRule}>
+                + Add Your First Leave Rule
+              </Button>
             }
           />
         ) : (
@@ -290,6 +358,13 @@ export default function LeaveRulesPage() {
             >
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-3">
+                  {/* Rule Checkbox */}
+                  <Checkbox
+                    checked={selectedRuleIds.has(rule.id)}
+                    onChange={() => toggleSelectRule(rule.id)}
+                    aria-label={`Select rule ${rule.name}`}
+                  />
+
                   <div className="flex flex-col items-center justify-center">
                     <button
                       type="button"
@@ -336,15 +411,6 @@ export default function LeaveRulesPage() {
                   <Button size="sm" variant="outline" onClick={() => openEditRule(rule)}>
                     Edit
                   </Button>
-
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
-                    onClick={() => setDeleteTarget(rule)}
-                  >
-                    Delete
-                  </Button>
                 </div>
               </div>
 
@@ -382,19 +448,23 @@ export default function LeaveRulesPage() {
                   </h4>
                   <div className="space-y-1.5 text-slate-700">
                     <p>
-                      <span className="text-slate-500">Primary Approver: </span>
+                      <span className="text-slate-500">Approver(s): </span>
                       <span className="font-semibold text-indigo-700">
-                        {rule.actions?.approverTable && rule.actions?.approverColumn
-                          ? `Table: ${rule.actions.approverTable} → Column: ${rule.actions.approverColumn}`
-                          : rule.actions?.approverType === "user_relation"
-                            ? `Direct Supervisor (${rule.actions?.approverTarget || "reports_to"})`
-                            : rule.actions?.approverType === "entity_incharge"
-                              ? `In-Charge of Entity (${rule.actions?.inchargeField || "center_in_charge"})`
-                              : rule.actions?.approverType === "council_or_team"
-                                ? `Council / Committee (${rule.actions?.entityName || "Assigned"})`
-                                : rule.actions?.approverType === "direct_user"
-                                  ? "Specific User Account"
-                                  : "Supervisor / In-Charge"}
+                        {Array.isArray(rule.actions?.approvers) && rule.actions.approvers.length > 0
+                          ? rule.actions.approvers
+                              .map((a) => `${a.table} → ${a.column}`)
+                              .join(", ")
+                          : rule.actions?.approverTable && rule.actions?.approverColumn
+                            ? `${rule.actions.approverTable} → ${rule.actions.approverColumn}`
+                            : rule.actions?.approverType === "user_relation"
+                              ? `Direct Supervisor (${rule.actions?.approverTarget || "reports_to"})`
+                              : rule.actions?.approverType === "entity_incharge"
+                                ? `In-Charge of Entity (${rule.actions?.inchargeField || "center_in_charge"})`
+                                : rule.actions?.approverType === "council_or_team"
+                                  ? `Council / Committee (${rule.actions?.entityName || "Assigned"})`
+                                  : rule.actions?.approverType === "direct_user"
+                                    ? "Specific User Account"
+                                    : "Supervisor / In-Charge"}
                       </span>
                     </p>
                     <p>
@@ -452,18 +522,18 @@ export default function LeaveRulesPage() {
         />
       )}
 
-      {/* Clear All Rules Confirmation */}
-      {clearAllConfirm && (
+      {/* Bulk Delete Confirm Dialog */}
+      {bulkDeleteConfirm && (
         <ConfirmDialog
-          open={Boolean(clearAllConfirm)}
-          title="Delete All Leave Rules"
-          message={`Are you sure you want to delete all ${rules.length} configured leave rules?`}
-          detail="This will clear all rules from the system. Leave requests will fallback to standard direct supervisor approval unless you configure new rules."
-          confirmLabel="Delete All Rules"
+          open={bulkDeleteConfirm}
+          title={`Delete ${selectedRuleIds.size} Selected Rule(s)`}
+          message={`Are you sure you want to delete the ${selectedRuleIds.size} selected leave rule(s)?`}
+          detail="This will permanently remove the selected routing conditions and approver configurations."
+          confirmLabel={`Delete ${selectedRuleIds.size} Rules`}
           tone="danger"
           loading={saving}
-          onConfirm={handleClearAllRules}
-          onCancel={() => setClearAllConfirm(false)}
+          onConfirm={handleBulkDelete}
+          onCancel={() => setBulkDeleteConfirm(false)}
         />
       )}
     </div>

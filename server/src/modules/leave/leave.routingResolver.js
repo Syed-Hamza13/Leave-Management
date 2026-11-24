@@ -84,6 +84,97 @@ export async function loadActiveEntitiesWithProfiles() {
 }
 
 /**
+ * Resolves a single table + column approver reference.
+ */
+async function resolveSingleTableColumnApprover(tableKey, col, { applicant, entities }) {
+  let userIds = [];
+  let label = "";
+
+  if (tableKey === "users") {
+    const val = applicant.values?.[col] ?? applicant[col];
+    if (Array.isArray(val)) {
+      userIds = val.map(Number).filter((id) => !isNaN(id) && id > 0);
+    } else if (val) {
+      const id = Number(val);
+      if (!isNaN(id) && id > 0) userIds = [id];
+    }
+    label = `User (${col})`;
+  } else {
+    // Dynamic table lookup (e.g. center, project, councils, programmes, teams)
+    const refVal =
+      applicant.values?.[tableKey] ??
+      applicant.values?.[`${tableKey}_id`] ??
+      applicant.values?.[`allocated_${tableKey}`] ??
+      applicant[tableKey];
+
+    const matchingEntity = entities.find(
+      (e) =>
+        (refVal && (e.id === Number(refVal) || e.profileRecordId === Number(refVal))) ||
+        e.typeKey === tableKey ||
+        e.typeKey === tableKey.replace(/s$/, "")
+    );
+
+    if (matchingEntity && matchingEntity.values?.[col] !== undefined) {
+      const inchargeVal = matchingEntity.values[col];
+      if (Array.isArray(inchargeVal)) {
+        userIds = inchargeVal.map(Number).filter((id) => !isNaN(id) && id > 0);
+      } else if (inchargeVal) {
+        const id = Number(inchargeVal);
+        if (!isNaN(id) && id > 0) userIds = [id];
+      }
+      label = `${matchingEntity.name || tableKey} (${col})`;
+    } else {
+      // Fallback: query database table records for this table
+      try {
+        const [tRows] = await db.execute(
+          `SELECT tr.id, tr.data FROM table_records tr
+           JOIN table_definitions td ON td.id = tr.table_id
+           WHERE td.table_key = ? AND tr.status = 'active'`,
+          [tableKey]
+        );
+
+        let matchedRow = null;
+        if (refVal) {
+          matchedRow = tRows.find((r) => r.id === Number(refVal));
+        }
+        if (!matchedRow && tRows.length === 1) {
+          matchedRow = tRows[0];
+        }
+
+        if (matchedRow) {
+          const data = parseJsonColumn(matchedRow.data, {});
+          const targetVal = data[col];
+          if (Array.isArray(targetVal)) {
+            userIds = targetVal.map(Number).filter((id) => !isNaN(id) && id > 0);
+          } else if (targetVal) {
+            const id = Number(targetVal);
+            if (!isNaN(id) && id > 0) userIds = [id];
+          }
+          label = `${tableKey} #${matchedRow.id} (${col})`;
+        } else if (tRows.length > 0) {
+          // Aggregate user ids from all active records of this table (e.g. council members)
+          for (const tr of tRows) {
+            const data = parseJsonColumn(tr.data, {});
+            const targetVal = data[col];
+            if (Array.isArray(targetVal)) {
+              userIds.push(...targetVal.map(Number).filter((id) => !isNaN(id) && id > 0));
+            } else if (targetVal) {
+              const id = Number(targetVal);
+              if (!isNaN(id) && id > 0) userIds.push(id);
+            }
+          }
+          label = `${tableKey} (${col})`;
+        }
+      } catch (dbErr) {
+        console.warn("Could not query dynamic table records:", dbErr.message);
+      }
+    }
+  }
+
+  return { userIds, label };
+}
+
+/**
  * Resolves the primary approver(s) based on the matched rule action.
  */
 export async function resolveApprovers(action, { applicant = {}, entities = [] }) {
@@ -98,6 +189,7 @@ export async function resolveApprovers(action, { applicant = {}, entities = [] }
   const {
     approverTable,
     approverColumn,
+    approvers,
     approverType,
     approverTarget,
     inchargeField,
@@ -106,93 +198,33 @@ export async function resolveApprovers(action, { applicant = {}, entities = [] }
   let approverUserIds = [];
   let approverLabel = "";
 
-  // 1. Dynamic Table & User Reference Column Resolution
-  if (approverTable && approverColumn) {
-    if (approverTable === "users") {
-      const val = applicant.values?.[approverColumn] ?? applicant[approverColumn];
-      if (Array.isArray(val)) {
-        approverUserIds = val.map(Number).filter((id) => !isNaN(id) && id > 0);
-      } else if (val) {
-        const id = Number(val);
-        if (!isNaN(id) && id > 0) approverUserIds = [id];
+  // 1. Multiple Approvers or Dynamic Table & User Reference Column Resolution
+  const approverSpecs =
+    Array.isArray(approvers) && approvers.length > 0
+      ? approvers.filter((a) => a && a.table && a.column)
+      : approverTable && approverColumn
+        ? [{ table: approverTable, column: approverColumn }]
+        : [];
+
+  if (approverSpecs.length > 0) {
+    const collectedIds = [];
+    const collectedLabels = [];
+
+    for (const spec of approverSpecs) {
+      const res = await resolveSingleTableColumnApprover(spec.table, spec.column, {
+        applicant,
+        entities,
+      });
+      if (res.userIds.length > 0) {
+        collectedIds.push(...res.userIds);
       }
-      approverLabel = `User (${approverColumn})`;
-    } else {
-      // Dynamic table lookup (e.g. center, project, councils, programmes, teams)
-      const tableKey = approverTable;
-      const col = approverColumn;
-
-      // 1. Check if applicant has a direct entity/record pointer for this table
-      const refVal =
-        applicant.values?.[tableKey] ??
-        applicant.values?.[`${tableKey}_id`] ??
-        applicant.values?.[`allocated_${tableKey}`] ??
-        applicant[tableKey];
-
-      // 2. Look in loaded entities list
-      const matchingEntity = entities.find(
-        (e) =>
-          (refVal && (e.id === Number(refVal) || e.profileRecordId === Number(refVal))) ||
-          e.typeKey === tableKey ||
-          e.typeKey === tableKey.replace(/s$/, "")
-      );
-
-      if (matchingEntity && matchingEntity.values?.[col] !== undefined) {
-        const inchargeVal = matchingEntity.values[col];
-        if (Array.isArray(inchargeVal)) {
-          approverUserIds = inchargeVal.map(Number).filter((id) => !isNaN(id) && id > 0);
-        } else if (inchargeVal) {
-          const id = Number(inchargeVal);
-          if (!isNaN(id) && id > 0) approverUserIds = [id];
-        }
-        approverLabel = `${matchingEntity.name || tableKey} (${col})`;
-      } else {
-        // Fallback: query database table records for this table
-        try {
-          const [tRows] = await db.execute(
-            `SELECT tr.id, tr.data FROM table_records tr
-             JOIN table_definitions td ON td.id = tr.table_id
-             WHERE td.table_key = ? AND tr.status = 'active'`,
-            [tableKey]
-          );
-
-          let matchedRow = null;
-          if (refVal) {
-            matchedRow = tRows.find((r) => r.id === Number(refVal));
-          }
-          if (!matchedRow && tRows.length === 1) {
-            matchedRow = tRows[0];
-          }
-
-          if (matchedRow) {
-            const data = parseJsonColumn(matchedRow.data, {});
-            const targetVal = data[col];
-            if (Array.isArray(targetVal)) {
-              approverUserIds = targetVal.map(Number).filter((id) => !isNaN(id) && id > 0);
-            } else if (targetVal) {
-              const id = Number(targetVal);
-              if (!isNaN(id) && id > 0) approverUserIds = [id];
-            }
-            approverLabel = `${tableKey} #${matchedRow.id} (${col})`;
-          } else if (tRows.length > 0) {
-            // Aggregate user ids from all active records of this table (e.g. council members)
-            for (const tr of tRows) {
-              const data = parseJsonColumn(tr.data, {});
-              const targetVal = data[col];
-              if (Array.isArray(targetVal)) {
-                approverUserIds.push(...targetVal.map(Number).filter((id) => !isNaN(id) && id > 0));
-              } else if (targetVal) {
-                const id = Number(targetVal);
-                if (!isNaN(id) && id > 0) approverUserIds.push(id);
-              }
-            }
-            approverLabel = `${tableKey} (${col})`;
-          }
-        } catch (dbErr) {
-          console.warn("Could not query dynamic table records:", dbErr.message);
-        }
+      if (res.label) {
+        collectedLabels.push(res.label);
       }
     }
+
+    approverUserIds = Array.from(new Set(collectedIds));
+    approverLabel = collectedLabels.join(" + ");
   }
 
   // 2. Fallback to legacy approverType if approverTable wasn't matched

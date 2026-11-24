@@ -213,7 +213,6 @@ export const leave = {
 
   getRules: () => api("/leave/rules"),
   saveRules: (rules) => post("/leave/rules", { rules }),
-  restoreDefaultRules: () => post("/leave/rules/restore-defaults", {}),
 
   getHolidays: () => api("/leave/holidays"),
   saveHolidays: (holidays) => post("/leave/holidays", holidays),

@@ -12,7 +12,6 @@ import {
   listPendingApprovalsHandler,
   getLeaveRulesHandler,
   saveLeaveRulesHandler,
-  restoreDefaultRulesHandler,
   getHolidaysHandler,
   saveHolidaysHandler,
 } from "./leave.controller.js";
@@ -41,7 +40,6 @@ export function createLeaveRoutes() {
   // Dynamic Rule & Configuration Management
   router.get("/rules", getLeaveRulesHandler);
   router.post("/rules", requirePermission(MANAGE), saveLeaveRulesHandler);
-  router.post("/rules/restore-defaults", requirePermission(MANAGE), restoreDefaultRulesHandler);
 
   router.get("/holidays", getHolidaysHandler);
   router.post("/holidays", requirePermission(MANAGE), saveHolidaysHandler);

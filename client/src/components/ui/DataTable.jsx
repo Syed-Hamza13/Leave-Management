@@ -33,7 +33,9 @@ function SortIndicator({ direction }) {
 export default function DataTable({
   columns,
   rows = [],
+  data,
   rowKey = "id",
+  keyField,
   loading = false,
   error = null,
   onRetry,
@@ -46,13 +48,15 @@ export default function DataTable({
   onPageChange,
   className = "",
 }) {
+  const tableRows = rows && rows.length > 0 ? rows : (data ?? rows ?? []);
+  const effectiveRowKey = keyField ?? rowKey;
   const [draggedColKey, setDraggedColKey] = useState(null);
   const [dragOverColKey, setDragOverColKey] = useState(null);
 
   const visible = columns.filter((column) => column.hidden !== true);
   const span = visible.length + (actions ? 1 : 0);
   const keyOf =
-    typeof rowKey === "function" ? rowKey : (row) => row?.[rowKey];
+    typeof effectiveRowKey === "function" ? effectiveRowKey : (row) => row?.[effectiveRowKey];
 
   const emptyState =
     empty === undefined ? (
@@ -220,14 +224,14 @@ export default function DataTable({
                   ) : null}
                 </td>
               </tr>
-            ) : rows.length === 0 ? (
+            ) : tableRows.length === 0 ? (
               <tr>
                 <td colSpan={span} className="p-0">
                   {emptyState}
                 </td>
               </tr>
             ) : (
-              rows.map((row) => (
+              tableRows.map((row) => (
                 <tr
                   key={keyOf(row)}
                   className="border-b border-line transition-colors last:border-0 hover:bg-surface-sunken"

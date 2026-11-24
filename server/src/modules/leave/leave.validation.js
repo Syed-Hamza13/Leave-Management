@@ -46,6 +46,16 @@ export const leaveRulesSchema = z.object({
           requiresApproval: z.boolean().optional().default(true),
           approverTable: z.string().optional(),
           approverColumn: z.string().optional(),
+          approvers: z
+            .array(
+              z
+                .object({
+                  table: z.string(),
+                  column: z.string(),
+                })
+                .passthrough()
+            )
+            .optional(),
           approverType: z.string().optional(),
           approverTarget: z.string().optional(),
           inchargeField: z.string().optional(),
