@@ -203,9 +203,9 @@ export default function LeaveRulesPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="flex-1 min-h-0 w-full flex flex-col space-y-4">
       {/* Prominent Action Bar with Search, Filters and "+ Add Leave Rule" Button */}
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-4 bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs">
         <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
           <SearchInput
             placeholder="Search rules by name, condition, or approver..."
@@ -260,29 +260,30 @@ export default function LeaveRulesPage() {
         </div>
       </div>
 
-      {/* Rules List */}
-      {filteredRules.length === 0 ? (
-        <EmptyState
-          title={search ? "No matching rules found" : "No Leave Rules Configured"}
-          description={
-            search
-              ? "Try adjusting your search criteria or clear the filter."
-              : "All leave rules have been removed. You can create your own custom leave rules from scratch or restore the default system rules anytime."
-          }
-          action={
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <Button variant="primary" onClick={openCreateRule}>
-                + Add Your First Leave Rule
-              </Button>
-              <Button variant="outline" onClick={handleRestoreDefaults} disabled={saving}>
-                Restore Default Rules
-              </Button>
-            </div>
-          }
-        />
-      ) : (
-        <div className="space-y-4">
-          {filteredRules.map((rule, index) => (
+      {/* Scrollable Rules List Container */}
+      <div className="flex-1 min-h-0 w-full overflow-y-auto pr-1 pb-4">
+        {filteredRules.length === 0 ? (
+          <EmptyState
+            title={search ? "No matching rules found" : "No Leave Rules Configured"}
+            description={
+              search
+                ? "Try adjusting your search criteria or clear the filter."
+                : "All leave rules have been removed. You can create your own custom leave rules from scratch or restore the default system rules anytime."
+            }
+            action={
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <Button variant="primary" onClick={openCreateRule}>
+                  + Add Your First Leave Rule
+                </Button>
+                <Button variant="outline" onClick={handleRestoreDefaults} disabled={saving}>
+                  Restore Default Rules
+                </Button>
+              </div>
+            }
+          />
+        ) : (
+          <div className="space-y-4">
+            {filteredRules.map((rule, index) => (
             <div
               key={rule.id}
               className={`rounded-lg border p-5 transition-all bg-white shadow-sm hover:border-indigo-300 ${
@@ -427,7 +428,8 @@ export default function LeaveRulesPage() {
             </div>
           ))}
         </div>
-      )}
+        )}
+      </div>
 
       {/* Isolated Rule Dialog */}
       {ruleDialog && (
