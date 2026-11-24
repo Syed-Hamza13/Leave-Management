@@ -53,12 +53,13 @@ export const DEFAULT_LEAVE_RULES = [
     combinator: "AND",
     actions: {
       requiresApproval: true,
-      approverType: "user_relation",
+      approverType: "coordinator_or_incharge",
       approverTarget: "reports_to",
       inchargeField: "project_incharge",
       notifyTargets: [
-        { type: "entity_incharge", entityTypeKey: "center", columnKey: "center_in_charge" },
-        { type: "entity_incharge", entityTypeKey: "programme", columnKey: "programme_coordinator" },
+        { type: "entity_incharge", entityTypeKey: "center", columnKey: "center_in_charge", label: "Centre In-Charge" },
+        { type: "entity_incharge", entityTypeKey: "project", columnKey: "project_incharge", label: "Project In-Charge" },
+        { type: "entity_incharge", entityTypeKey: "programme", columnKey: "programme_coordinator", label: "Programme Coordinator" },
       ],
       noticeDays: 2,
       slaHours: 48,
@@ -180,7 +181,9 @@ export const DEFAULT_LEAVE_RULES = [
       requiresApproval: true,
       approverType: "entity_incharge",
       inchargeField: "center_in_charge",
-      notifyTargets: [],
+      notifyTargets: [
+        { type: "council", entityName: "Executive Council", label: "Executive Council / EO" },
+      ],
       noticeDays: 7,
       slaHours: 48,
     },
@@ -240,7 +243,7 @@ export async function findLeaveRules() {
     return DEFAULT_LEAVE_RULES;
   }
   const rules = parseJsonColumn(row.setting_value, null);
-  if (Array.isArray(rules)) {
+  if (Array.isArray(rules) && rules.length > 0) {
     return rules;
   }
   return DEFAULT_LEAVE_RULES;

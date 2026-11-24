@@ -24,10 +24,28 @@ const OPERATORS = [
 ];
 
 const APPROVER_TYPES = [
+  { value: "coordinator_or_incharge", label: "Local Coordinator OR Project In-Charge (Auto-Fallback)" },
   { value: "user_relation", label: "User Supervisor / Reference (e.g. reports_to / coordinator)" },
   { value: "entity_incharge", label: "Entity In-Charge (e.g. Project or Center In-Charge)" },
   { value: "council_or_team", label: "Council or Committee (e.g. Academic Council, Programme Committee)" },
   { value: "direct_user", label: "Specific User Account" },
+];
+
+const NOTIFY_TARGET_TYPES = [
+  { value: "council", label: "Council / Committee (e.g. EC, AC, Programme Committee)" },
+  { value: "entity_incharge", label: "Entity In-Charge (e.g. Center / Project / Programme Head)" },
+  { value: "user_relation", label: "User Supervisor / Reference (e.g. reports_to)" },
+  { value: "direct_user", label: "Specific User Account" },
+];
+
+const NOTIFY_PRESETS = [
+  { type: "entity_incharge", entityTypeKey: "center", columnKey: "center_in_charge", label: "Centre In-Charge" },
+  { type: "entity_incharge", entityTypeKey: "project", columnKey: "project_incharge", label: "Project In-Charge" },
+  { type: "entity_incharge", entityTypeKey: "programme", columnKey: "programme_coordinator", label: "Programme Coordinator" },
+  { type: "council", entityName: "Academic Council", label: "Academic Council (AC)" },
+  { type: "council", entityName: "Executive Council", label: "Executive Council (EC)" },
+  { type: "council", entityName: "Programme Committee", label: "Programme Committee" },
+  { type: "user_relation", field: "reports_to", label: "Local Coordinator (reports_to)" },
 ];
 
 const LEAVE_TYPES = [
@@ -650,6 +668,80 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving }) {
     updateCondition(idx, { operator: newOperator, value: newVal });
   }
 
+  function handleAddNotifyTarget() {
+    setDraft((prev) => ({
+      ...prev,
+      actions: {
+        ...prev.actions,
+        notifyTargets: [
+          ...(prev.actions?.notifyTargets || []),
+          {
+            type: "council",
+            entityName: "Academic Council",
+            label: "Academic Council",
+          },
+        ],
+      },
+    }));
+  }
+
+  function handleRemoveNotifyTarget(index) {
+    setDraft((prev) => {
+      const updated = [...(prev.actions?.notifyTargets || [])];
+      updated.splice(index, 1);
+      return {
+        ...prev,
+        actions: {
+          ...prev.actions,
+          notifyTargets: updated,
+        },
+      };
+    });
+  }
+
+  function handleUpdateNotifyTarget(index, patch) {
+    setDraft((prev) => {
+      const updated = [...(prev.actions?.notifyTargets || [])];
+      updated[index] = { ...updated[index], ...patch };
+      return {
+        ...prev,
+        actions: {
+          ...prev.actions,
+          notifyTargets: updated,
+        },
+      };
+    });
+  }
+
+  function handleTogglePreset(preset) {
+    const list = draft.actions?.notifyTargets || [];
+    const exists = list.some(
+      (t) =>
+        (preset.entityName && t.entityName === preset.entityName) ||
+        (preset.columnKey && t.columnKey === preset.columnKey) ||
+        (preset.field && t.field === preset.field)
+    );
+    if (exists) {
+      const filtered = list.filter(
+        (t) =>
+          !(
+            (preset.entityName && t.entityName === preset.entityName) ||
+            (preset.columnKey && t.columnKey === preset.columnKey) ||
+            (preset.field && t.field === preset.field)
+          )
+      );
+      setDraft((prev) => ({
+        ...prev,
+        actions: { ...prev.actions, notifyTargets: filtered },
+      }));
+    } else {
+      setDraft((prev) => ({
+        ...prev,
+        actions: { ...prev.actions, notifyTargets: [...list, { ...preset }] },
+      }));
+    }
+  }
+
   function handleSubmit(e) {
     e.preventDefault();
 
@@ -964,6 +1056,176 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving }) {
               </div>
             )}
           </div>
+        </div>
+
+        {/* Informed / CC List (Notification Targets) Section */}
+        <div className="border border-slate-200 rounded-lg p-4 bg-slate-50 space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+            <div>
+              <h4 className="text-sm font-semibold text-slate-800">Informed / CC List (Notification Targets)</h4>
+              <p className="text-xs text-slate-500">Who receives informational notification when this leave is applied or approved</p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              type="button"
+              onClick={handleAddNotifyTarget}
+            >
+              + Add CC Target
+            </Button>
+          </div>
+
+          {/* Quick Presets */}
+          <div className="flex flex-wrap items-center gap-1.5 py-1">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mr-1">Quick Add:</span>
+            {NOTIFY_PRESETS.map((preset) => {
+              const exists = (draft.actions?.notifyTargets || []).some(
+                (t) =>
+                  (preset.entityName && t.entityName === preset.entityName) ||
+                  (preset.columnKey && t.columnKey === preset.columnKey) ||
+                  (preset.field && t.field === preset.field)
+              );
+              return (
+                <button
+                  type="button"
+                  key={preset.label}
+                  onClick={() => handleTogglePreset(preset)}
+                  className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                    exists
+                      ? "bg-indigo-100 border-indigo-400 text-indigo-700 font-semibold"
+                      : "bg-white border-slate-300 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  {exists ? "✓ " : "+ "}
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* List of configured notify targets */}
+          {(draft.actions?.notifyTargets || []).length === 0 ? (
+            <p className="text-xs text-slate-400 italic py-1">No additional users/councils to inform for this rule.</p>
+          ) : (
+            <div className="space-y-2 pt-1">
+              {(draft.actions?.notifyTargets || []).map((target, tIdx) => (
+                <div
+                  key={tIdx}
+                  className="flex flex-wrap items-center gap-2 bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs"
+                >
+                  <div className="w-48">
+                    <Select
+                      id={`notify-type-${tIdx}`}
+                      className="text-xs"
+                      value={target.type || "council"}
+                      options={NOTIFY_TARGET_TYPES}
+                      onChange={(e) => handleUpdateNotifyTarget(tIdx, { type: e.target.value })}
+                    />
+                  </div>
+
+                  {target.type === "council" && (
+                    <div className="flex-1 min-w-[180px]">
+                      <TextInput
+                        id={`notify-council-${tIdx}`}
+                        placeholder="e.g. Academic Council, Executive Council"
+                        value={target.entityName || ""}
+                        onChange={(e) =>
+                          handleUpdateNotifyTarget(tIdx, {
+                            entityName: e.target.value,
+                            label: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                  )}
+
+                  {target.type === "entity_incharge" && (
+                    <div className="flex flex-1 items-center gap-2 min-w-[200px]">
+                      <div className="w-36">
+                        <Select
+                          id={`notify-entity-type-${tIdx}`}
+                          className="text-xs"
+                          value={target.entityTypeKey || "center"}
+                          options={[
+                            { value: "center", label: "Center" },
+                            { value: "project", label: "Project" },
+                            { value: "programme", label: "Programme" },
+                          ]}
+                          onChange={(e) =>
+                            handleUpdateNotifyTarget(tIdx, {
+                              entityTypeKey: e.target.value,
+                              columnKey: `${e.target.value}_incharge`,
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <TextInput
+                          id={`notify-incharge-${tIdx}`}
+                          placeholder="incharge column key (e.g. center_in_charge)"
+                          value={target.columnKey || ""}
+                          onChange={(e) =>
+                            handleUpdateNotifyTarget(tIdx, {
+                              columnKey: e.target.value,
+                              label: `${target.entityTypeKey} Incharge`,
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {target.type === "user_relation" && (
+                    <div className="flex-1 min-w-[180px]">
+                      <Select
+                        id={`notify-user-rel-${tIdx}`}
+                        className="text-xs"
+                        value={target.field || "reports_to"}
+                        options={
+                          userRefOptions.length > 0
+                            ? userRefOptions
+                            : [{ value: "reports_to", label: "Co-Ordinator / Supervisor (reports_to)" }]
+                        }
+                        onChange={(e) =>
+                          handleUpdateNotifyTarget(tIdx, {
+                            field: e.target.value,
+                            label: "Supervisor",
+                          })
+                        }
+                      />
+                    </div>
+                  )}
+
+                  {target.type === "direct_user" && (
+                    <div className="flex-1 min-w-[180px]">
+                      <TextInput
+                        id={`notify-user-id-${tIdx}`}
+                        placeholder="User ID (e.g. 1)"
+                        value={target.userId || ""}
+                        onChange={(e) =>
+                          handleUpdateNotifyTarget(tIdx, {
+                            userId: e.target.value,
+                            label: `User #${e.target.value}`,
+                          })
+                        }
+                      />
+                    </div>
+                  )}
+
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    type="button"
+                    className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-2 py-1"
+                    onClick={() => handleRemoveNotifyTarget(tIdx)}
+                    title="Remove CC Target"
+                  >
+                    ✕
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end gap-3 pt-2">
