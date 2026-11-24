@@ -31,7 +31,6 @@ import UsersPage from "../features/users/UsersPage.jsx";
 import LeaveSectionPage from "../features/leave/LeaveSectionPage.jsx";
 import LeaveRequestsPage from "../features/leave/LeaveRequestsPage.jsx";
 import LeaveRulesPage from "../features/leave/LeaveRulesPage.jsx";
-import LeaveWorkflowPage from "../features/leave/LeaveWorkflowPage.jsx";
 
 import { PERMISSIONS } from "../lib/permissions.js";
 
@@ -373,22 +372,6 @@ const router = createBrowserRouter([
                     description: "Configure dynamic condition-based routing rules, approval hierarchies, and notifications without hardcoding.",
                   },
                 }),
-              },
-              {
-                path: "leave/workflows",
-                ...screen({
-                  permission: PERMISSIONS.RECORDS_VIEW,
-                  label: "Viewing leave workflows",
-                  element: <LeaveWorkflowPage />,
-                  handle: {
-                    title: "Leave workflow & calendar settings",
-                    description: "Configure organization-wide calendar parameters, sandwich threshold rules, and statutory accumulation quotas.",
-                  },
-                }),
-              },
-              {
-                path: "leave/workflow",
-                element: <Navigate to="/leave/workflows" replace />,
               },
 
               {

@@ -240,7 +240,7 @@ export default function ApplyLeaveDialog({ open, onClose, onSaved }) {
                 <div>
                   <span className="text-slate-500">Routing Policy: </span>
                   <span className="font-medium text-slate-800">
-                    {preview.matchedRule?.name || "Standard Workflow"}
+                    {preview.matchedRule?.name || "Standard Rule"}
                   </span>
                 </div>
 

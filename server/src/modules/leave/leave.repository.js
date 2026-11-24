@@ -1,7 +1,6 @@
 import { db } from "../../config/database.js";
 import { parseJsonColumn, stringifyJsonColumn } from "../../lib/jsonColumn.js";
 import { findSettingRow, upsertSetting } from "../settings/settings.repository.js";
-import { DEFAULT_WORKFLOW_CONFIG } from "./leave.calculator.js";
 
 export const DEFAULT_LEAVE_RULES = [
   {
@@ -253,23 +252,6 @@ export async function saveLeaveRules(executor, rules, actorUserId) {
   await upsertSetting(executor, {
     settingKey: "leave_rules",
     value: rules,
-    isSecret: false,
-    updatedBy: actorUserId,
-  });
-}
-
-export async function findWorkflowConfig() {
-  const row = await findSettingRow("leave_workflow_config");
-  if (!row || !row.setting_value) {
-    return DEFAULT_WORKFLOW_CONFIG;
-  }
-  return { ...DEFAULT_WORKFLOW_CONFIG, ...parseJsonColumn(row.setting_value, {}) };
-}
-
-export async function saveWorkflowConfig(executor, config, actorUserId) {
-  await upsertSetting(executor, {
-    settingKey: "leave_workflow_config",
-    value: config,
     isSecret: false,
     updatedBy: actorUserId,
   });

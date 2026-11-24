@@ -59,16 +59,3 @@ export const leaveRulesSchema = z.object({
   ),
 });
 
-export const workflowConfigSchema = z.object({
-  workingDaysPerWeek: z.coerce.number().min(1).max(7).optional().default(6),
-  weeklyOffDays: z.array(z.coerce.number()).optional().default([0]),
-  sandwichThresholdDays: z.coerce.number().min(0).optional().default(7),
-  leastCountDays: z.coerce.number().optional().default(0.5),
-  shortLeaveHours: z.coerce.number().optional().default(2),
-  shortLeaveSlotsPerYear: z.coerce.number().optional().default(24),
-  maxAccumulationDays: z.coerce.number().optional().default(180),
-  defaultNoticeDaysNormal: z.coerce.number().optional().default(2),
-  defaultNoticeDaysLong: z.coerce.number().optional().default(7),
-  approverSlaHours: z.coerce.number().optional().default(48),
-});
-

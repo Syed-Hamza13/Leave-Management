@@ -13,8 +13,6 @@ import {
   getLeaveRulesHandler,
   saveLeaveRulesHandler,
   restoreDefaultRulesHandler,
-  getWorkflowConfigHandler,
-  saveWorkflowConfigHandler,
   getHolidaysHandler,
   saveHolidaysHandler,
 } from "./leave.controller.js";
@@ -44,9 +42,6 @@ export function createLeaveRoutes() {
   router.get("/rules", getLeaveRulesHandler);
   router.post("/rules", requirePermission(MANAGE), saveLeaveRulesHandler);
   router.post("/rules/restore-defaults", requirePermission(MANAGE), restoreDefaultRulesHandler);
-
-  router.get("/config", getWorkflowConfigHandler);
-  router.post("/config", requirePermission(MANAGE), saveWorkflowConfigHandler);
 
   router.get("/holidays", getHolidaysHandler);
   router.post("/holidays", requirePermission(MANAGE), saveHolidaysHandler);

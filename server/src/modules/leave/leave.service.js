@@ -15,7 +15,7 @@ import { findUserRowById, findProfileValuesByUserIds } from "../users/user.repos
 import {
   calculateLeaveDuration,
   checkNoticeRequirement,
-  DEFAULT_WORKFLOW_CONFIG,
+  DEFAULT_CALCULATION_CONFIG,
 } from "./leave.calculator.js";
 import { findMatchingRule } from "./leave.ruleEvaluator.js";
 import {
@@ -31,8 +31,6 @@ import {
 import {
   findLeaveRules,
   saveLeaveRules as repoSaveLeaveRules,
-  findWorkflowConfig as repoFindWorkflowConfig,
-  saveWorkflowConfig as repoSaveWorkflowConfig,
   findHolidays as repoFindHolidays,
   saveHolidays as repoSaveHolidays,
 } from "./leave.repository.js";
@@ -187,7 +185,6 @@ export async function previewLeaveRequest({
   isEmergency = false,
 }) {
   const applicant = await loadApplicantUser(applicantId);
-  const workflowConfig = await repoFindWorkflowConfig();
   const holidays = await repoFindHolidays();
 
   const isShortLeave = String(leaveType).toLowerCase().includes("short");
@@ -204,14 +201,12 @@ export async function previewLeaveRequest({
     session: effectiveSession,
     leaveType,
     holidays,
-    config: workflowConfig,
   });
 
   const noticeInfo = checkNoticeRequirement({
     startDate,
     calculatedDays: durationInfo.calculatedDays,
     isEmergency,
-    config: workflowConfig,
   });
 
   const balanceInfo = await checkLeaveBalance({
@@ -654,25 +649,6 @@ export async function saveLeaveRules(rules, actorUserId) {
     });
   });
   return rules;
-}
-
-export async function getWorkflowConfig() {
-  return repoFindWorkflowConfig();
-}
-
-export async function saveWorkflowConfig(config, actorUserId) {
-  await withTransaction(async (conn) => {
-    await repoSaveWorkflowConfig(conn, config, actorUserId);
-    await recordAudit({
-      connection: conn,
-      action: "leave.workflow.update",
-      entityType: "app_settings",
-      entityId: "leave_workflow_config",
-      summary: { config },
-      actorUserId,
-    });
-  });
-  return config;
 }
 
 export async function getHolidays() {

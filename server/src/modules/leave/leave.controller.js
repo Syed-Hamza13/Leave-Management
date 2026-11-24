@@ -4,7 +4,6 @@ import {
   leaveSubmitSchema,
   leaveActionSchema,
   leaveRulesSchema,
-  workflowConfigSchema,
 } from "./leave.validation.js";
 import {
   previewLeaveRequest,
@@ -16,8 +15,6 @@ import {
   listPendingApprovals,
   getLeaveRules,
   saveLeaveRules,
-  getWorkflowConfig,
-  saveWorkflowConfig,
   getHolidays,
   saveHolidays,
 } from "./leave.service.js";
@@ -165,27 +162,6 @@ export async function restoreDefaultRulesHandler(req, res, next) {
     const actorUserId = getActorUserId(req);
     const restored = await saveLeaveRules(DEFAULT_LEAVE_RULES, actorUserId);
     return ok(res, restored);
-  } catch (error) {
-    return next(error);
-  }
-}
-
-export async function getWorkflowConfigHandler(req, res, next) {
-  try {
-    const config = await getWorkflowConfig();
-    return ok(res, config);
-  } catch (error) {
-    return next(error);
-  }
-}
-
-export async function saveWorkflowConfigHandler(req, res, next) {
-  try {
-    const config = workflowConfigSchema.parse(req.body);
-    const actorUserId = getActorUserId(req);
-
-    const saved = await saveWorkflowConfig(config, actorUserId);
-    return ok(res, saved);
   } catch (error) {
     return next(error);
   }

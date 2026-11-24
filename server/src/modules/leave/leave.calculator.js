@@ -7,7 +7,7 @@ import { badRequest } from "../../lib/appError.js";
  * public holidays, half-day sessions, short-leave slots, and sandwich rules.
  */
 
-export const DEFAULT_WORKFLOW_CONFIG = {
+export const DEFAULT_CALCULATION_CONFIG = {
   workingDaysPerWeek: 6, // 6-day working week (Monday - Saturday)
   weeklyOffDays: [0], // 0 = Sunday
   sandwichThresholdDays: 7, // If duration <= 7, sandwiched weekly off/holidays are NOT counted. If >= 8, they ARE counted.
@@ -43,7 +43,7 @@ export function calculateLeaveDuration({
   holidays = [],
   config = {},
 }) {
-  const cfg = { ...DEFAULT_WORKFLOW_CONFIG, ...config };
+  const cfg = { ...DEFAULT_CALCULATION_CONFIG, ...config };
   const holidaySet = new Set((holidays || []).map((h) => (typeof h === "string" ? h : h.date)));
   const offDaySet = new Set(cfg.weeklyOffDays || [0]);
 
@@ -153,7 +153,7 @@ export function calculateLeaveDuration({
  * Validates notice period requirements
  */
 export function checkNoticeRequirement({ startDate, calculatedDays, isEmergency, config = {} }) {
-  const cfg = { ...DEFAULT_WORKFLOW_CONFIG, ...config };
+  const cfg = { ...DEFAULT_CALCULATION_CONFIG, ...config };
   if (isEmergency) {
     return {
       isValid: true,
