@@ -43,7 +43,9 @@ export const leaveRulesSchema = z.object({
       combinator: z.enum(["AND", "OR"]).default("AND"),
       actions: z
         .object({
-          requiresApproval: z.boolean().default(true),
+          requiresApproval: z.boolean().optional().default(true),
+          approverTable: z.string().optional(),
+          approverColumn: z.string().optional(),
           approverType: z.string().optional(),
           approverTarget: z.string().optional(),
           inchargeField: z.string().optional(),

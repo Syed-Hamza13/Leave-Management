@@ -23,14 +23,6 @@ const OPERATORS = [
   { value: "contains", label: "Contains text" },
 ];
 
-const APPROVER_TYPES = [
-  { value: "coordinator_or_incharge", label: "Local Coordinator OR Project In-Charge (Auto-Fallback)" },
-  { value: "user_relation", label: "User Supervisor / Reference (e.g. reports_to / coordinator)" },
-  { value: "entity_incharge", label: "Entity In-Charge (e.g. Project or Center In-Charge)" },
-  { value: "council_or_team", label: "Council or Committee (e.g. Academic Council, Programme Committee)" },
-  { value: "direct_user", label: "Specific User Account" },
-];
-
 const NOTIFY_TARGET_TYPES = [
   { value: "council", label: "Council / Committee (e.g. EC, AC, Programme Committee)" },
   { value: "entity_incharge", label: "Entity In-Charge (e.g. Center / Project / Programme Head)" },
@@ -369,6 +361,85 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
   const roles = useMemo(() => rolesData?.data ?? [], [rolesData]);
 
   const { optionsFor } = useEntryOptions(userColumns);
+
+  // Load all available tables for dynamic approver routing
+  const { data: allTablesData } = useAsyncData("tables-list-all", () =>
+    tablesApi.list()
+  );
+
+  const availableTables = useMemo(() => {
+    const rawList = allTablesData?.data?.tables ?? allTablesData?.tables ?? [];
+    return rawList
+      .filter((t) => t.status === "active")
+      .filter((t) => !["leave_requests", "leave_balances", "leave_policy"].includes(t.key))
+      .map((t) => ({
+        value: t.key,
+        label: `${t.label || t.key} (${t.key})`,
+      }));
+  }, [allTablesData]);
+
+  // Selected approver table and its user_reference columns
+  const selectedApproverTable =
+    draft.actions?.approverTable ||
+    (draft.actions?.approverType === "entity_incharge" &&
+    draft.actions?.inchargeField?.includes("center")
+      ? "center"
+      : draft.actions?.approverType === "entity_incharge" &&
+        draft.actions?.inchargeField?.includes("project")
+        ? "project"
+        : draft.actions?.approverType === "council_or_team"
+          ? "councils"
+          : "users");
+
+  const { data: selectedTableMeta, loading: loadingTableCols } = useAsyncData(
+    `approver-table-cols:${selectedApproverTable}`,
+    () => (selectedApproverTable ? tablesApi.get(selectedApproverTable) : Promise.resolve(null))
+  );
+
+  const approverColumns = useMemo(() => {
+    const cols = selectedTableMeta?.data?.columns ?? [];
+    return cols
+      .filter((c) => c.status === "active")
+      .filter(
+        (c) =>
+          c.dataType === "user_reference" ||
+          (c.dataType === "record_reference" &&
+            (c.config?.targetTable === "users" || c.config?.targetTableKey === "users"))
+      )
+      .map((c) => ({
+        value: c.key,
+        label: `${c.label || c.key} (${c.key})`,
+        allowMultiple: Boolean(c.config?.allowMultiple),
+      }));
+  }, [selectedTableMeta]);
+
+  const selectedColMeta = useMemo(() => {
+    const currentKey = draft.actions?.approverColumn;
+    return approverColumns.find((c) => c.value === currentKey);
+  }, [approverColumns, draft.actions?.approverColumn]);
+
+  function handleTableChange(tableKey) {
+    setDraft((prev) => ({
+      ...prev,
+      actions: {
+        ...prev.actions,
+        requiresApproval: true,
+        approverTable: tableKey,
+        approverColumn: "",
+      },
+    }));
+  }
+
+  function handleColumnChange(colKey) {
+    setDraft((prev) => ({
+      ...prev,
+      actions: {
+        ...prev.actions,
+        requiresApproval: true,
+        approverColumn: colKey,
+      },
+    }));
+  }
 
   // User supervisor references for Actions routing
   const userRefOptions = useMemo(() => {
@@ -950,111 +1021,90 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
           </div>
 
           <div className="space-y-4 pt-1">
-            <Toggle
-              label="Requires Manager / Council Approval"
-              hint="Disable for leaves that do not require prior approval (e.g. 2-Hour Short Leave)"
-              checked={draft.actions?.requiresApproval ?? true}
-              onChange={(val) =>
-                setDraft({
-                  ...draft,
-                  actions: { ...draft.actions, requiresApproval: val },
-                })
-              }
-            />
-
-            {draft.actions?.requiresApproval && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-200">
+            {/* Dynamic Approver Table & User Reference Column Picker */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
                 <Select
-                  id="approver-type"
-                  label="Approver Hierarchy Type"
-                  value={draft.actions?.approverType || "user_relation"}
-                  options={APPROVER_TYPES}
-                  onChange={(e) =>
-                    setDraft({
-                      ...draft,
-                      actions: { ...draft.actions, approverType: e.target.value },
-                    })
+                  id="approver-table"
+                  label="Approver Table"
+                  hint="Select table from Organization or Users"
+                  value={selectedApproverTable}
+                  options={
+                    availableTables.length > 0
+                      ? availableTables
+                      : [{ value: "users", label: "Users (users)" }]
                   }
-                />
-
-                {draft.actions?.approverType === "user_relation" && (
-                  <Select
-                    id="approver-target"
-                    label="User Supervisor Column"
-                    hint="Reference column on Users table (e.g. reports_to or coordinator)"
-                    value={draft.actions?.approverTarget || "reports_to"}
-                    options={
-                      userRefOptions.length > 0
-                        ? userRefOptions
-                        : [{ value: "reports_to", label: "Co-Ordinator / Supervisor (reports_to)" }]
-                    }
-                    onChange={(e) =>
-                      setDraft({
-                        ...draft,
-                        actions: { ...draft.actions, approverTarget: e.target.value },
-                      })
-                    }
-                  />
-                )}
-
-                {draft.actions?.approverType === "entity_incharge" && (
-                  <TextInput
-                    id="incharge-field"
-                    label="In-Charge Column Key"
-                    hint="Profile column on Center/Project (e.g. center_in_charge, project_incharge)"
-                    value={draft.actions?.inchargeField || "center_in_charge"}
-                    onChange={(e) =>
-                      setDraft({
-                        ...draft,
-                        actions: { ...draft.actions, inchargeField: e.target.value },
-                      })
-                    }
-                  />
-                )}
-
-                {draft.actions?.approverType === "council_or_team" && (
-                  <TextInput
-                    id="council-name"
-                    label="Council or Committee Entity Name"
-                    hint="e.g. Academic Council, Programme Committee, Executive Council"
-                    value={draft.actions?.entityName || ""}
-                    placeholder="Academic Council"
-                    onChange={(e) =>
-                      setDraft({
-                        ...draft,
-                        actions: { ...draft.actions, entityName: e.target.value },
-                      })
-                    }
-                  />
-                )}
-
-                <NumberInput
-                  id="notice-days"
-                  label="Required Advance Notice (Days)"
-                  hint="e.g. 2 days for normal leave, 7 days for long leave"
-                  value={draft.actions?.noticeDays ?? 2}
-                  onChange={(e) =>
-                    setDraft({
-                      ...draft,
-                      actions: { ...draft.actions, noticeDays: Number(e.target.value) },
-                    })
-                  }
-                />
-
-                <NumberInput
-                  id="sla-hours"
-                  label="Approver Decision SLA (Hours)"
-                  hint="e.g. 48 hours turnaround"
-                  value={draft.actions?.slaHours ?? 48}
-                  onChange={(e) =>
-                    setDraft({
-                      ...draft,
-                      actions: { ...draft.actions, slaHours: Number(e.target.value) },
-                    })
-                  }
+                  onChange={(e) => handleTableChange(e.target.value)}
                 />
               </div>
-            )}
+
+              <div>
+                <Select
+                  id="approver-column"
+                  label="Approver Column (User Reference)"
+                  hint={
+                    loadingTableCols
+                      ? "Loading user reference columns..."
+                      : approverColumns.length === 0
+                        ? "No user reference column on this table"
+                        : "User reference attribute that specifies approver"
+                  }
+                  value={draft.actions?.approverColumn || (approverColumns[0]?.value ?? "")}
+                  options={
+                    approverColumns.length > 0
+                      ? approverColumns.map((c) => ({
+                          value: c.value,
+                          label: `${c.label} ${c.allowMultiple ? "(Multiple Users)" : "(Single User)"}`,
+                        }))
+                      : [{ value: "", label: "No user reference column found" }]
+                  }
+                  onChange={(e) => handleColumnChange(e.target.value)}
+                  disabled={loadingTableCols || approverColumns.length === 0}
+                />
+                {selectedColMeta && (
+                  <p className="mt-1 text-[11px] font-medium text-slate-500 flex items-center gap-1.5">
+                    <span>Selection Mode:</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded font-semibold text-[10px] ${
+                        selectedColMeta.allowMultiple
+                          ? "bg-indigo-100 text-indigo-700"
+                          : "bg-emerald-100 text-emerald-800"
+                      }`}
+                    >
+                      {selectedColMeta.allowMultiple
+                        ? "Multiple Users (Council / Committee / Team)"
+                        : "Single User Reference"}
+                    </span>
+                  </p>
+                )}
+              </div>
+
+              <NumberInput
+                id="notice-days"
+                label="Required Advance Notice (Days)"
+                hint="e.g. 2 days for normal leave, 7 days for long leave"
+                value={draft.actions?.noticeDays ?? 2}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    actions: { ...draft.actions, noticeDays: Number(e.target.value) },
+                  })
+                }
+              />
+
+              <NumberInput
+                id="sla-hours"
+                label="Approver Decision SLA (Hours)"
+                hint="e.g. 48 hours turnaround"
+                value={draft.actions?.slaHours ?? 48}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    actions: { ...draft.actions, slaHours: Number(e.target.value) },
+                  })
+                }
+              />
+            </div>
           </div>
         </div>
 

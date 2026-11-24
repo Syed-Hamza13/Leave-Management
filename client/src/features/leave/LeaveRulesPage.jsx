@@ -74,10 +74,8 @@ export default function LeaveRulesPage() {
       ],
       actions: {
         requiresApproval: true,
-        approverType: "user_relation",
-        approverTarget: "reports_to",
-        inchargeField: "project_incharge",
-        entityName: "",
+        approverTable: "users",
+        approverColumn: "reports_to",
         notifyTargets: [],
         noticeDays: 2,
         slaHours: 48,
@@ -384,43 +382,37 @@ export default function LeaveRulesPage() {
                   </h4>
                   <div className="space-y-1.5 text-slate-700">
                     <p>
-                      <span className="text-slate-500">Requires Approval: </span>
-                      <span className="font-semibold text-slate-900">
-                        {rule.actions?.requiresApproval ? "Yes" : "No (Auto-approved / Inform only)"}
+                      <span className="text-slate-500">Primary Approver: </span>
+                      <span className="font-semibold text-indigo-700">
+                        {rule.actions?.approverTable && rule.actions?.approverColumn
+                          ? `Table: ${rule.actions.approverTable} → Column: ${rule.actions.approverColumn}`
+                          : rule.actions?.approverType === "user_relation"
+                            ? `Direct Supervisor (${rule.actions?.approverTarget || "reports_to"})`
+                            : rule.actions?.approverType === "entity_incharge"
+                              ? `In-Charge of Entity (${rule.actions?.inchargeField || "center_in_charge"})`
+                              : rule.actions?.approverType === "council_or_team"
+                                ? `Council / Committee (${rule.actions?.entityName || "Assigned"})`
+                                : rule.actions?.approverType === "direct_user"
+                                  ? "Specific User Account"
+                                  : "Supervisor / In-Charge"}
                       </span>
                     </p>
-                    {rule.actions?.requiresApproval && (
-                      <>
-                        <p>
-                          <span className="text-slate-500">Primary Approver: </span>
-                          <span className="font-semibold text-indigo-700">
-                            {rule.actions?.approverType === "user_relation" &&
-                              `Direct Supervisor (${rule.actions?.approverTarget || "reports_to"})`}
-                            {rule.actions?.approverType === "entity_incharge" &&
-                              `In-Charge of Entity (${rule.actions?.inchargeField || "center_in_charge"})`}
-                            {rule.actions?.approverType === "council_or_team" &&
-                              `Council / Committee (${rule.actions?.entityName || "Assigned"})`}
-                            {rule.actions?.approverType === "direct_user" && "Specific User Account"}
-                          </span>
-                        </p>
-                        <p>
-                          <span className="text-slate-500">Notice Required: </span>
-                          <span className="font-medium">{rule.actions?.noticeDays ?? 2} Days advance</span>
-                          <span className="text-slate-300 mx-2">|</span>
-                          <span className="text-slate-500">Decision SLA: </span>
-                          <span className="font-medium">{rule.actions?.slaHours ?? 48} Hours</span>
-                        </p>
-                        {rule.actions?.notifyTargets && rule.actions.notifyTargets.length > 0 && (
-                          <p>
-                            <span className="text-slate-500">Information To (CC): </span>
-                            <span className="font-medium text-slate-800">
-                              {rule.actions.notifyTargets
-                                .map((t) => t.entityName || t.columnKey || t.field || t.type)
-                                .join(", ")}
-                            </span>
-                          </p>
-                        )}
-                      </>
+                    <p>
+                      <span className="text-slate-500">Notice Required: </span>
+                      <span className="font-medium">{rule.actions?.noticeDays ?? 2} Days advance</span>
+                      <span className="text-slate-300 mx-2">|</span>
+                      <span className="text-slate-500">Decision SLA: </span>
+                      <span className="font-medium">{rule.actions?.slaHours ?? 48} Hours</span>
+                    </p>
+                    {rule.actions?.notifyTargets && rule.actions.notifyTargets.length > 0 && (
+                      <p>
+                        <span className="text-slate-500">Information To (CC): </span>
+                        <span className="font-medium text-slate-800">
+                          {rule.actions.notifyTargets
+                            .map((t) => t.entityName || t.columnKey || t.field || t.type)
+                            .join(", ")}
+                        </span>
+                      </p>
                     )}
                   </div>
                 </div>
