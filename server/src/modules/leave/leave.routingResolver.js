@@ -334,6 +334,7 @@ export async function resolveApprovers(action, { applicant = {}, entities = [] }
 
     default:
       break;
+    }
   }
 
   // Use fallback if primary couldn't be resolved
