@@ -9,6 +9,7 @@ import Toggle from "../../components/ui/Toggle.jsx";
 import { useToast } from "../../components/ui/ToastContext.js";
 import useAsyncData from "../../hooks/useAsyncData.js";
 import { tables as tablesApi, authorization as authorizationApi } from "../../services/resources.js";
+import { useMetadata } from "../metadata/MetadataContext.js";
 import useEntryOptions from "../records/useEntryOptions.js";
 
 const OPERATORS = [
@@ -361,22 +362,34 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
   const roles = useMemo(() => rolesData?.data ?? [], [rolesData]);
 
   const { optionsFor } = useEntryOptions(userColumns);
+  const { lookups } = useMetadata();
 
   // Load all available tables for dynamic approver routing
   const { data: allTablesData } = useAsyncData("tables-list-all", () =>
-    tablesApi.list()
+    tablesApi.list({ pageSize: 100 })
   );
 
   const availableTables = useMemo(() => {
-    const rawList = allTablesData?.data?.tables ?? allTablesData?.tables ?? [];
-    return rawList
-      .filter((t) => t.status === "active")
+    const apiList = Array.isArray(allTablesData?.data)
+      ? allTablesData.data
+      : Array.isArray(allTablesData?.data?.tables)
+        ? allTablesData.data.tables
+        : Array.isArray(allTablesData?.tables)
+          ? allTablesData.tables
+          : Array.isArray(allTablesData)
+            ? allTablesData
+            : [];
+
+    const sourceList = apiList.length > 0 ? apiList : (lookups?.tables ?? []);
+
+    return sourceList
+      .filter((t) => t.status === "active" || t.status === undefined)
       .filter((t) => !["leave_requests", "leave_balances", "leave_policy"].includes(t.key))
       .map((t) => ({
         value: t.key,
         label: `${t.label || t.key} (${t.key})`,
       }));
-  }, [allTablesData]);
+  }, [allTablesData, lookups?.tables]);
 
   // Selected approver table and its user_reference columns
   const selectedApproverTable =
@@ -412,6 +425,19 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
         allowMultiple: Boolean(c.config?.allowMultiple),
       }));
   }, [selectedTableMeta]);
+
+  // Auto-select first column when columns change and no column is set
+  useEffect(() => {
+    if (approverColumns.length > 0 && !draft.actions?.approverColumn) {
+      setDraft((prev) => ({
+        ...prev,
+        actions: {
+          ...prev.actions,
+          approverColumn: approverColumns[0].value,
+        },
+      }));
+    }
+  }, [approverColumns, draft.actions?.approverColumn]);
 
   const selectedColMeta = useMemo(() => {
     const currentKey = draft.actions?.approverColumn;
