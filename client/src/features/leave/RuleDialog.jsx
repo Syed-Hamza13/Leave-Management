@@ -405,9 +405,15 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
 
     // 1. Populate from fallback defaults
     Object.entries(FALLBACK_TABLE_COLS).forEach(([tKey, cols]) => {
+      const displayLabel =
+        tKey === "center"
+          ? "Centers"
+          : tKey === "project"
+            ? "Projects"
+            : tKey.charAt(0).toUpperCase() + tKey.slice(1);
       map[tKey] = {
         key: tKey,
-        label: tKey.charAt(0).toUpperCase() + tKey.slice(1),
+        label: displayLabel,
         columns: cols,
       };
     });
@@ -496,27 +502,26 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
   function getAvailableColumnsForTable(tableKey, rowIndex) {
     const tableDef = tablesWithUserRefCols[tableKey];
     if (!tableDef) return [];
+
+    const currentSelectedCol =
+      approversList[rowIndex]?.table === tableKey ? approversList[rowIndex]?.column : null;
+
     const usedColsInOtherRows = approversList
       .filter((_, idx) => idx !== rowIndex && _.table === tableKey)
       .map((a) => a.column);
 
-    return tableDef.columns.filter((c) => !usedColsInOtherRows.includes(c.value));
+    return tableDef.columns.filter(
+      (c) => c.value === currentSelectedCol || !usedColsInOtherRows.includes(c.value)
+    );
   }
 
-  // Returns tables that have at least one available column (or is currently selected on this row)
-  function getAvailableTableOptions(rowIndex) {
-    const currentTable = approversList[rowIndex]?.table;
-    return Object.values(tablesWithUserRefCols)
-      .filter((t) => {
-        if (t.key === currentTable) return true;
-        const availableCols = getAvailableColumnsForTable(t.key, rowIndex);
-        return availableCols.length > 0;
-      })
-      .map((t) => ({
-        value: t.key,
-        label: `${t.label} (${t.key})`,
-      }));
-  }
+  // All available tables for Table dropdown (consistent across all approver rows)
+  const allTableOptions = useMemo(() => {
+    return Object.values(tablesWithUserRefCols).map((t) => ({
+      value: t.key,
+      label: `${t.label} (${t.key})`,
+    }));
+  }, [tablesWithUserRefCols]);
 
   // Find next unused approver across all tables for "+ Add Approver"
   const nextAvailableApprover = useMemo(() => {
@@ -533,7 +538,7 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
 
   function handleAddApprover() {
     if (!nextAvailableApprover) return;
-    const updated = [...approversList, { ...nextAvailableApprover }];
+    const updated = [...approversList, { ...nextAvailableApprover, multiUserPolicy: "any" }];
     setDraft((prev) => ({
       ...prev,
       actions: {
@@ -547,10 +552,36 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
   }
 
   function handleApproverTableChange(rowIndex, newTableKey) {
+    const prevTable = approversList[rowIndex]?.table;
+    const prevCol = approversList[rowIndex]?.column;
+
     const availableCols = getAvailableColumnsForTable(newTableKey, rowIndex);
-    const newCol = availableCols[0]?.value || "";
     const updated = [...approversList];
-    updated[rowIndex] = { table: newTableKey, column: newCol };
+
+    if (availableCols.length > 0) {
+      updated[rowIndex] = { table: newTableKey, column: availableCols[0].value };
+    } else {
+      // All columns of newTableKey are in use by another row; swap tables with that row!
+      const conflictingIdx = approversList.findIndex(
+        (a, idx) => idx !== rowIndex && a.table === newTableKey
+      );
+
+      if (conflictingIdx !== -1 && prevTable) {
+        const conflictingCol = approversList[conflictingIdx].column;
+        const prevTableDef = tablesWithUserRefCols[prevTable];
+        const swapCol =
+          prevTableDef?.columns?.find((c) => c.value === prevCol)?.value ||
+          prevTableDef?.columns?.[0]?.value ||
+          prevCol;
+
+        updated[rowIndex] = { table: newTableKey, column: conflictingCol };
+        updated[conflictingIdx] = { table: prevTable, column: swapCol };
+      } else {
+        const tableDef = tablesWithUserRefCols[newTableKey];
+        updated[rowIndex] = { table: newTableKey, column: tableDef?.columns?.[0]?.value || "" };
+      }
+    }
+
     setDraft((prev) => ({
       ...prev,
       actions: {
@@ -574,6 +605,51 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
         approvers: updated,
         approverTable: updated[0]?.table || "",
         approverColumn: updated[0]?.column || "",
+      },
+    }));
+  }
+
+  function handleApproverPolicyChange(rowIndex, policy) {
+    const updated = [...approversList];
+    updated[rowIndex] = { ...updated[rowIndex], multiUserPolicy: policy };
+    setDraft((prev) => ({
+      ...prev,
+      actions: {
+        ...prev.actions,
+        requiresApproval: true,
+        approvers: updated,
+        approverTable: updated[0]?.table || "",
+        approverColumn: updated[0]?.column || "",
+      },
+    }));
+  }
+
+  function handleMoveApprover(index, direction) {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= approversList.length) return;
+    const updated = [...approversList];
+    const [moved] = updated.splice(index, 1);
+    updated.splice(targetIndex, 0, moved);
+
+    setDraft((prev) => ({
+      ...prev,
+      actions: {
+        ...prev.actions,
+        requiresApproval: true,
+        approvers: updated,
+        approverTable: updated[0]?.table || "",
+        approverColumn: updated[0]?.column || "",
+      },
+    }));
+  }
+
+  function handleApprovalModeChange(mode) {
+    setDraft((prev) => ({
+      ...prev,
+      actions: {
+        ...prev.actions,
+        requiresApproval: true,
+        approvalMode: mode,
       },
     }));
   }
@@ -992,9 +1068,13 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
       };
     });
 
-    const approversToSave = (draft.actions?.approvers || approversList).filter(
-      (a) => a && a.table && a.column
-    );
+    const approversToSave = (draft.actions?.approvers || approversList)
+      .filter((a) => a && a.table && a.column)
+      .map((a) => ({
+        table: a.table,
+        column: a.column,
+        multiUserPolicy: a.multiUserPolicy || "any",
+      }));
 
     const ruleToSave = {
       ...draft,
@@ -1003,6 +1083,7 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
       actions: {
         ...draft.actions,
         requiresApproval: true,
+        approvalMode: draft.actions?.approvalMode || "sequential",
         approvers: approversToSave,
         approverTable: approversToSave[0]?.table || "",
         approverColumn: approversToSave[0]?.column || "",
@@ -1192,7 +1273,7 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
                     Assigned Approvers ({approversList.length})
                   </h5>
                   <p className="text-[11px] text-slate-500">
-                    Requests matching this rule will route to each selected approver.
+                    Define the chain of approvers and execution order for this rule.
                   </p>
                 </div>
                 <Button
@@ -1211,84 +1292,201 @@ export default function RuleDialog({ open, rule, onClose, onSave, saving, onDele
                 </Button>
               </div>
 
+              {/* Approval Sequence / Chain Mode Selector */}
+              <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <span className="text-xs font-bold text-indigo-950 block">Approval Sequence & Order</span>
+                  <span className="text-[11px] text-indigo-700">
+                    Define whether requests route sequentially step-by-step or in parallel.
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-white p-1 rounded-md border border-indigo-200 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => handleApprovalModeChange("sequential")}
+                    className={`text-xs px-3 py-1 rounded font-medium transition-all ${
+                      (draft.actions?.approvalMode || "sequential") === "sequential"
+                        ? "bg-indigo-600 text-white shadow-2xs font-semibold"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Sequential Chain (Step 1 ➔ Step 2)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApprovalModeChange("parallel")}
+                    className={`text-xs px-3 py-1 rounded font-medium transition-all ${
+                      draft.actions?.approvalMode === "parallel"
+                        ? "bg-indigo-600 text-white shadow-2xs font-semibold"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Parallel (All Simultaneous)
+                  </button>
+                </div>
+              </div>
+
               <div className="space-y-2.5">
                 {approversList.map((app, idx) => {
-                  const tableOpts = getAvailableTableOptions(idx);
                   const colOpts = getAvailableColumnsForTable(app.table, idx);
                   const selectedCol = tablesWithUserRefCols[app.table]?.columns?.find(
                     (c) => c.value === app.column
                   );
+                  const isSequential = (draft.actions?.approvalMode || "sequential") === "sequential";
 
                   return (
-                    <div
-                      key={idx}
-                      className="flex flex-wrap items-center gap-2.5 bg-white p-3 rounded-lg border border-slate-200 shadow-2xs"
-                    >
-                      {/* Step Tag */}
-                      <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2.5 py-1 min-w-[90px] text-center">
-                        Approver #{idx + 1}
-                      </span>
+                    <div key={idx} className="space-y-2">
+                      <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs space-y-2.5">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          {/* Reorder Buttons */}
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => handleMoveApprover(idx, -1)}
+                              disabled={idx === 0}
+                              className="px-1 py-0.5 text-xs text-slate-500 hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-slate-100"
+                              title="Move step up"
+                            >
+                              ▲
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveApprover(idx, 1)}
+                              disabled={idx === approversList.length - 1}
+                              className="px-1 py-0.5 text-xs text-slate-500 hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-slate-100"
+                              title="Move step down"
+                            >
+                              ▼
+                            </button>
+                          </div>
 
-                      {/* Approver Table */}
-                      <div className="w-52">
-                        <Select
-                          id={`approver-table-${idx}`}
-                          className="text-xs"
-                          value={app.table}
-                          options={tableOpts}
-                          onChange={(e) => handleApproverTableChange(idx, e.target.value)}
-                        />
+                          {/* Step Tag */}
+                          <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2.5 py-1 min-w-[80px] text-center">
+                            {isSequential ? `Step ${idx + 1}` : `Approver #${idx + 1}`}
+                          </span>
+
+                          {/* Approver Table */}
+                          <div className="w-52">
+                            <Select
+                              id={`approver-table-${idx}`}
+                              className="text-xs"
+                              value={app.table}
+                              options={allTableOptions}
+                              onChange={(e) => handleApproverTableChange(idx, e.target.value)}
+                            />
+                          </div>
+
+                          {/* Approver Column (User Reference) */}
+                          <div className="flex-1 min-w-[200px]">
+                            <Select
+                              id={`approver-column-${idx}`}
+                              className="text-xs"
+                              value={app.column}
+                              options={
+                                colOpts.length > 0
+                                  ? colOpts.map((c) => ({
+                                      value: c.value,
+                                      label: `${c.label} ${c.allowMultiple ? "(Multiple Users)" : "(Single User)"}`,
+                                    }))
+                                  : [{ value: "", label: "No available columns" }]
+                              }
+                              onChange={(e) => handleApproverColumnChange(idx, e.target.value)}
+                              disabled={colOpts.length === 0}
+                            />
+                          </div>
+
+                          {/* Mode Badge */}
+                          {selectedCol && (
+                            <span
+                              className={`text-[10px] font-semibold px-2 py-1 rounded border whitespace-nowrap ${
+                                selectedCol.allowMultiple
+                                  ? "bg-purple-50 text-purple-700 border-purple-200"
+                                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              }`}
+                            >
+                              {selectedCol.allowMultiple ? "Multiple Users" : "Single User"}
+                            </span>
+                          )}
+
+                          {/* Remove Button */}
+                          {approversList.length > 1 && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1"
+                              onClick={() => handleRemoveApprover(idx)}
+                              title="Remove Approver"
+                            >
+                              ✕
+                            </Button>
+                          )}
+                        </div>
+
+                        {/* Multi-User Approval Policy Selector */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+                          <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
+                            <span>Step completion rule (when multiple users match):</span>
+                            {selectedCol?.allowMultiple && (
+                              <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-semibold">
+                                Multi-user attribute
+                              </span>
+                            )}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <Select
+                              id={`step-policy-${idx}`}
+                              className="text-xs w-64"
+                              value={app.multiUserPolicy || "any"}
+                              options={[
+                                { value: "any", label: "Any 1 user can approve (First response)" },
+                                { value: "all", label: "All users must approve (Unanimous)" },
+                              ]}
+                              onChange={(e) => handleApproverPolicyChange(idx, e.target.value)}
+                            />
+                          </div>
+                        </div>
                       </div>
 
-                      {/* Approver Column (User Reference) */}
-                      <div className="flex-1 min-w-[220px]">
-                        <Select
-                          id={`approver-column-${idx}`}
-                          className="text-xs"
-                          value={app.column}
-                          options={
-                            colOpts.length > 0
-                              ? colOpts.map((c) => ({
-                                  value: c.value,
-                                  label: `${c.label} ${c.allowMultiple ? "(Multiple Users)" : "(Single User)"}`,
-                                }))
-                              : [{ value: "", label: "No available columns" }]
-                          }
-                          onChange={(e) => handleApproverColumnChange(idx, e.target.value)}
-                          disabled={colOpts.length === 0}
-                        />
-                      </div>
-
-                      {/* Allow Multiple Users Badge */}
-                      {selectedCol && (
-                        <span
-                          className={`text-[10px] font-semibold px-2 py-1 rounded border whitespace-nowrap ${
-                            selectedCol.allowMultiple
-                              ? "bg-purple-50 text-purple-700 border-purple-200"
-                              : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          }`}
-                        >
-                          {selectedCol.allowMultiple ? "Multiple Users" : "Single User"}
-                        </span>
-                      )}
-
-                      {/* Remove Button */}
-                      {approversList.length > 1 && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1"
-                          onClick={() => handleRemoveApprover(idx)}
-                          title="Remove Approver"
-                        >
-                          ✕
-                        </Button>
+                      {/* Visual Flow Arrow between sequential steps */}
+                      {idx < approversList.length - 1 && isSequential && (
+                        <div className="flex justify-center my-0.5">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
+                            ↓ Then routes to next step
+                          </span>
+                        </div>
                       )}
                     </div>
                   );
                 })}
               </div>
+
+              {/* Visual Approval Chain Breadcrumb Summary */}
+              {approversList.length > 1 && (
+                <div className="bg-slate-100/80 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-slate-800 uppercase tracking-wide text-[10px]">
+                    Workflow Chain:
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {approversList.map((a, i) => (
+                      <span key={i} className="inline-flex items-center gap-1">
+                        <span className="font-medium bg-white px-2 py-0.5 rounded border border-slate-200 text-indigo-900">
+                          {(draft.actions?.approvalMode || "sequential") === "sequential" ? `Step ${i + 1}: ` : ""}
+                          {a.table} → {a.column}
+                          <span className="text-[10px] text-slate-500 ml-1">
+                            ({a.multiUserPolicy === "all" ? "All must approve" : "Any 1 can approve"})
+                          </span>
+                        </span>
+                        {i < approversList.length - 1 && (
+                          <span className="text-slate-400 font-bold">
+                            {(draft.actions?.approvalMode || "sequential") === "sequential" ? "➔" : "+"}
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                 <NumberInput

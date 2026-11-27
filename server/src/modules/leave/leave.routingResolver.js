@@ -181,7 +181,10 @@ export async function resolveApprovers(action, { applicant = {}, entities = [] }
   if (!action) {
     return {
       requiresApproval: true,
+      approvalMode: "sequential",
+      steps: [],
       approverUserIds: [],
+      activeApproverUserIds: [],
       approverLabel: "Pending Approver Assignment",
     };
   }
@@ -190,41 +193,69 @@ export async function resolveApprovers(action, { applicant = {}, entities = [] }
     approverTable,
     approverColumn,
     approvers,
+    approvalMode = "sequential",
     approverType,
     approverTarget,
     inchargeField,
     fallbackUserId,
   } = action;
   let approverUserIds = [];
+  let activeApproverUserIds = [];
   let approverLabel = "";
+  const steps = [];
 
   // 1. Multiple Approvers or Dynamic Table & User Reference Column Resolution
   const approverSpecs =
     Array.isArray(approvers) && approvers.length > 0
       ? approvers.filter((a) => a && a.table && a.column)
       : approverTable && approverColumn
-        ? [{ table: approverTable, column: approverColumn }]
+        ? [{ table: approverTable, column: approverColumn, multiUserPolicy: "any" }]
         : [];
 
   if (approverSpecs.length > 0) {
     const collectedIds = [];
     const collectedLabels = [];
 
-    for (const spec of approverSpecs) {
+    for (let i = 0; i < approverSpecs.length; i++) {
+      const spec = approverSpecs[i];
       const res = await resolveSingleTableColumnApprover(spec.table, spec.column, {
         applicant,
         entities,
       });
-      if (res.userIds.length > 0) {
-        collectedIds.push(...res.userIds);
+
+      const stepUserIds = res.userIds || [];
+      const stepPolicy = spec.multiUserPolicy || "any";
+      const stepLabel = res.label || `${spec.table} (${spec.column})`;
+
+      if (stepUserIds.length > 0) {
+        collectedIds.push(...stepUserIds);
       }
-      if (res.label) {
-        collectedLabels.push(res.label);
+      if (stepLabel) {
+        collectedLabels.push(stepLabel);
       }
+
+      steps.push({
+        stepOrder: i + 1,
+        table: spec.table,
+        column: spec.column,
+        label: stepLabel,
+        userIds: stepUserIds,
+        multiUserPolicy: stepPolicy,
+        status: i === 0 || approvalMode === "parallel" ? "pending" : "waiting",
+        approvedBy: [],
+      });
     }
 
     approverUserIds = Array.from(new Set(collectedIds));
-    approverLabel = collectedLabels.join(" + ");
+
+    if (approvalMode === "parallel") {
+      activeApproverUserIds = [...approverUserIds];
+      approverLabel = collectedLabels.join(" + ");
+    } else {
+      // Sequential: active approver userIds are Step 1's userIds!
+      activeApproverUserIds = steps[0]?.userIds || [];
+      approverLabel = steps.map((s) => `Step ${s.stepOrder}: ${s.label}`).join(" ➔ ");
+    }
   }
 
   // 2. Fallback to legacy approverType if approverTable wasn't matched
@@ -378,9 +409,48 @@ export async function resolveApprovers(action, { applicant = {}, entities = [] }
     }
   }
 
+  // If legacy approver was resolved, wrap into steps
+  if (steps.length === 0 && approverUserIds.length > 0) {
+    steps.push({
+      stepOrder: 1,
+      table: approverTable || "users",
+      column: approverColumn || "reports_to",
+      label: approverLabel || "Assigned Approver",
+      userIds: approverUserIds,
+      multiUserPolicy: "any",
+      status: "pending",
+      approvedBy: [],
+    });
+    activeApproverUserIds = [...approverUserIds];
+  }
+
+  // Enrich steps with approver user names for clearer UI display and audit
+  if (approverUserIds.length > 0) {
+    try {
+      const [uRows] = await db.execute(
+        `SELECT id, first_name, last_name, email FROM users WHERE id IN (${approverUserIds.map(() => "?").join(",")})`,
+        approverUserIds
+      );
+      const userMap = new Map();
+      for (const u of uRows) {
+        const name = `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.email || `User #${u.id}`;
+        userMap.set(Number(u.id), name);
+      }
+      for (const step of steps) {
+        step.approverNames = (step.userIds || []).map((id) => userMap.get(Number(id))).filter(Boolean);
+        step.approverNamesText = step.approverNames.join(", ") || step.label;
+      }
+    } catch (err) {
+      console.warn("Could not load approver user names:", err.message);
+    }
+  }
+
   return {
     requiresApproval: true,
+    approvalMode,
+    steps,
     approverUserIds,
+    activeApproverUserIds: activeApproverUserIds.length > 0 ? activeApproverUserIds : approverUserIds,
     approverLabel: approverLabel || "Pending Approver Assignment",
   };
 }

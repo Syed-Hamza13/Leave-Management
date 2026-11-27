@@ -14,6 +14,8 @@ import {
   saveLeaveRulesHandler,
   getHolidaysHandler,
   saveHolidaysHandler,
+  getLeaveSettingsHandler,
+  saveLeaveSettingsHandler,
 } from "./leave.controller.js";
 
 const MANAGE = [
@@ -43,6 +45,11 @@ export function createLeaveRoutes() {
 
   router.get("/holidays", getHolidaysHandler);
   router.post("/holidays", requirePermission(MANAGE), saveHolidaysHandler);
+
+  // Workflow & Leave Settings
+  router.get("/settings", getLeaveSettingsHandler);
+  router.post("/settings", requirePermission(MANAGE), saveLeaveSettingsHandler);
+  router.put("/settings", requirePermission(MANAGE), saveLeaveSettingsHandler);
 
   return router;
 }

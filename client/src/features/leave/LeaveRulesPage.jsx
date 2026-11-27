@@ -5,14 +5,19 @@ import Checkbox from "../../components/ui/Checkbox.jsx";
 import ConfirmDialog from "../../components/ui/ConfirmDialog.jsx";
 import EmptyState from "../../components/ui/EmptyState.jsx";
 import { LoadingState } from "../../components/ui/LoadingState.jsx";
+import Modal from "../../components/ui/Modal.jsx";
 import SearchInput from "../../components/ui/SearchInput.jsx";
 import Select from "../../components/ui/Select.jsx";
+import Textarea from "../../components/ui/Textarea.jsx";
 import { useToast } from "../../components/ui/ToastContext.js";
 import useAsyncData from "../../hooks/useAsyncData.js";
 import useMutation from "../../hooks/useMutation.js";
 import { errorMessage } from "../../services/errors.js";
 import { leave as leaveApi } from "../../services/resources.js";
 import RuleDialog from "./RuleDialog.jsx";
+
+const DEFAULT_WAITING_TEMPLATE =
+  "Waiting for {approver} ({step}) to approve first.\nYou cannot approve or reject until previous steps are completed.";
 
 export default function LeaveRulesPage() {
   const toast = useToast();
@@ -23,6 +28,9 @@ export default function LeaveRulesPage() {
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [selectedRuleIds, setSelectedRuleIds] = useState(new Set());
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+  const [workflowSettingsOpen, setWorkflowSettingsOpen] = useState(false);
+  const [waitingMessageTemplate, setWaitingMessageTemplate] = useState(DEFAULT_WAITING_TEMPLATE);
+  const [settingsLoading, setSettingsLoading] = useState(false);
 
   const {
     data: rulesData,
@@ -31,6 +39,38 @@ export default function LeaveRulesPage() {
   } = useAsyncData("leave-rules-list", () => leaveApi.getRules());
 
   const { run: saveRuleMutation, pending: saving } = useMutation();
+
+  async function handleOpenSettings() {
+    setWorkflowSettingsOpen(true);
+    setSettingsLoading(true);
+    try {
+      const res = await leaveApi.getSettings();
+      if (res?.data?.waitingMessageTemplate) {
+        setWaitingMessageTemplate(res.data.waitingMessageTemplate);
+      } else {
+        setWaitingMessageTemplate(DEFAULT_WAITING_TEMPLATE);
+      }
+    } catch (err) {
+      console.error("Failed to load settings:", err);
+      setWaitingMessageTemplate(DEFAULT_WAITING_TEMPLATE);
+    } finally {
+      setSettingsLoading(false);
+    }
+  }
+
+  async function handleSaveSettings() {
+    const outcome = await saveRuleMutation(() =>
+      leaveApi.saveSettings({
+        waitingMessageTemplate: waitingMessageTemplate.trim() || DEFAULT_WAITING_TEMPLATE,
+      })
+    );
+    if (!outcome.ok) {
+      toast.danger(errorMessage(outcome.error, "Failed to save workflow settings."));
+      return;
+    }
+    toast.success("Workflow settings updated successfully.");
+    setWorkflowSettingsOpen(false);
+  }
 
   const rules = useMemo(() => rulesData?.data ?? [], [rulesData]);
 
@@ -273,6 +313,16 @@ export default function LeaveRulesPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Workflow & Approval Settings Button */}
+          <Button
+            variant="secondary"
+            onClick={handleOpenSettings}
+            className="flex items-center gap-1.5 shadow-xs text-xs font-medium"
+            title="Workflow & Approval Chain Settings"
+          >
+            <span className="text-sm leading-none">⚙️</span> Settings
+          </Button>
+
           {/* Actions Dropdown Button */}
           <div className="relative">
             <Button
@@ -448,13 +498,27 @@ export default function LeaveRulesPage() {
                   </h4>
                   <div className="space-y-1.5 text-slate-700">
                     <p>
-                      <span className="text-slate-500">Approver(s): </span>
-                      <span className="font-semibold text-indigo-700">
-                        {Array.isArray(rule.actions?.approvers) && rule.actions.approvers.length > 0
-                          ? rule.actions.approvers
-                              .map((a) => `${a.table} → ${a.column}`)
-                              .join(", ")
-                          : rule.actions?.approverTable && rule.actions?.approverColumn
+                      <span className="text-slate-500">Approver Chain: </span>
+                      {Array.isArray(rule.actions?.approvers) && rule.actions.approvers.length > 0 ? (
+                        <>
+                          <span className="font-semibold text-indigo-700">
+                            {rule.actions.approvers
+                              .map((a, i) =>
+                                `${(rule.actions?.approvalMode || "sequential") === "sequential" ? `Step ${i + 1}: ` : ""}${a.table} → ${a.column}${a.multiUserPolicy === "all" ? " (All must approve)" : ""}`
+                              )
+                              .join((rule.actions?.approvalMode || "sequential") === "sequential" ? " ➔ " : " + ")}
+                          </span>
+                          {rule.actions.approvers.length > 1 && (
+                            <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 uppercase">
+                              {(rule.actions?.approvalMode || "sequential") === "sequential"
+                                ? "Sequential Chain"
+                                : "Parallel Flow"}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="font-semibold text-indigo-700">
+                          {rule.actions?.approverTable && rule.actions?.approverColumn
                             ? `${rule.actions.approverTable} → ${rule.actions.approverColumn}`
                             : rule.actions?.approverType === "user_relation"
                               ? `Direct Supervisor (${rule.actions?.approverTarget || "reports_to"})`
@@ -465,7 +529,8 @@ export default function LeaveRulesPage() {
                                   : rule.actions?.approverType === "direct_user"
                                     ? "Specific User Account"
                                     : "Supervisor / In-Charge"}
-                      </span>
+                        </span>
+                      )}
                     </p>
                     <p>
                       <span className="text-slate-500">Notice Required: </span>
@@ -535,6 +600,134 @@ export default function LeaveRulesPage() {
           onConfirm={handleBulkDelete}
           onCancel={() => setBulkDeleteConfirm(false)}
         />
+      )}
+
+      {/* Workflow & Approval Settings Modal */}
+      {workflowSettingsOpen && (
+        <Modal
+          open={workflowSettingsOpen}
+          onClose={() => setWorkflowSettingsOpen(false)}
+          title="Leave Workflow & Approval Settings"
+          size="lg"
+        >
+          <div className="space-y-6">
+            <p className="text-xs text-slate-500">
+              Configure global approval rules, chain waiting behavior, and workflow parameters.
+              Additional workflow and notification settings can be added here.
+            </p>
+
+            {settingsLoading ? (
+              <LoadingState label="Loading workflow settings..." />
+            ) : (
+              <div className="space-y-5">
+                {/* Sequential Approval Hover Message Section */}
+                <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
+                        <span>⏳ Sequential Approver Waiting Tooltip</span>
+                        <span className="text-[11px] font-normal px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                          Multi-Step Chain
+                        </span>
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Shown to approvers in future steps when they hover over their disabled Approve / Reject buttons.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setWaitingMessageTemplate(DEFAULT_WAITING_TEMPLATE)}
+                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline hover:no-underline"
+                    >
+                      Reset to Default
+                    </button>
+                  </div>
+
+                  {/* Available placeholders */}
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="text-slate-500 font-medium">Click to insert placeholder:</span>
+                    {[
+                      { tag: "{approver}", desc: "Pending Approver's Name (e.g. Ramesh Sharma)" },
+                      { tag: "{step}", desc: "Step Name (e.g. Step 1: Reports To)" },
+                      { tag: "{stepNumber}", desc: "Step Number (e.g. 1)" },
+                    ].map((item) => (
+                      <button
+                        key={item.tag}
+                        type="button"
+                        onClick={() =>
+                          setWaitingMessageTemplate((prev) => `${prev} ${item.tag}`)
+                        }
+                        title={item.desc}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-white border border-slate-300 text-slate-700 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-700 transition-colors shadow-2xs"
+                      >
+                        <code>{item.tag}</code>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Waiting Message Template (2-line recommended)
+                    </label>
+                    <Textarea
+                      rows={3}
+                      value={waitingMessageTemplate}
+                      onChange={(e) => setWaitingMessageTemplate(e.target.value)}
+                      placeholder="Waiting for {approver} ({step}) to approve first.&#10;You cannot approve or reject until previous steps are completed."
+                      className="font-mono text-xs leading-relaxed"
+                    />
+                  </div>
+
+                  {/* Live Hover Tooltip Preview */}
+                  <div className="pt-2 border-t border-slate-200">
+                    <span className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
+                      Live Hover Tooltip Preview
+                    </span>
+                    <div className="bg-slate-900 text-white rounded-lg p-3 text-xs shadow-md border border-slate-700 max-w-md mx-auto text-center space-y-1">
+                      <div className="font-semibold text-amber-300 text-[11px] flex items-center justify-center gap-1">
+                        <span>⏳ Awaiting Preceding Approval</span>
+                      </div>
+                      <p className="whitespace-pre-line text-slate-200 text-xs leading-relaxed">
+                        {waitingMessageTemplate
+                          .replace(/{approver}/g, "Dr. Arvind Sharma")
+                          .replace(/{step}/g, "Step 1: Center In-Charge")
+                          .replace(/{stepNumber}/g, "1")}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Extensibility Placeholder Card */}
+                <div className="p-3.5 rounded-lg bg-amber-50/60 border border-amber-200/80 flex items-start gap-2.5 text-xs text-amber-800">
+                  <span className="text-base leading-none">💡</span>
+                  <div>
+                    <span className="font-semibold">Extensible Workflow Platform:</span> More workflow policies (such as escalation timers, automatic reminders, holiday blackout overrides, and custom approval routing gates) can easily be added to this settings hub.
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    onClick={() => setWorkflowSettingsOpen(false)}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    type="button"
+                    loading={saving}
+                    onClick={handleSaveSettings}
+                  >
+                    Save Settings
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </Modal>
       )}
     </div>
   );

@@ -216,4 +216,7 @@ export const leave = {
 
   getHolidays: () => api("/leave/holidays"),
   saveHolidays: (holidays) => post("/leave/holidays", holidays),
+
+  getSettings: () => api("/leave/settings"),
+  saveSettings: (payload) => post("/leave/settings", payload),
 };

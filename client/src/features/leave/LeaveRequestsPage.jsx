@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import Badge from "../../components/ui/Badge.jsx";
 import Button from "../../components/ui/Button.jsx";
 import ConfirmDialog from "../../components/ui/ConfirmDialog.jsx";
@@ -14,6 +15,96 @@ import useMutation from "../../hooks/useMutation.js";
 import { errorMessage } from "../../services/errors.js";
 import { leave as leaveApi } from "../../services/resources.js";
 import ApplyLeaveDialog from "./ApplyLeaveDialog.jsx";
+
+/**
+ * Disabled Decision Actions rendered with a floating React Portal tooltip.
+ * Using createPortal directly into document.body prevents ANY table boundary clipping or scrollbars!
+ */
+function DisabledApprovalActions({ waitingMessage }) {
+  const [coords, setCoords] = useState(null);
+
+  function handleMouseEnter(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setCoords({
+      top: rect.top,
+      bottom: rect.bottom,
+      right: window.innerWidth - rect.right,
+    });
+  }
+
+  function handleMouseLeave() {
+    setCoords(null);
+  }
+
+  useEffect(() => {
+    if (!coords) return undefined;
+    const handleScroll = () => setCoords(null);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => window.removeEventListener("scroll", handleScroll, true);
+  }, [coords]);
+
+  const showBelow = coords && coords.top < 130;
+
+  return (
+    <div
+      className="inline-flex items-center gap-1.5 cursor-not-allowed select-none"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <Button
+        size="sm"
+        variant="primary"
+        disabled
+        className="opacity-50 cursor-not-allowed pointer-events-none"
+      >
+        Approve
+      </Button>
+      <Button
+        size="sm"
+        variant="danger"
+        disabled
+        className="opacity-50 cursor-not-allowed pointer-events-none"
+      >
+        Reject
+      </Button>
+      <span
+        className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-bold cursor-help border border-amber-300 shadow-2xs"
+        title="Waiting for prior step approval"
+      >
+        ⓘ
+      </span>
+
+      {coords &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              top: showBelow ? coords.bottom + 10 : coords.top - 10,
+              right: Math.max(16, coords.right),
+              transform: showBelow ? "none" : "translateY(-100%)",
+              zIndex: 99999,
+            }}
+            className="pointer-events-none w-80 rounded-xl bg-slate-900/95 backdrop-blur-xs p-3 text-xs text-white shadow-2xl whitespace-pre-line text-center border border-slate-700/80 animate-in fade-in duration-150"
+          >
+            <div className="font-semibold text-amber-300 text-[11px] mb-1 flex items-center justify-center gap-1">
+              <span>⏳ Awaiting Preceding Approval</span>
+            </div>
+            <div className="text-slate-200 text-xs leading-relaxed font-normal">
+              {waitingMessage}
+            </div>
+
+            {/* Triangle pointer arrow pointing directly to the buttons */}
+            {showBelow ? (
+              <div className="absolute bottom-full right-8 -mb-px border-4 border-transparent border-b-slate-900/95" />
+            ) : (
+              <div className="absolute top-full right-8 -mt-px border-4 border-transparent border-t-slate-900/95" />
+            )}
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+}
 
 export default function LeaveRequestsPage() {
   const toast = useToast();
@@ -153,7 +244,18 @@ export default function LeaveRequestsPage() {
       header: "Status",
       render: (row) => {
         const val = row.values || row;
-        return <Badge tone={getStatusTone(val.status)}>{val.status}</Badge>;
+        const steps = val.approval_steps || [];
+        const currentStep = (val.current_step || 0) + 1;
+        return (
+          <div className="space-y-1">
+            <Badge tone={getStatusTone(val.status)}>{val.status}</Badge>
+            {val.status === "Pending Approval" && steps.length > 1 && (
+              <span className="block text-[11px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">
+                Chain: Step {currentStep} of {steps.length}
+              </span>
+            )}
+          </div>
+        );
       },
     },
     {
@@ -228,6 +330,36 @@ export default function LeaveRequestsPage() {
       },
     },
     {
+      key: "stage",
+      header: "Chain Step",
+      render: (row) => {
+        const val = row.values || row;
+        const steps = val.approval_steps || [];
+        const currentStepIdx = val.current_step || 0;
+        const currentStep = steps[currentStepIdx];
+        if (steps.length > 1 && currentStep) {
+          return (
+            <div className="text-xs space-y-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded text-[11px]">
+                  Active: Step {currentStepIdx + 1}/{steps.length}
+                </span>
+                {row.myStepOrder && row.myStepOrder > currentStepIdx + 1 && (
+                  <span className="font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px]">
+                    Your Turn: Step {row.myStepOrder}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium leading-tight">
+                {currentStep.approverNamesText || currentStep.label}
+              </p>
+            </div>
+          );
+        }
+        return <span className="text-xs text-slate-500">Standard</span>;
+      },
+    },
+    {
       key: "reason",
       header: "Reason",
       render: (row) => {
@@ -238,24 +370,35 @@ export default function LeaveRequestsPage() {
     {
       key: "actions",
       header: "Decision",
-      render: (row) => (
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={() => setReviewDialog({ request: row, action: "approve" })}
-          >
-            Approve
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={() => setReviewDialog({ request: row, action: "reject" })}
-          >
-            Reject
-          </Button>
-        </div>
-      ),
+      render: (row) => {
+        const canAct = row.canAct !== false;
+        const waitingMessage =
+          row.waitingMessage ||
+          "Cannot act yet. Waiting for preceding approvers in the chain to approve first.";
+
+        if (!canAct) {
+          return <DisabledApprovalActions waitingMessage={waitingMessage} />;
+        }
+
+        return (
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => setReviewDialog({ request: row, action: "approve" })}
+            >
+              Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => setReviewDialog({ request: row, action: "reject" })}
+            >
+              Reject
+            </Button>
+          </div>
+        );
+      },
     },
   ];
 
@@ -352,9 +495,17 @@ export default function LeaveRequestsPage() {
         >
           <form onSubmit={handleReviewSubmit} className="space-y-4">
             <p className="text-sm text-slate-600">
-              {reviewDialog.action === "approve"
-                ? `Are you sure you want to approve this request of ${reviewDialog.request?.values?.days} day(s) for ${reviewDialog.request?.applicant?.name}? This will deduct the days from their leave balance ledger.`
-                : `Are you sure you want to reject this request for ${reviewDialog.request?.applicant?.name}?`}
+              {reviewDialog.action === "approve" ? (
+                reviewDialog.request?.values?.approval_steps?.length > 1 &&
+                (reviewDialog.request?.values?.current_step || 0) + 1 <
+                  reviewDialog.request?.values?.approval_steps?.length ? (
+                  `Are you sure you want to approve Step ${(reviewDialog.request?.values?.current_step || 0) + 1} of ${reviewDialog.request?.values?.approval_steps?.length} for ${reviewDialog.request?.applicant?.name}? This will advance the application to the next approver in the chain.`
+                ) : (
+                  `Are you sure you want to grant final approval for this request of ${reviewDialog.request?.values?.days} day(s) for ${reviewDialog.request?.applicant?.name}? This will complete the approval chain and deduct the days from their leave balance ledger.`
+                )
+              ) : (
+                `Are you sure you want to reject this request for ${reviewDialog.request?.applicant?.name}? This will reject the leave application.`
+              )}
             </p>
 
             <Textarea

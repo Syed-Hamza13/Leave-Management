@@ -40,3 +40,30 @@ export async function saveHolidays(executor, holidays, actorUserId) {
   });
 }
 
+export const DEFAULT_LEAVE_SETTINGS = {
+  waitingMessageTemplate:
+    "Waiting for {approver} ({step}) to approve first.\nYou cannot approve or reject until previous steps are completed.",
+};
+
+export async function findLeaveSettings() {
+  const row = await findSettingRow("leave_settings");
+  if (!row || !row.setting_value) {
+    return { ...DEFAULT_LEAVE_SETTINGS };
+  }
+  const parsed = parseJsonColumn(row.setting_value, {});
+  return {
+    ...DEFAULT_LEAVE_SETTINGS,
+    ...parsed,
+  };
+}
+
+export async function saveLeaveSettings(executor, settings, actorUserId) {
+  await upsertSetting(executor, {
+    settingKey: "leave_settings",
+    value: settings,
+    isSecret: false,
+    updatedBy: actorUserId,
+  });
+}
+
+

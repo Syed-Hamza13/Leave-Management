@@ -44,6 +44,7 @@ export const leaveRulesSchema = z.object({
       actions: z
         .object({
           requiresApproval: z.boolean().optional().default(true),
+          approvalMode: z.enum(["sequential", "parallel"]).optional().default("sequential"),
           approverTable: z.string().optional(),
           approverColumn: z.string().optional(),
           approvers: z
@@ -52,6 +53,7 @@ export const leaveRulesSchema = z.object({
                 .object({
                   table: z.string(),
                   column: z.string(),
+                  multiUserPolicy: z.enum(["any", "all"]).optional().default("any"),
                 })
                 .passthrough()
             )
@@ -70,4 +72,13 @@ export const leaveRulesSchema = z.object({
     })
   ),
 });
+
+export const leaveSettingsSchema = z.object({
+  waitingMessageTemplate: z
+    .string()
+    .min(1, "Waiting message template cannot be empty.")
+    .max(500, "Waiting message template must not exceed 500 characters.")
+    .optional(),
+});
+
 

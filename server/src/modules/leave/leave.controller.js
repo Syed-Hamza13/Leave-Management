@@ -4,6 +4,7 @@ import {
   leaveSubmitSchema,
   leaveActionSchema,
   leaveRulesSchema,
+  leaveSettingsSchema,
 } from "./leave.validation.js";
 import {
   previewLeaveRequest,
@@ -17,6 +18,8 @@ import {
   saveLeaveRules,
   getHolidays,
   saveHolidays,
+  getLeaveSettings,
+  saveLeaveSettings,
 } from "./leave.service.js";
 
 function getActorUserId(req) {
@@ -176,4 +179,26 @@ export async function saveHolidaysHandler(req, res, next) {
     return next(error);
   }
 }
+
+export async function getLeaveSettingsHandler(req, res, next) {
+  try {
+    const settings = await getLeaveSettings();
+    return ok(res, settings);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function saveLeaveSettingsHandler(req, res, next) {
+  try {
+    const settings = leaveSettingsSchema.parse(req.body);
+    const actorUserId = getActorUserId(req);
+
+    const saved = await saveLeaveSettings(settings, actorUserId);
+    return ok(res, saved);
+  } catch (error) {
+    return next(error);
+  }
+}
+
 
